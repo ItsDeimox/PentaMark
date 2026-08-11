@@ -780,7 +780,7 @@ export default function PentaMarkApp() {
     setDropTarget(null);
     setDragging(null);
     if (item.kind === "folder" && (targetFolder === item.path || targetFolder.startsWith(`${item.path}/`))) {
-      notify("Essa pasta não cabe dentro dela mesma :V"); return;
+      notify("Uma pasta não pode ser movida para dentro dela mesma."); return;
     }
     const newPath = joinPath(targetFolder, baseName(item.path));
     if (newPath === item.path) return;
