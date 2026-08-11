@@ -69,7 +69,7 @@ const MIME_TYPES = {
 const BOOTSTRAP_NOTES = {
   "00 — Comece aqui.md": `-# Bem-vindo ao PentaMark
 
-> Um cofre Markdown compartilhado. Local, rápido e sem assinatura intergaláctica.
+> Um cofre Markdown compartilhado, local e baseado em arquivos abertos.
 
 ## Primeiros passos
 
@@ -91,7 +91,7 @@ Tudo é salvo automaticamente em arquivos Markdown reais. Para fazer backup, cop
 
 const LEGACY_WELCOME = `# Bem-vindo ao PentaMark
 
-> O cofre compartilhado do **Pentagory**. Local, rápido e sem assinatura intergaláctica.
+> O cofre compartilhado do **Pentagory**, local e baseado em arquivos abertos.
 
 ## Primeiros passos
 
@@ -1281,7 +1281,7 @@ async function start() {
   server.headersTimeout = 60_000;
   server.listen(runtimePort, String(config.bind), () => {
     const urls = networkUrls();
-    console.log("\n  PentaMark está online :V\n");
+    console.log("\n  PentaMark está online.\n");
     console.log(`  Este PC:  ${urls[0]}`);
     for (const url of urls.slice(1)) {
       const label = url.includes("//26.") ? "Radmin" : "Rede";
