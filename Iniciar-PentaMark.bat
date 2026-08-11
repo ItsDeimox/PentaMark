@@ -28,7 +28,7 @@ exit /b 0
 :erro
 echo.
 echo  O PentaMark encontrou um problema ao iniciar.
-echo  Manda uma captura desta tela que a gente caceta o bug :V
+echo  Envie uma captura desta tela ao relatar o problema.
 echo.
 pause
 exit /b 1
