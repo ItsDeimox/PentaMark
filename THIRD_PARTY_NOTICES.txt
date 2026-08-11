@@ -1,0 +1,16 @@
+PentaMark includes bundled open-source software:
+
+- Electron, Chromium and Node.js — Copyright respective contributors — MIT / BSD-style licenses
+- React and React DOM — Copyright Meta Platforms, Inc. and affiliates — MIT License
+- CodeMirror 6 — Copyright Marijn Haverbeke and contributors — MIT License
+- Marked — Copyright Christopher Jeffrey and contributors — MIT License
+- DOMPurify — Copyright Mario Heiderich and contributors — Apache License 2.0 / MPL 2.0
+- jsdiff — Copyright Kevin Deisz and contributors — BSD 3-Clause License
+- Highlight.js — Copyright Josh Goebel and contributors — BSD 3-Clause License
+- Lucide — Copyright Lucide Contributors — ISC License
+- Mermaid — Copyright Mermaid contributors — MIT License
+- YAML — Copyright Eemeli Aro — ISC License
+- Model Context Protocol TypeScript SDK — Copyright Anthropic and contributors — MIT License
+- Zod — Copyright Colin McDonnell — MIT License
+
+The complete license texts and source code for these projects are available from their official repositories.

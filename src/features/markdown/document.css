@@ -1,0 +1,329 @@
+/*
+ * Contrato visual único do documento.
+ *
+ * A leitura produz HTML semântico e o Live Preview produz linhas do CodeMirror,
+ * mas ambos consomem exatamente os mesmos tokens e as mesmas regras visuais.
+ * As regras pm-live abaixo são somente o adaptador estrutural entre os dois DOMs.
+ */
+.pm-document {
+  --pm-md-color: #aebcbf;
+  --pm-md-heading-color: #edf6f7;
+  --pm-md-strong-color: #d9e6e8;
+  --pm-md-emphasis-color: #b7e9eb;
+  --pm-md-quote-color: #a8c0c4;
+  --pm-md-line-height: 1.84;
+  --pm-md-heading-line-height: 1.25;
+  --pm-md-heading-spacing: -.025em;
+  --pm-md-h1-size: clamp(28px, 2.45em, 38px);
+  --pm-md-h2-size: 1.58em;
+  --pm-md-h3-size: 1.27em;
+}
+
+.pm-document--preview .pm-preview-pane {
+  padding-top: var(--pm-reader-padding-top);
+  padding-right: max(var(--pm-reader-side-padding), calc(50% - var(--pm-reader-half-width)));
+  padding-bottom: var(--pm-reader-padding-bottom);
+  padding-left: max(var(--pm-reader-side-padding), calc(50% - var(--pm-reader-half-width)));
+}
+
+.pm-document--preview .pm-preview-pane,
+.pm-document--live .pm-live-pane {
+  background: color-mix(in srgb, var(--pm-panel) 68%, transparent);
+}
+
+.pm-live-codemirror .cm-scroller,
+.pm-markdown {
+  color: var(--pm-md-color);
+  font-size: var(--pm-editor-size, 15px);
+  line-height: var(--pm-md-line-height);
+}
+
+.pm-live-codemirror .cm-content {
+  width: min(calc(100% - 64px), var(--pm-reader-width));
+  max-width: var(--pm-reader-width);
+  min-width: 0;
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding-top: var(--pm-reader-padding-top);
+  padding-right: 0;
+  padding-bottom: var(--pm-reader-padding-bottom);
+  padding-left: 0;
+}
+
+.pm-live-codemirror .cm-line {
+  margin: 0 !important;
+  padding-top: var(--pm-live-padding-top, 0px) !important;
+  padding-bottom: var(--pm-live-padding-bottom, 0px) !important;
+}
+
+.pm-live-codemirror .cm-line,
+.pm-live-line--paragraph {
+  color: var(--pm-md-color);
+}
+
+.pm-markdown h1,
+.pm-markdown h2,
+.pm-markdown h3,
+.pm-markdown h4,
+.pm-markdown h5,
+.pm-markdown h6,
+.pm-live-heading-1,
+.pm-live-heading-2,
+.pm-live-heading-3,
+.pm-live-heading-4,
+.pm-live-heading-5,
+.pm-live-heading-6 {
+  color: var(--pm-md-heading-color) !important;
+  letter-spacing: var(--pm-md-heading-spacing);
+  line-height: var(--pm-md-heading-line-height);
+}
+
+.pm-markdown h1 {
+  margin: var(--pm-md-h1-margin-top) 0 var(--pm-md-h1-margin-bottom);
+  padding: 0;
+  border-bottom: 0;
+  font-size: var(--pm-md-h1-size);
+  font-weight: 620;
+}
+
+.pm-live-heading-1 {
+  border-bottom: 0;
+  font-size: var(--pm-md-h1-size);
+  font-weight: 620;
+}
+
+.pm-markdown h1.pm-ruled-heading {
+  border-bottom: 1px solid var(--pm-border);
+  padding-bottom: var(--pm-md-ruled-padding-bottom);
+}
+
+.pm-live-heading-1.pm-live-heading-ruled {
+  border-bottom: 1px solid var(--pm-border);
+}
+
+.pm-markdown h2 {
+  margin: var(--pm-md-h2-margin-top) 0 var(--pm-md-h2-margin-bottom);
+  padding: 0;
+  font-size: var(--pm-md-h2-size);
+  font-weight: 590;
+}
+
+.pm-live-heading-2 {
+  font-size: var(--pm-md-h2-size);
+  font-weight: 590;
+}
+
+.pm-markdown h3 {
+  margin: var(--pm-md-h3-margin-top) 0 var(--pm-md-h3-margin-bottom);
+  padding: 0;
+  font-size: var(--pm-md-h3-size);
+  font-weight: 570;
+}
+
+.pm-live-heading-3 {
+  font-size: var(--pm-md-h3-size);
+  font-weight: 570;
+}
+
+.pm-markdown h4 {
+  margin: var(--pm-md-h4-margin-top) 0 var(--pm-md-h4-margin-bottom);
+  padding: 0;
+  font-size: 1.08em;
+  font-weight: 570;
+}
+
+.pm-live-heading-4 { font-size: 1.08em; font-weight: 570; }
+
+.pm-markdown h5,
+.pm-markdown h6 {
+  margin: var(--pm-md-h5-margin-top) 0 var(--pm-md-h5-margin-bottom);
+  padding: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.pm-live-heading-5,
+.pm-live-heading-6 { font-size: 1em; font-weight: 600; }
+
+/* Empty replacements use caret buffers. At heading font sizes those buffers
+   otherwise make the line box 2–3px taller than the equivalent HTML heading. */
+.pm-live-heading-1 > .cm-widgetBuffer,
+.pm-live-heading-2 > .cm-widgetBuffer,
+.pm-live-heading-3 > .cm-widgetBuffer,
+.pm-live-heading-4 > .cm-widgetBuffer,
+.pm-live-heading-5 > .cm-widgetBuffer,
+.pm-live-heading-6 > .cm-widgetBuffer {
+  height: 0 !important;
+  vertical-align: baseline !important;
+}
+
+.pm-markdown p { margin: 0 0 var(--pm-md-paragraph-bottom); }
+.pm-live-line--paragraph { margin: 0 !important; }
+
+/* Uma quebra separa blocos; apenas quebras excedentes viram espaço visível. */
+.pm-live-line--blank {
+  height: 0;
+  min-height: 0;
+  line-height: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+.pm-live-line--blank-extra {
+  height: calc(var(--pm-md-line-height) * 1em);
+  min-height: calc(var(--pm-md-line-height) * 1em);
+  line-height: var(--pm-md-line-height);
+}
+
+.pm-markdown ul,
+.pm-markdown ol {
+  margin: var(--pm-md-list-margin-top) 0 var(--pm-md-list-margin-bottom);
+  padding-left: var(--pm-md-list-indent);
+}
+.pm-markdown li {
+  margin: var(--pm-md-list-item-gap) 0;
+  padding-left: var(--pm-md-list-item-indent);
+}
+.pm-markdown li::marker,
+.pm-list-marker { color: var(--pm-cyan); }
+
+.pm-markdown li.pm-list-item--custom-marker {
+  position: relative;
+  list-style: none;
+  --pm-list-marker-left: calc(-1 * var(--pm-md-list-indent) - 2px);
+}
+
+.pm-markdown li.task-list-item,
+.pm-markdown li:has(input[type="checkbox"]) { list-style: none !important; }
+.pm-markdown li.task-list-item::marker,
+.pm-markdown li:has(input[type="checkbox"])::marker { content: "" !important; }
+.pm-markdown ul.contains-task-list {
+  list-style: none;
+  padding-left: var(--pm-md-task-list-indent);
+}
+.pm-markdown li.task-list-item { margin-left: 0; padding-left: 0; }
+.pm-markdown li.task-list-item > input[type="checkbox"],
+.pm-markdown li > p:first-child > input[type="checkbox"] { margin-left: 0; }
+
+.pm-live-line--list {
+  position: relative;
+  margin: 0 !important;
+  padding-right: 0 !important;
+  /* O HTML semantico posiciona o conteudo do <li> 28px depois do inicio do
+     documento (24px do ol/ul + 4px do li). O marcador do CodeMirror precisa
+     ocupar esse mesmo gutter sem deixar o recuo depender do tamanho da fonte. */
+  padding-left: calc(var(--pm-md-list-indent) + var(--pm-md-list-item-indent)) !important;
+  text-indent: 0;
+  --pm-list-marker-left: -2px;
+}
+.pm-list-marker {
+  position: absolute;
+  left: var(--pm-list-marker-left);
+  display: inline-block;
+  box-sizing: border-box;
+  width: var(--pm-md-list-indent);
+  min-width: var(--pm-md-list-indent);
+  margin: 0;
+  text-align: center;
+  text-indent: 0;
+  font-weight: 500;
+}
+.pm-list-marker:not(.pm-list-marker--ordered) {
+  top: 0;
+  height: calc(var(--pm-editor-size, 15px) * var(--pm-md-line-height));
+}
+.pm-list-marker:not(.pm-list-marker--ordered)::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 1px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pm-cyan);
+  transform: translate(calc(-50% + .5px), calc(-50% + .5px));
+}
+.pm-list-marker--ordered {
+  left: -4px;
+  color: var(--pm-cyan);
+  text-align: right;
+  font-weight: 450;
+  transform: none;
+}
+
+/* Task lists use a different semantic gutter in the rendered document:
+   20px for the list, then the native checkbox and its 8px gap. */
+.pm-live-line--list.pm-live-task-line {
+  padding-left: var(--pm-md-task-content-indent) !important;
+}
+.pm-live-task-checkbox {
+  position: absolute;
+  left: var(--pm-md-task-checkbox-left);
+  margin: 0;
+}
+
+.pm-markdown blockquote,
+.pm-live-line--quote {
+  border-left: 2px solid var(--pm-cyan);
+  color: var(--pm-md-quote-color) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pm-accent-base) 9%, transparent), transparent);
+}
+.pm-markdown blockquote {
+  margin: var(--pm-md-quote-margin) 0;
+  padding: var(--pm-md-quote-padding-block) var(--pm-md-quote-padding-inline);
+}
+.pm-live-line--quote {
+  margin: 0 !important;
+  padding-right: var(--pm-md-quote-padding-inline) !important;
+  padding-left: var(--pm-md-quote-padding-inline) !important;
+}
+
+.pm-markdown strong,
+.pm-live-strong { color: var(--pm-md-strong-color); font-weight: 650; }
+.pm-markdown em,
+.pm-live-emphasis { color: var(--pm-md-emphasis-color); font-style: italic; }
+.pm-markdown del,
+.pm-live-strike {
+  color: color-mix(in srgb, var(--pm-muted) 78%, transparent);
+  text-decoration: line-through;
+}
+.pm-markdown mark,
+.pm-live-highlight {
+  border-radius: 3px;
+  padding: 0 2px;
+  color: color-mix(in srgb, var(--pm-text) 92%, white);
+  background: color-mix(in srgb, var(--pm-cyan) 25%, transparent);
+}
+.pm-markdown code,
+.pm-live-inline-code {
+  border: 1px solid var(--pm-border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: color-mix(in srgb, var(--pm-accent-base) 72%, white);
+  background: color-mix(in srgb, var(--pm-panel-2) 90%, black);
+  font-size: .88em;
+}
+.pm-markdown pre { margin: var(--pm-md-code-margin) 0; }
+.pm-markdown table { margin: var(--pm-md-table-margin) 0; }
+.pm-markdown hr { margin: var(--pm-md-separator-margin) 0; }
+.pm-markdown img,
+.pm-markdown video {
+  margin-top: var(--pm-md-media-margin);
+  margin-bottom: var(--pm-md-media-margin);
+}
+.pm-markdown a,
+.pm-live-link {
+  border-bottom: 1px solid color-mix(in srgb, var(--pm-accent-base) 28%, transparent);
+  color: var(--pm-cyan);
+  text-decoration: none;
+}
+
+@media (width <= 880px) {
+  .pm-document {
+    --pm-reader-padding-top: 28px;
+    --pm-reader-padding-bottom: 100px;
+    --pm-md-h1-size: clamp(26px, 2.2em, 34px);
+  }
+  .pm-document--preview .pm-preview-pane { padding-right: 22px; padding-left: 22px; }
+  .pm-live-codemirror .cm-content { width: calc(100% - 44px); }
+}
