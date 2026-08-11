@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/pentamark-icon.svg" width="112" alt="Ícone do PentaMark">
   <h1>PentaMark</h1>
-  <p><strong>Seu cofre Markdown. Local, compartilhado e sem assinatura intergaláctica.</strong></p>
+  <p><strong>Editor Markdown local, colaborativo e baseado em arquivos abertos.</strong></p>
 
   <p>
     <img alt="Versão" src="https://img.shields.io/badge/versão-2.6.2-67e7ef?style=flat-square&labelColor=11181d">
@@ -140,5 +140,5 @@ Também é possível abrir qualquer pasta externa como cofre. Para backup, copie
 ---
 
 <div align="center">
-  Feito para quem quer possuir os próprios arquivos — e ainda editar junto :V
+  Projetado para quem valoriza a propriedade dos próprios arquivos e a colaboração em tempo real.
 </div>
