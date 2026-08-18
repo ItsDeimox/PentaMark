@@ -333,8 +333,15 @@ function isLocalAddress(value) {
   return address === "::1" || address === "127.0.0.1";
 }
 
+function requestAddress(req) {
+  const socketAddress = cleanClientAddress(req.socket.remoteAddress);
+  if (!isLocalAddress(socketAddress)) return socketAddress;
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded ? cleanClientAddress(forwarded) : socketAddress;
+}
+
 function isLocalRequest(req) {
-  return isLocalAddress(req.socket.remoteAddress);
+  return isLocalAddress(requestAddress(req));
 }
 
 function connectedClients() {
@@ -356,7 +363,7 @@ function requestPermission(req) {
 }
 
 function markMcpActivity(req, action, path = "", editing = false) {
-  const address = cleanClientAddress(req.socket.remoteAddress);
+  const address = requestAddress(req);
   const id = `mcp-${address.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const previous = mcpActivity.get(id);
   const rawPath = String(path || "").replaceAll("\\", "/");
@@ -430,9 +437,21 @@ function networkUrls() {
       if (entry.family === "IPv4" && !entry.internal) addresses.push(entry.address);
     }
   }
-  addresses.sort((a, b) => Number(b.startsWith("26.")) - Number(a.startsWith("26.")) || a.localeCompare(b));
+  addresses.sort((a, b) => networkPriority(b) - networkPriority(a) || a.localeCompare(b));
   for (const address of addresses) urls.push(`http://${address}:${runtimePort}`);
   return [...new Set(urls)];
+}
+
+function networkPriority(address) {
+  const octets = address.split(".").map(Number);
+  if (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) return 3;
+  if (address.startsWith("26.")) return 2;
+  return 1;
+}
+
+function networkLabel(address) {
+  const priority = networkPriority(address);
+  return priority === 3 ? "Tailscale" : priority === 2 ? "Radmin" : "Rede";
 }
 
 async function loadConfig() {
@@ -909,7 +928,7 @@ async function handleApi(req, res, url) {
     const requestedId = String(url.searchParams.get("clientId") || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
     const clientId = requestedId || `anonymous-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const requestedName = String(url.searchParams.get("name") || "").trim().replace(/[\r\n\t]/g, " ").slice(0, 60);
-    const address = cleanClientAddress(req.socket.remoteAddress);
+    const address = requestAddress(req);
     const local = isLocalAddress(address);
     const current = sseClients.get(clientId);
     const connection = current || {
@@ -1256,12 +1275,16 @@ async function requestHandler(req, res) {
 }
 
 function openBrowser(url) {
-  if (!config.openBrowser || process.env.PENTAMARK_DESKTOP === "1") return;
+  if (!config.openBrowser || process.env.PENTAMARK_DESKTOP === "1" || process.env.PENTAMARK_NO_BROWSER === "1") return;
   const options = { detached: true, stdio: "ignore" };
   try {
     if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], options).unref();
     else if (process.platform === "darwin") spawn("open", [url], options).unref();
-    else spawn("xdg-open", [url], options).unref();
+    else {
+      const child = spawn("xdg-open", [url], options);
+      child.on("error", () => undefined);
+      child.unref();
+    }
   } catch {
     // O endereço continua visível no terminal caso a abertura automática falhe.
   }
@@ -1284,7 +1307,7 @@ async function start() {
     console.log("\n  PentaMark está online.\n");
     console.log(`  Este PC:  ${urls[0]}`);
     for (const url of urls.slice(1)) {
-      const label = url.includes("//26.") ? "Radmin" : "Rede";
+      const label = networkLabel(new URL(url).hostname);
       console.log(`  ${label.padEnd(9)} ${url}`);
     }
     console.log("\n  Feche esta janela ou pressione Ctrl+C para encerrar.\n");

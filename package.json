@@ -1,6 +1,6 @@
 {
   "name": "pentamark",
-  "version": "2.6.2",
+  "version": "2.7.0",
   "description": "Editor Markdown local e compartilhado",
   "author": "PentaMark",
   "private": true,
@@ -9,8 +9,9 @@
   "scripts": {
     "dev": "vite",
     "check": "npm run typecheck && npm run local:build",
-    "mcp:build": "esbuild local/mcp-bridge.source.mjs --bundle --platform=node --format=esm --outfile=local/mcp-bridge.mjs",
+    "mcp:build": "esbuild ./local/mcp-bridge.source.mjs --bundle --platform=node --format=esm --outfile=./local/mcp-bridge.mjs",
     "local:build": "npm run mcp:build && vite build --outDir local-dist --emptyOutDir",
+    "mobile:bundle": "npm run local:build && node ./scripts/build-mobile-host.mjs",
     "typecheck": "tsc --noEmit",
     "desktop:dev": "npm run local:build && electron .",
     "desktop:build": "npm run local:build && electron-builder --win portable --x64",
