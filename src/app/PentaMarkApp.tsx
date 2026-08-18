@@ -49,6 +49,7 @@ import {
   Settings,
   Share2,
   Sparkles,
+  Smartphone,
   Trash2,
   UserCircle,
   Users,
@@ -85,10 +86,12 @@ import { DEFAULT_APPEARANCE, EDITOR_FONTS, EMPTY_STATE, UI_FONTS } from "./const
 import { RequestError, request } from "../api/client";
 import { AssetWorkspacePreview } from "../components/AssetWorkspacePreview";
 import { ContextDropdown } from "../components/ContextDropdown";
+import { MobileDock } from "../components/MobileDock";
 import { ClientsModal } from "../components/dialogs/ClientsModal";
 import { ConflictModal } from "../components/dialogs/ConflictModal";
 import { ConnectModal } from "../components/dialogs/ConnectModal";
 import { KanbanEditorDialog } from "../components/dialogs/KanbanEditorDialog";
+import { MobileSetupModal } from "../components/dialogs/MobileSetupModal";
 import { ProfileModal } from "../components/dialogs/ProfileModal";
 import { SettingsModal } from "../components/dialogs/SettingsModal";
 import { PresenceAvatar, PresenceStack, RemoteCursorOverlay } from "../components/presence/Presence";
@@ -109,8 +112,11 @@ import {
 } from "../features/markdown/renderer";
 import {
   colorForClient,
+  connectionLabel,
+  copyText,
   defaultDeviceName,
   initialDeviceName,
+  isMobileViewport,
   normalizeConnectionAddress,
   timeAgo,
 } from "../shared/client";
@@ -123,13 +129,18 @@ import {
 } from "../shared/path";
 import { decodeSource, replaceNth } from "../shared/text";
 
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
 export default function PentaMarkApp() {
   const [vault, setVault] = useState<VaultState>(EMPTY_STATE);
   const [activePath, setActivePath] = useState("");
   const [content, setContent] = useState("");
   const [revision, setRevision] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("pentamark:view") as ViewMode) || "split");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("pentamark:view") as ViewMode) || (isMobileViewport() ? "live" : "split"));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem("pentamark:sidebar")) || 278);
@@ -145,6 +156,7 @@ export default function PentaMarkApp() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [clientsOpen, setClientsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [mobileSetupOpen, setMobileSetupOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
   const [conflict, setConflict] = useState<ConflictData | null>(null);
   const [assetPreview, setAssetPreview] = useState<AssetMeta | null>(null);
@@ -167,6 +179,8 @@ export default function PentaMarkApp() {
   const [toast, setToast] = useState("");
   const [uploading, setUploading] = useState(false);
   const [desktopVault, setDesktopVault] = useState<DesktopVaultInfo | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [installedApp, setInstalledApp] = useState(() => window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   const [appearance, setAppearance] = useState<Appearance>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("pentamark:appearance") || "{}") as Partial<Appearance>;
@@ -215,10 +229,35 @@ export default function PentaMarkApp() {
   viewModeRef.current = viewMode;
   locksRef.current = vault.locks;
 
+  const shareUrls = useMemo(() => [...new Set([window.location.origin, ...vault.urls].filter((url) => /^https?:\/\//i.test(url)))], [vault.urls]);
+
   const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast((current) => current === message ? "" : current), 2600);
   }, []);
+
+  const copyValue = useCallback(async (value: string, message = "Endereço copiado") => {
+    try {
+      await copyText(value);
+      notify(message);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não deu para copiar");
+    }
+  }, [notify]);
+
+  const installApp = useCallback(async () => {
+    if (!installPrompt) {
+      notify("Use o menu do navegador e escolha Adicionar à tela inicial");
+      return;
+    }
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") {
+      setInstallPrompt(null);
+      setInstalledApp(true);
+      notify("PentaMark instalado");
+    }
+  }, [installPrompt, notify]);
 
   const refreshState = useCallback(async () => {
     try {
@@ -313,6 +352,23 @@ export default function PentaMarkApp() {
       window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
     }
   }, [deviceAvatar, deviceName]);
+
+  useEffect(() => {
+    const captureInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const markInstalled = () => {
+      setInstallPrompt(null);
+      setInstalledApp(true);
+    };
+    window.addEventListener("beforeinstallprompt", captureInstall);
+    window.addEventListener("appinstalled", markInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", captureInstall);
+      window.removeEventListener("appinstalled", markInstalled);
+    };
+  }, []);
 
   useEffect(() => {
     void window.pentaMarkDesktop?.getProfile().then((profile) => {
@@ -1139,7 +1195,7 @@ export default function PentaMarkApp() {
         <div className="pm-brand">
           <div className="pm-mark"><span /></div>
           <div className="pm-brand-copy"><strong>PentaMark</strong></div>
-          <button className="pm-icon-button pm-mobile-only" onClick={() => setMobileSidebar(false)} title="Fechar"><X size={17} /></button>
+          <button className="pm-icon-button pm-mobile-only" aria-label="Fechar arquivos" onClick={() => setMobileSidebar(false)} title="Fechar"><X size={17} /></button>
         </div>
 
         <div className="pm-search"><Search size={14} /><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar notas..." /><kbd>Ctrl P</kbd></div>
@@ -1168,17 +1224,19 @@ export default function PentaMarkApp() {
         <div className="pm-sidebar-bottom">
           <button className="pm-connected-button" onClick={() => setClientsOpen(true)}><Users size={14} /><span>{vault.clients} conectado{vault.clients === 1 ? "" : "s"}</span><i className="pm-live-dot" /></button>
           <button onClick={() => setConnectOpen(true)}><LogIn size={14} /><span>Conectar a um cofre</span></button>
+          <button onClick={() => { setMobileSidebar(false); setMobileSetupOpen(true); }}><Smartphone size={14} /><span>Celular e acesso remoto</span></button>
           <button onClick={() => setProfileOpen(true)}><UserCircle size={14} /><span>Conta</span><PresenceAvatar client={{ id: clientId, name: deviceName, avatar: deviceAvatar, color: colorForClient(clientId) }} tiny /></button>
           <button onClick={() => setSettingsOpen(true)}><Settings size={14} /><span>Configurações</span></button>
         </div>
       </aside>
+      {mobileSidebar && <button type="button" className="pm-mobile-scrim" aria-label="Fechar arquivos" onClick={() => setMobileSidebar(false)} />}
       {sidebarOpen && <div className="pm-sidebar-resizer pm-desktop-only" onPointerDown={resizeSidebar} />}
 
       <section className="pm-workspace">
         <header className="pm-topbar">
           <div className="pm-title-area">
-            <button className="pm-icon-button pm-mobile-only" onClick={() => setMobileSidebar(true)}><Menu size={18} /></button>
-            <button className="pm-icon-button pm-desktop-only" onClick={() => setSidebarOpen((value) => !value)} title="Mostrar/ocultar arquivos">
+            <button className="pm-icon-button pm-mobile-only" aria-label="Abrir arquivos" onClick={() => setMobileSidebar(true)}><Menu size={18} /></button>
+            <button className="pm-icon-button pm-desktop-only" aria-label="Mostrar ou ocultar arquivos" onClick={() => setSidebarOpen((value) => !value)} title="Mostrar/ocultar arquivos">
               {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
             </button>
             <span className="pm-history-controls" data-history-version={historyVersion}>
@@ -1204,9 +1262,9 @@ export default function PentaMarkApp() {
               <button className={viewMode === "preview" ? "active" : ""} onClick={() => setViewMode("preview")} title="Somente leitura"><Eye size={15} /></button>
               <button className={viewMode === "live" ? "active" : ""} onClick={() => setViewMode("live")} title="Live Preview"><Sparkles size={15} /></button>
             </div>
-            <button className="pm-share-button" onClick={() => setShareOpen(true)}><Share2 size={14} /><span>Compartilhar</span></button>
+            <button className="pm-share-button" aria-label="Compartilhar" onClick={() => setShareOpen(true)}><Share2 size={14} /><span>Compartilhar</span></button>
             <div className="pm-menu-wrap">
-              <button className="pm-icon-button" onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}><MoreHorizontal size={17} /></button>
+              <button className="pm-icon-button" aria-label="Mais ações" onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}><MoreHorizontal size={17} /></button>
               {moreOpen && <div className="pm-popover pm-note-menu" onPointerDown={(event) => event.stopPropagation()}>
                 <button onClick={() => beginDraft("note", parentOf(activePath))}><FilePlus2 size={14} />Nova nota aqui</button>
                 <button onClick={() => void chooseVault()}><FolderOpen size={14} />Abrir outro cofre</button>
@@ -1285,7 +1343,14 @@ export default function PentaMarkApp() {
           </>}
         </DocumentWorkspace>
 
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.6.2</span></footer>
+        <MobileDock
+          mode={viewMode}
+          onFiles={() => setMobileSidebar(true)}
+          onLive={() => setViewMode("live")}
+          onPreview={() => setViewMode("preview")}
+          onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
+        />
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.7.0</span></footer>
       </section>
 
       {linkPreview && <aside
@@ -1309,10 +1374,11 @@ export default function PentaMarkApp() {
       {context && <ContextDropdown context={context} scale={appearance.appScale} onClose={() => setContext(null)} onFormat={applyFormat} onBeginDraft={beginDraft} onRename={startRename} onDuplicate={duplicateNote} onDelete={deleteItem} onExpand={setAllExpanded} onOpen={(path) => void openNote(path, true)} onReveal={(kind, path) => void openInFolder(kind, path)} onPreviewAsset={(path) => { setContext(null); const asset = vault.assets.find((item) => item.path === path); if (asset) setAssetPreview(asset); }} onChooseVault={() => void chooseVault()} />}
 
       {shareOpen && <div className="pm-modal-backdrop" onMouseDown={() => setShareOpen(false)}><div className="pm-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="pm-modal-close" onClick={() => setShareOpen(false)}><X size={17} /></button>
-        <div className="pm-modal-icon"><Share2 size={21} /></div><h2>Compartilhar o cofre</h2><p>Mande o endereço do Radmin para seu amigo. Tudo que entrar no cofre — inclusive imagens e vídeos — sincroniza pelo host.</p>
-        <div className="pm-url-list">{vault.urls.map((url) => <button key={url} onClick={() => { void navigator.clipboard.writeText(url); notify("Endereço copiado"); }}><Copy size={14} /><code>{url}</code><span>{url.includes("//26.") ? "Radmin" : url.includes("localhost") ? "Local" : "Rede"}</span></button>)}</div>
-        <div className="pm-share-note"><Server size={14} />Deixe a janela preta do PentaMark aberta enquanto estiverem usando.</div>
+        <button className="pm-modal-close" aria-label="Fechar compartilhamento" onClick={() => setShareOpen(false)}><X size={17} /></button>
+        <div className="pm-modal-icon"><Share2 size={21} /></div><h2>Compartilhar o cofre</h2><p>No celular e fora de casa, prefira o endereço HTTPS criado pelo Tailscale. Na mesma rede Wi-Fi, o endereço local também funciona.</p>
+        <div className="pm-url-list">{shareUrls.map((url) => <button key={url} onClick={() => void copyValue(url)}><Copy size={14} /><code>{url}</code><span>{connectionLabel(url)}</span></button>)}</div>
+        <div className="pm-share-note"><Server size={14} />O aparelho host precisa continuar ligado e com o PentaMark aberto.</div>
+        <button className="pm-modal-inline-action" onClick={() => { setShareOpen(false); setMobileSetupOpen(true); }}><Smartphone size={14} />Configurar celular e Tailscale</button>
         <button className="pm-modal-inline-action" onClick={() => { setShareOpen(false); setConnectOpen(true); }}><LogIn size={14} />Entrar em outro cofre</button>
       </div></div>}
 
@@ -1321,7 +1387,8 @@ export default function PentaMarkApp() {
       {profileOpen && <ProfileModal name={deviceName} avatar={deviceAvatar} color={colorForClient(clientId)} onClose={() => setProfileOpen(false)} onSave={saveProfile} onError={notify} />}
       {conflictOpen && conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}
       {kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}
-      {settingsOpen && <SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} setConfig={setHostConfig} urls={vault.urls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={() => void saveSettings()} />}
+      {mobileSetupOpen && <MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} />}
+      {settingsOpen && <SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} setConfig={setHostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={() => void saveSettings()} onNotify={notify} />}
       {toast && <div className="pm-toast">{toast}</div>}
     </main>
   );

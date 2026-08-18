@@ -18,13 +18,48 @@ export function initialDeviceName() {
   return (fromConnection || localStorage.getItem("pentamark:device-name") || defaultDeviceName()).slice(0, 60);
 }
 
+export function isMobileViewport() {
+  return window.matchMedia("(max-width: 880px), (pointer: coarse)").matches;
+}
+
+export function connectionLabel(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:") return url.hostname.endsWith(".ts.net") ? "Tailscale HTTPS" : "HTTPS";
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return "Neste aparelho";
+    if (url.hostname.startsWith("26.")) return "Radmin · Windows";
+    const octets = url.hostname.split(".").map(Number);
+    if (octets.length === 4 && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) return "Tailscale";
+    return "Rede local";
+  } catch {
+    return "Endereço";
+  }
+}
+
+export async function copyText(value: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.appendChild(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("Não deu para copiar automaticamente");
+}
+
 export function normalizeConnectionAddress(input: string) {
   let value = input.trim();
   if (!value) throw new Error("Digite o endereço do host");
   if (!/^https?:\/\//i.test(value)) value = `http://${value}`;
   const target = new URL(value);
   if (target.protocol !== "http:" && target.protocol !== "https:") throw new Error("Use um endereço HTTP do PentaMark");
-  if (!target.port) target.port = "3417";
+  if (!target.port && target.protocol === "http:") target.port = "3417";
   target.pathname = "/";
   target.search = "";
   target.hash = "";

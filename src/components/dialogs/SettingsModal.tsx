@@ -2,6 +2,7 @@ import { ArrowRightLeft, Bot, Check, Copy, ExternalLink, FolderOpen, Lock, Palet
 import React from "react";
 import { DEFAULT_APPEARANCE } from "../../app/constants";
 import type { Appearance, DesktopVaultInfo, HostConfig } from "../../domain/types";
+import { connectionLabel, copyText } from "../../shared/client";
 
 export function SettingsModal(props: {
   appearance: Appearance;
@@ -14,6 +15,7 @@ export function SettingsModal(props: {
   onShowVault: () => void;
   onClose: () => void;
   onSave: () => void;
+  onNotify: (message: string) => void;
 }) {
   const themes: Array<{ id: Appearance["theme"]; name: string; color: string }> = [
     { id: "pentagory", name: "PentaMark", color: "#67e7ef" },
@@ -54,7 +56,7 @@ export function SettingsModal(props: {
       <section className="pm-settings-section"><h3><Bot size={15} />Ponte IA · Codex / MCP</h3>{props.config.isHost ? <div className="pm-ai-settings">
         <label className="pm-check-row wide"><input type="checkbox" checked={props.config.aiBridgeEnabled} onChange={(event) => props.setConfig((current) => ({ ...current, aiBridgeEnabled: event.target.checked }))} /><span><strong>Permitir acesso da IA ao cofre</strong><small>Expõe ferramentas MCP de busca, leitura, edição, movimentação e lixeira pela rede do PentaMark.</small></span></label>
         <div className="pm-ai-token"><label>Token da ponte<input value={props.config.aiBridgeToken} onChange={(event) => props.setConfig((current) => ({ ...current, aiBridgeToken: event.target.value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 128) }))} spellCheck={false} /></label><button onClick={() => { const bytes = crypto.getRandomValues(new Uint8Array(18)); props.setConfig((current) => ({ ...current, aiBridgeToken: Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("") })); }}><RotateCcw size={13} />Gerar</button></div>
-        <div className="pm-ai-urls">{props.urls.map((url) => { const mcpUrl = `${url}/mcp?token=${props.config.aiBridgeToken}`; return <button key={url} disabled={!props.config.aiBridgeEnabled} onClick={() => void navigator.clipboard.writeText(mcpUrl)}><Copy size={13} /><code>{mcpUrl}</code><span>{url.includes("//26.") ? "RADMIN" : url.includes("localhost") ? "LOCAL" : "REDE"}</span></button>; })}</div>
+        <div className="pm-ai-urls">{props.urls.map((url) => { const mcpUrl = `${url}/mcp?token=${props.config.aiBridgeToken}`; return <button key={url} disabled={!props.config.aiBridgeEnabled} onClick={() => void copyText(mcpUrl).then(() => props.onNotify("URL MCP copiada")).catch((error) => props.onNotify(error instanceof Error ? error.message : "Não deu para copiar"))}><Copy size={13} /><code>{mcpUrl}</code><span>{connectionLabel(url)}</span></button>; })}</div>
         <p><strong>No Codex:</strong> Configurações → MCP servers → Add server → Streamable HTTP. Cole a URL acima e reinicie o Codex. Ele usará a conta já conectada do seu amigo; o PentaMark não cobra nem precisa de chave da API.</p>
       </div> : <div className="pm-host-only-note"><Bot size={15} /><span>{props.config.aiBridgeEnabled ? "A Ponte IA está habilitada. Peça ao host a URL MCP com token." : "A Ponte IA está desabilitada pelo host deste cofre."}</span></div>}</section>
     </div>

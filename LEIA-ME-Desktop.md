@@ -1,4 +1,4 @@
-# PentaMark Desktop 2.6.2
+# PentaMark Desktop 2.7.0
 
 ## Como abrir
 
@@ -10,9 +10,10 @@ Não é necessário instalar Python, Node.js ou abrir outro servidor. O próprio
 
 ## Compartilhar
 
-1. No computador host, abra o PentaMark e o Radmin VPN.
-2. Clique em **Compartilhar** e copie o endereço que começa com `http://26.`.
-3. No outro computador ou celular, abra esse endereço no navegador ou use **Conectar a um cofre** no PentaMark Desktop.
+1. No computador host, abra o PentaMark.
+2. Para celular ou acesso fora de casa, execute `Configurar-Acesso-Remoto-Tailscale.bat` uma vez.
+3. Clique em **Compartilhar** e envie o endereço HTTPS do Tailscale. Na mesma rede Wi-Fi, o endereço de rede local também funciona.
+4. No celular, abra o endereço no navegador e use **Instalar app** ou **Adicionar à Tela de Início**.
 
 Use **Conta** para escolher apelido e foto. O botão **Conectados** mostra quem está online e permite ao host definir Leitor, Editor ou Admin. Os cursores remotos aparecem inclusive no Live Preview; acessos da IA ficam marcados como **IA / MCP**.
 

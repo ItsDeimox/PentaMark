@@ -1125,3 +1125,191 @@
   .pm-conflict-actions button { min-width: calc(50% - 4px); }
   .pm-lock-banner { top: 6px; }
 }
+
+/* PentaMark 2.7 — experiência instalável e navegação dedicada no celular. */
+.pm-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.pm-mobile-scrim,
+.pm-mobile-dock {
+  display: none;
+}
+
+.pm-mobile-setup-modal {
+  width: min(620px, 100%);
+  max-height: min(820px, calc(100dvh - 28px));
+  padding: 0;
+  overflow: hidden;
+}
+
+.pm-mobile-setup-heading {
+  border-bottom: 1px solid var(--pm-border);
+  padding: 24px 26px 18px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.pm-mobile-setup-heading h2,
+.pm-mobile-setup-heading p { margin: 0; }
+.pm-mobile-setup-heading h2 { font-size: 18px !important; }
+.pm-mobile-setup-heading p { color: var(--pm-muted); margin-top: 4px; line-height: 1.5; }
+
+.pm-mobile-setup-scroll {
+  max-height: calc(100dvh - 118px);
+  padding: 18px 26px 26px;
+  overflow: auto;
+  display: grid;
+  gap: 11px;
+}
+
+.pm-mobile-setup-card {
+  border: 1px solid var(--pm-border);
+  border-radius: 11px;
+  padding: 15px;
+  background: color-mix(in srgb, var(--pm-panel-3) 72%, transparent);
+}
+
+.pm-mobile-setup-card.featured {
+  border-color: var(--pm-border-bright);
+  background: linear-gradient(145deg, var(--pm-cyan-soft), color-mix(in srgb, var(--pm-panel-3) 80%, transparent));
+}
+
+.pm-mobile-setup-card > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pm-mobile-setup-card > header > svg { flex: 0 0 auto; color: var(--pm-cyan); margin-top: 1px; }
+.pm-mobile-setup-card > header div { min-width: 0; }
+.pm-mobile-setup-card > header strong,
+.pm-mobile-setup-card > header small { display: block; }
+.pm-mobile-setup-card > header strong { color: var(--pm-text); font-size: 11px; }
+.pm-mobile-setup-card > header small { color: var(--pm-muted); margin-top: 4px; font-size: 9px; line-height: 1.5; }
+.pm-mobile-setup-card ol { color: var(--pm-muted); margin: 13px 0 0; padding-left: 24px; font-size: 10px; line-height: 1.65; }
+.pm-mobile-setup-card code { color: var(--pm-cyan); overflow-wrap: anywhere; }
+.pm-mobile-help { color: var(--pm-muted); margin: 12px 0 0; font-size: 10px !important; line-height: 1.62; }
+
+.pm-install-button,
+.pm-install-state {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 13px;
+  border: 1px solid var(--pm-border-bright) !important;
+  border-radius: 8px;
+  color: var(--pm-cyan);
+  background: var(--pm-cyan-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pm-install-button { cursor: pointer; }
+.pm-install-state.success { color: #83dca0; border-color: color-mix(in srgb, #83dca0 32%, transparent) !important; background: color-mix(in srgb, #83dca0 9%, transparent); }
+
+.pm-mobile-url-list { margin-top: 12px; display: grid; gap: 6px; }
+.pm-mobile-url-list button {
+  min-height: 46px;
+  border: 1px solid var(--pm-border) !important;
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--pm-muted);
+  background: color-mix(in srgb, var(--pm-bg-base) 64%, transparent);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pm-mobile-url-list button > span { min-width: 0; flex: 1; text-align: left; }
+.pm-mobile-url-list b,
+.pm-mobile-url-list code { display: block; }
+.pm-mobile-url-list b { color: var(--pm-cyan); font-size: 9px; }
+.pm-mobile-url-list code { margin-top: 3px; color: var(--pm-muted); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; font-size: 8px; }
+
+@media (max-width: 880px) {
+  .pm-mobile-scrim {
+    display: block;
+    position: fixed;
+    z-index: 9;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #020507a8;
+    backdrop-filter: blur(3px);
+  }
+
+  .pm-sidebar { z-index: 10; }
+  .pm-brand { height: calc(74px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+  .pm-sidebar-bottom { padding-bottom: max(9px, env(safe-area-inset-bottom)); }
+  .pm-sidebar-bottom button { min-height: 42px; }
+  .pm-note-item { min-height: 44px; }
+  .pm-folder-title { min-height: 38px; }
+}
+
+@media (max-width: 520px) {
+  .pm-topbar {
+    height: calc(54px + env(safe-area-inset-top));
+    flex-basis: calc(54px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .pm-topbar .pm-view-switch { display: none; }
+  .pm-toolbar { height: 46px; flex-basis: 46px; padding-inline: 8px; gap: 4px; }
+  .pm-toolbar { scrollbar-width: none; }
+  .pm-toolbar::-webkit-scrollbar { display: none; }
+  .pm-toolbar button,
+  .pm-upload-label { width: 38px; height: 38px; flex: 0 0 38px; }
+  .pm-toolbar > span:not(.pm-document-meta) { margin-inline: 3px; }
+  .pm-editor-pane textarea,
+  .pm-live-codemirror .cm-content { font-size: max(16px, var(--pm-editor-size)) !important; }
+  .pm-statusbar { display: none; }
+
+  .pm-mobile-dock {
+    min-height: calc(61px + env(safe-area-inset-bottom));
+    flex: 0 0 calc(61px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--pm-border);
+    padding: 5px 8px max(5px, env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--pm-panel) 94%, transparent);
+    backdrop-filter: blur(18px);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+
+  .pm-mobile-dock button {
+    min-width: 0;
+    min-height: 50px;
+    border-radius: 9px;
+    color: var(--pm-faint);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 9px !important;
+  }
+
+  .pm-mobile-dock button.active { color: var(--pm-cyan); background: var(--pm-cyan-soft); }
+  .pm-mobile-dock button:active { transform: scale(.96); }
+  .pm-toast { bottom: calc(76px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); text-align: center; }
+
+  .pm-modal-backdrop { padding: env(safe-area-inset-top) 0 0; align-items: end; }
+  .pm-mobile-setup-modal,
+  .pm-connect-modal {
+    width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .pm-mobile-setup-scroll { max-height: calc(100dvh - 112px - env(safe-area-inset-top)); padding: 14px 16px max(22px, env(safe-area-inset-bottom)); }
+  .pm-mobile-setup-heading { padding: 20px 52px 16px 18px; }
+  .pm-modal input,
+  .pm-modal textarea,
+  .pm-modal select { font-size: 16px !important; }
+}

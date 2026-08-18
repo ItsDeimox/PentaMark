@@ -4,7 +4,7 @@
   <p><strong>Editor Markdown local, colaborativo e baseado em arquivos abertos.</strong></p>
 
   <p>
-    <img alt="Versão" src="https://img.shields.io/badge/versão-2.6.2-67e7ef?style=flat-square&labelColor=11181d">
+    <img alt="Versão" src="https://img.shields.io/badge/versão-2.7.0-67e7ef?style=flat-square&labelColor=11181d">
     <img alt="React" src="https://img.shields.io/badge/React-19-67e7ef?style=flat-square&labelColor=11181d">
     <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.7-67e7ef?style=flat-square&labelColor=11181d">
     <img alt="Status" src="https://img.shields.io/badge/status-em%20desenvolvimento-f0a35e?style=flat-square&labelColor=11181d">
@@ -34,6 +34,8 @@ O Somente Leitura é a fonte visual do documento. O Live Preview usa os mesmos c
 - Mermaid, tabelas, syntax highlighting e Kanban editável.
 - Ponte MCP para acesso ao cofre por Codex/IA.
 - PWA instalável pelo navegador.
+- Navegação móvel dedicada, safe areas e instalação em Android/iPhone.
+- Pacote Mobile Host para Android/Termux, sem Electron.
 
 ## Executar no Windows
 
@@ -62,7 +64,9 @@ chmod +x Iniciar-PentaMark.sh
 
 Com o host aberto, clique em **Compartilhar** e envie um dos endereços exibidos. Os outros dispositivos acessam o mesmo cofre pelo navegador; notas e anexos continuam armazenados somente no host.
 
-Para acesso fora da rede local, use uma VPN privada como Radmin VPN, Tailscale ou ZeroTier. Não exponha o servidor diretamente à internet sem autenticação e proxy adequados.
+Para acesso pelo celular ou fora da rede local, prefira Tailscale. No Windows, execute `Configurar-Acesso-Remoto-Tailscale.bat` para criar um endereço HTTPS privado e instalável. O Radmin VPN oficial é somente Windows.
+
+Veja [CELULAR.md](CELULAR.md) para instalação da PWA, acesso remoto, Ponte MCP e o modo opcional de host Android.
 
 ## Compatibilidade Markdown e Obsidian
 
@@ -97,6 +101,7 @@ O token da ponte concede acesso ao cofre e deve ser compartilhado somente com pe
 npm install
 npm run dev       # frontend Vite
 npm run check     # TypeScript + build local
+npm run mobile:bundle # pacote autônomo para Android/Termux
 ```
 
 Principais áreas:
@@ -134,8 +139,8 @@ Também é possível abrir qualquer pasta externa como cofre. Para backup, copie
 - [x] Colaboração, presença e permissões.
 - [x] Compatibilidade com formatos do Obsidian.
 - [x] Ponte Codex / MCP.
-- [ ] Distribuição portátil `.exe` para Windows.
-- [ ] Aplicativo mobile dedicado.
+- [x] Distribuição portátil `.exe` para Windows.
+- [x] PWA mobile dedicada e pacote opcional de host Android.
 
 ---
 
