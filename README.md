@@ -4,7 +4,7 @@
   <p><strong>Editor Markdown local, colaborativo e baseado em arquivos abertos.</strong></p>
 
   <p>
-    <img alt="Versão" src="https://img.shields.io/badge/versão-2.9.0-67e7ef?style=flat-square&labelColor=11181d">
+    <img alt="Versão" src="https://img.shields.io/badge/versão-2.10.0-67e7ef?style=flat-square&labelColor=11181d">
     <img alt="React" src="https://img.shields.io/badge/React-19-67e7ef?style=flat-square&labelColor=11181d">
     <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.7-67e7ef?style=flat-square&labelColor=11181d">
     <img alt="Status" src="https://img.shields.io/badge/status-em%20desenvolvimento-f0a35e?style=flat-square&labelColor=11181d">
@@ -91,7 +91,7 @@ Também são reconhecidos:
 
 ## Ponte Codex / MCP
 
-Em **Configurações → Ponte IA · Codex / MCP**, o host pode ativar uma URL MCP autenticada. Ela permite que ferramentas compatíveis listem, busquem, leiam e editem o cofre sob demanda, sem copiar todas as notas para outra máquina.
+Em **três pontos → Ponte MCP (ou Configurações → MCP)**, o host pode ativar uma URL MCP autenticada. Ela permite que ferramentas compatíveis listem, busquem, leiam e editem o cofre sob demanda, sem copiar todas as notas para outra máquina.
 
 O token da ponte concede acesso ao cofre e deve ser compartilhado somente com pessoas autorizadas.
 

@@ -1,4 +1,4 @@
-# PentaMark Mobile Host 2.9.0
+# PentaMark Mobile Host 2.10.0
 
 Este pacote transforma um Android em host do PentaMark sem Electron e sem instalar dependências do projeto. O servidor, a interface móvel e a Ponte MCP já estão compilados.
 
@@ -35,3 +35,7 @@ O Android pode suspender o Termux quando a tela apaga. Desative a otimização d
 ## Encerrar
 
 Volte ao Termux e pressione `Ctrl+C`. Se o wake lock tiver sido ativado, execute `termux-wake-unlock`.
+
+## Visual atualizado
+
+O novo modo Acrílico está no menu dos três pontos, com circuitos discretos revelados pela luz do cursor em dispositivos com mouse. Em aparelhos sem WebGL há fallback, e o modo Flat permanece disponível.

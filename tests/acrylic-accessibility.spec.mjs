@@ -30,7 +30,9 @@ test('a simulated non-host response exposes no bridge token or configuration act
   });
   await open(page,'Ponte MCP');
   const dialog=page.getByRole('dialog',{name:'Ponte MCP',exact:true});
-  await expect(dialog.getByText('Somente leitura',{exact:true})).toBeVisible();
+  // The optional footer hint is hidden on compact dialog widths. The access
+  // notice in the content is the persistent explanation of non-host access.
+  await expect(dialog.getByText('Somente o host pode configurar a ponte.',{exact:false})).toBeVisible();
   await expect(dialog.getByLabel('Token da ponte')).toHaveCount(0);
   await expect(dialog.getByRole('switch')).toHaveCount(0);
   await expect(dialog.getByRole('button',{name:'Salvar ponte',exact:true})).toHaveCount(0);
