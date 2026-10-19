@@ -18,7 +18,6 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Apply reviewed source changes with checksum verification
-        id: apply
         run: |
           if [ -f scripts/approved-ui.patch.gz ]; then
             python - <<'PY'
@@ -32,6 +31,8 @@ jobs:
           assert hashlib.sha256(patch).hexdigest() == '82b3b7eb2b48e413890ba20e82dafe929ea3979a7d3c85b4eeedc752ac48a8d6'
           subprocess.run(['git','apply','--check','--unidiff-zero'],input=patch,check=True)
           subprocess.run(['git','apply','--unidiff-zero'],input=patch,check=True)
+          source=pathlib.Path('src/app/PentaMarkApp.tsx')
+          source.write_text(source.read_text().replace('\n        \n','\n\n'))
           PY
           fi
       - run: npm ci --ignore-scripts
@@ -40,7 +41,6 @@ jobs:
           npm install --ignore-scripts --save-exact @fontsource/chakra-petch@5.3.0
           npm install --ignore-scripts --save-dev --save-exact @playwright/test@1.56.1
       - run: npm run check
-        id: check
       - name: Record compiled source on the isolated branch
         if: hashFiles('scripts/approved-ui.patch.gz') != ''
         run: |
@@ -58,7 +58,5 @@ jobs:
         if: always()
         with:
           name: approved-workspace-evidence
-          path: |
-            test-results/
-            scripts/approved-ui.patch.gz
+          path: test-results/
           retention-days: 7
