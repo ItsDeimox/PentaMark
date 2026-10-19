@@ -1,0 +1,69 @@
+name: Publish PentaMark 2.12.0 binaries
+on:
+  push:
+    branches: [agent/visual-acrylic]
+    paths:
+      - '.github/workflows/publish-existing-2.12.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Download already validated Windows and host packages
+        uses: actions/download-artifact@v4
+        with:
+          name: PentaMark-2.12.0-Windows-and-hosts
+          run-id: 39314679888
+          github-token: ${{ github.token }}
+          path: validated
+      - name: Verify exact Windows executable checksum and package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="validated/desktop-dist/PentaMark-Desktop-2.12.0-Windows.exe"
+          test -f "$exe"
+          test "$(stat -c%s "$exe")" -gt 40000000
+          echo "544f93cc0b8d66630b63da54c6eff25d3ae5d1a39a1ae7561d68fe936f415ff5  $exe" | sha256sum --check --status
+          test -s "validated/release-packages/PentaMark-2.12.0-Pronto.zip"
+          test -s "validated/release-packages/PentaMark-2.12.0-Mobile-Host-Android.zip"
+          sha256sum "$exe"
+          find validated -type f -printf '%p %s bytes\n'
+      - name: Publish public GitHub Release without merging main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v2.12.0"
+          source_sha="4b408aa5092295293894422ec76bd788f66db98a"
+          exe="validated/desktop-dist/PentaMark-Desktop-2.12.0-Windows.exe"
+          pc="validated/release-packages/PentaMark-2.12.0-Pronto.zip"
+          mobile="validated/release-packages/PentaMark-2.12.0-Mobile-Host-Android.zip"
+          cat > /tmp/release-notes.md <<'NOTES'
+          ## PentaMark 2.12.0 · Optical polish
+
+          Interface com acrílico, iluminação discreta e aberração cromática nas bordas, tooltips personalizadas com atalhos, mais ações na barra flutuante de seleção, efeito suave no texto selecionado e refinamentos de abertura de arquivos, botões e painéis.
+
+          **Windows:** baixe PentaMark-Desktop-2.12.0-Windows.exe e abra normalmente. É portátil e dispensa Node.js. Faça backup do cofre e feche a versão antiga antes de atualizar. O executável ainda não possui assinatura de código.
+
+          Também há pacotes opcionais de host local e Android/Termux.
+
+          **Testes:** build TypeScript, 69 cenários Playwright e inicialização real do executável com leitura/gravação de nota passaram em [GitHub Actions](https://github.com/ItsDeimox/PentaMark/actions/runs/39314679888).
+
+          **Escopo:** esta versão foi criada a partir do commit validado na branch agent/visual-acrylic. A main não foi modificada.
+          NOTES
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release already exists; uploading validated assets"
+            gh release upload "$tag" "$exe" "$pc" "$mobile" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "$exe" "$pc" "$mobile" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$source_sha" \
+              --title "PentaMark v2.12.0 | Optical polish" \
+              --notes-file /tmp/release-notes.md \
+              --latest
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,tagName,assets
