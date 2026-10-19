@@ -1,0 +1,22 @@
+name: Source snapshot for polish
+on:
+  push:
+    branches: [agent/visual-acrylic]
+    paths: ['.github/workflows/source-polish-snapshot.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git archive --format=tar.gz -o /tmp/pentamark-polish-src.tar.gz HEAD
+          stat -c 'Archive size: %s bytes' /tmp/pentamark-polish-src.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pentamark-polish-source
+          path: /tmp/pentamark-polish-src.tar.gz
+          retention-days: 1
+          if-no-files-found: error
