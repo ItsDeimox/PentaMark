@@ -1,0 +1,49 @@
+name: Host validated PentaMark 2.12.0 EXE on GitHub
+on:
+  push:
+    branches: [agent/visual-acrylic]
+    paths: ['.github/workflows/publish-binary-branch.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  download-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch validated PentaMark 2.12.0 build
+        uses: actions/download-artifact@v4
+        with:
+          name: PentaMark-2.12.0-Windows-and-hosts
+          run-id: 39314679888
+          github-token: ${{ github.token }}
+          path: validated
+      - name: Verify and publish binary to isolated GitHub branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="validated/desktop-dist/PentaMark-Desktop-2.12.0-Windows.exe"
+          echo "544f93cc0b8d66630b63da54c6eff25d3ae5d1a39a1ae7561d68fe936f415ff5  $exe" | sha256sum --check
+          test "$(stat -c%s "$exe")" -eq 83506319
+          git config user.name "PentaMark Distribution"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan downloads/v2.12.0
+          git read-tree --empty
+          cp "$exe" PentaMark-Desktop-2.12.0-Windows.exe
+          cat > ABOUT.txt <<'TXT'
+          PentaMark v2.12.0 portable Windows executable
+          SHA-256: 544f93cc0b8d66630b63da54c6eff25d3ae5d1a39a1ae7561d68fe936f415ff5
+          Size: 83506319 bytes
+          Validated source commit: 4b408aa5092295293894422ec76bd788f66db98a
+          Build and test run: https://github.com/ItsDeimox/PentaMark/actions/runs/39314679888
+
+          This download branch contains only the validated Windows executable and
+          this metadata file. It does not change the main or review branch source.
+          The executable is unsigned; make a backup of your Markdown vault.
+          TXT
+          git add PentaMark-Desktop-2.12.0-Windows.exe ABOUT.txt
+          git commit -m "dist: host validated PentaMark 2.12.0 portable Windows binary"
+          git push origin HEAD:refs/heads/downloads/v2.12.0
+          echo "Direct download:"
+          echo "https://github.com/ItsDeimox/PentaMark/raw/refs/heads/downloads/v2.12.0/PentaMark-Desktop-2.12.0-Windows.exe"
