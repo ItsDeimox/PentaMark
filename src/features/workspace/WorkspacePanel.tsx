@@ -37,8 +37,19 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
       if (ref.current?.contains(target) || target.closest("[data-workspace-trigger],.pm-modal-backdrop,.pm-modal")) return;
       closeRef.current();
     };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || (event.target as HTMLElement)?.closest?.(".pm-modal-backdrop,.pm-modal")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeRef.current();
+      requestAnimationFrame(() => {
+        if (restore.current?.isConnected && !restore.current.closest("[inert]")) restore.current.focus({ preventScroll: true });
+      });
+    };
     document.addEventListener("pointerdown", outside);
-    return () => { cancelAnimationFrame(frame); document.removeEventListener("pointerdown", outside); };
+    // Capture Escape even during the opening frame, before focus reaches the panel.
+    document.addEventListener("keydown", escape, true);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape, true); };
   }, [mounted, open]);
 
   const close = () => {
@@ -54,8 +65,6 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
     <div ref={ref} className={`pm-workspace-panel ${className}`} role="dialog" aria-modal={modal || undefined}
       aria-labelledby={id} data-entered={entered && open} inert={!open}
       onKeyDown={(event) => {
-        // Source fields must not invoke the underlying editor's formatting handlers.
-        event.stopPropagation();
         if (event.key === "Escape") { event.preventDefault(); close(); return; }
         if (event.key !== "Tab") return;
         const focusable = Array.from(ref.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex='0']") || []).filter(el => el.getClientRects().length);

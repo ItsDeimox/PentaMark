@@ -38,8 +38,10 @@
 }
 .pm-shell[data-theme] .pm-brand { flex: 0 0 83px; height: 83px; gap: 15px; padding: 0 25px; border: 0; }
 .pm-shell[data-theme] .pm-brand strong { font-size: 1.38em; font-weight: 600; letter-spacing: .015em; }
-.pm-shell[data-theme] .pm-mark { width: 33px; height: 33px; filter: none; background: var(--pm-text); }
-.pm-shell[data-theme] .pm-mark span { background: var(--pm-panel); }
+.pm-shell[data-theme] .pm-mark { width: 33px; height: 33px; filter: none; background: transparent; }
+.pm-shell[data-theme] .pm-mark:before { width: 32px; height: 32px; background: var(--pm-text); }
+.pm-shell[data-theme] .pm-mark:after { width: 26px; height: 26px; background: var(--pm-panel); }
+.pm-shell[data-theme] .pm-mark span { display: none; }
 .pm-shell[data-theme] .pm-sidebar-collapse { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: auto; color: var(--pm-muted); font-size: .82em; padding: 8px 0 8px 8px; background: transparent; cursor: pointer; }
 .pm-shell[data-theme] .pm-sidebar-collapse:hover { color: var(--pm-text); }
 .pm-shell[data-theme] .pm-library-head { height: 52px; padding: 0 22px; gap: 10px; color: var(--pm-text); border: 0; }
@@ -50,12 +52,15 @@
 .pm-shell[data-theme] .pm-library-head small { display: none; }
 .pm-shell[data-theme] .pm-note-list { padding: 4px 17px 20px; scrollbar-gutter: stable; }
 .pm-shell[data-theme] :is(.pm-folder-title,.pm-note-item) { min-height: 43px; height: auto; padding-top: 8px; padding-bottom: 8px; gap: 11px; border: 0; box-shadow: none; color: #c3cbce; }
-.pm-shell[data-theme] .pm-note-item strong { font-weight: 400; }
+.pm-shell[data-theme] .pm-note-item strong { font-size: 1em; font-weight: 400; color: inherit; }
+.pm-shell[data-theme] .pm-note-item > span:first-of-type { flex: 1; min-width: 0; font-size: 1em; }
+.pm-shell[data-theme] .pm-folder-title { font-weight: 400; }
+.pm-sidebar-collapse svg { transform: rotate(180deg); }
 .pm-shell[data-theme] .pm-note-item > svg:not(.pm-drag-grip) { width: 19px; height: 19px; color: #d3dbdd; flex-shrink: 0; }
 .pm-shell[data-theme] .pm-folder-title > svg { color: #7bc1ce; width: 17px; height: 17px; flex-shrink: 0; }
 .pm-shell[data-theme] .pm-note-item small, .pm-shell[data-theme] .pm-folder-title > small { display: none; }
-.pm-shell[data-theme] .pm-note-item.active { background: var(--pm-cyan-soft) !important; color: #e4f1f3; box-shadow: inset 2px 0 var(--pm-cyan); }
-.pm-shell[data-theme] .pm-note-item:hover:not(.active), .pm-shell[data-theme] .pm-folder-title:hover { background: #ffffff06; }
+.pm-shell[data-theme] .pm-note-item--active { background: var(--pm-cyan-soft) !important; color: #e4f1f3; box-shadow: inset 2px 0 var(--pm-cyan); }
+.pm-shell[data-theme] .pm-note-item:hover:not(.pm-note-item--active), .pm-shell[data-theme] .pm-folder-title:hover { background: #ffffff06; }
 .pm-shell[data-theme] .pm-sidebar-create { border-top: 1px solid var(--pm-border); margin: 0 21px; padding: 14px 0; }
 .pm-sidebar-create button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; background: transparent; color: var(--pm-text); cursor: pointer; }
 .pm-shell[data-theme] .pm-sidebar-resizer { position: absolute; z-index: 40; top: calc(var(--pm-frame-gap) + 84px); bottom: calc(var(--pm-frame-gap) + 65px); left: calc(var(--pm-frame-gap) + var(--pm-sidebar-width) - 3px); width: 6px; flex: none; }
@@ -114,7 +119,7 @@
 .pm-selection-tools button:hover { background: var(--pm-cyan-soft); color: var(--pm-cyan); }
 @keyframes pm-controls-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .pm-shell[data-compact="true"] .pm-workspace { margin: 0; padding-top: 96px; }
-.pm-shell[data-compact="true"] .pm-sidebar { width: min(var(--pm-sidebar-width), calc(100% - 2 * var(--pm-frame-gap))); z-index: 160; }
+.pm-shell[data-compact="true"] .pm-sidebar { width: min(440px, calc(100% - 2 * var(--pm-frame-gap))); z-index: 160; }
 .pm-shell[data-compact="true"] .pm-sidebar--closed { transform: translateX(-14px); }
 .pm-shell[data-compact="true"] .pm-mobile-scrim { display: block; position: absolute; z-index: 150; inset: 0; background: #0005; border: 0; }
 .pm-shell[data-compact="true"] .pm-command-bar { gap: 8px; }
@@ -125,7 +130,7 @@
 .pm-shell[data-compact="true"] .pm-document-path { flex-basis: 35px; }
 .pm-shell[data-compact="true"] .pm-document { --pm-md-h1-size: clamp(28px, 1.9em, 42px); }
 @media (prefers-reduced-motion: reduce) {
-  .pm-shell[data-theme] .pm-sidebar, .pm-workspace-panel, .pm-workspace-scrim, .pm-selection-tools { transition: none; animation: none; }
+  .pm-shell[data-theme] .pm-sidebar, .pm-workspace-panel, .pm-workspace-scrim, .pm-selection-tools { transition: none !important; animation: none !important; }
 }
 /* The vault root is the heading. Tools occupy its spare right-hand space. */
 .pm-shell[data-theme] .pm-library-head { position: absolute; z-index: 2; right: 17px; top: 87px; height: 43px; padding: 0; }
