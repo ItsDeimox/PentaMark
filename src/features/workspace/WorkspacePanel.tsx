@@ -34,7 +34,7 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
     });
     const outside = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
-      if (ref.current?.contains(target) || target.closest("[data-workspace-trigger],.pm-modal-backdrop,.pm-modal")) return;
+      if (ref.current?.contains(target) || target.closest("[data-workspace-trigger],.pm-workspace-scrim,.pm-modal-backdrop,.pm-modal")) return;
       closeRef.current();
     };
     const escape = (event: KeyboardEvent) => {

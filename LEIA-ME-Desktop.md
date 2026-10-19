@@ -1,4 +1,4 @@
-# PentaMark Desktop 2.8.0
+# PentaMark Desktop 2.9.0
 
 ## Como abrir
 

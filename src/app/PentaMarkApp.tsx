@@ -1,3 +1,4 @@
+import { useTreeInputFocus } from "../features/workspace/useTreeInputFocus";
 import {
   Archive,
   ArrowLeft,
@@ -541,8 +542,8 @@ export default function PentaMarkApp() {
     return () => { window.removeEventListener("mouseup", mouse); window.removeEventListener("auxclick", mouse); window.removeEventListener("keydown", key); };
   }, [navigateHistory]);
 
-  useEffect(() => { if (draft) requestAnimationFrame(() => draftRef.current?.focus()); }, [draft]);
-  useEffect(() => { if (renaming) requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); }); }, [renaming?.path]);
+  useTreeInputFocus(draftRef, draft ? `${draft.kind}:${draft.parent}` : "");
+  useTreeInputFocus(renameRef, renaming?.path || "", true);
   const markdownContext = useMemo<MarkdownContext>(() => ({ activePath, notes: vault.notes, folders: vault.folders, assets: vault.assets }), [activePath, vault.assets, vault.folders, vault.notes]);
 
   useEffect(() => {
@@ -1228,7 +1229,7 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.8.0</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.9.0</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
