@@ -45,21 +45,20 @@ export function SettingsModal(p: {
     document.getElementById(`${id}-${TABS[next].id}`)?.focus();
   }}>{TABS.map(({id:key,label,icon:Icon}) => <button type="button" id={`${id}-${key}`} key={key} role="tab" aria-selected={tab===key}
     aria-controls={`${id}-content`} tabIndex={tab===key ? 0 : -1} onClick={() => setTab(key)}><Icon size={17}/><span>{label}</span></button>)}</div><small>As mudanças visuais aparecem em tempo real.</small></nav>;
-  return <DialogFrame title="Configurações" subtitle="Um espaço de trabalho com a sua identidade." icon={Settings} className="pm-settings-dialog" navigation={navigation} onClose={close} onSubmit={() => void save()}
+  return <DialogFrame title="Configurações" icon={Settings} className="pm-settings-dialog" navigation={navigation} onClose={close} onSubmit={() => void save()}
     footer={<><button type="button" className="pm-text-action" disabled={saving} onClick={() => p.setAppearance({ ...DEFAULT_APPEARANCE })}><RotateCcw size={14}/><span>Restaurar visual</span></button><span className="pm-footer-spacer"/><button type="button" className="secondary" disabled={saving} onClick={close}>Cancelar</button><button type="submit" className="primary" disabled={saving}><Check size={15}/>{saving ? 'Salvando…' : 'Salvar configurações'}</button></>}>
     <div role="tabpanel" id={`${id}-content`} aria-labelledby={`${id}-${tab}`} className="pm-preference-page" key={tab}>
       {tab==='appearance' && <>
-        <DialogSection title="Identidade visual" hint="O mesmo tom percorre o vidro, os controles e os detalhes de luz.">
+        <DialogSection title="Identidade visual">
           <div className="pm-theme-options">{THEMES.map(theme => <button type="button" key={theme.id} aria-pressed={p.appearance.theme===theme.id} onClick={() => appearance({theme:theme.id})} style={{'--pm-swatch':theme.color} as React.CSSProperties}><i/><span>{theme.name}</span>{p.appearance.theme===theme.id && <Check size={13}/>}</button>)}</div>
         </DialogSection>
-        <DialogSection title="Material dos painéis" hint="Acabamento visual independente da cor do tema.">
-          <div className="pm-material-options"><button type="button" aria-pressed={p.appearance.graphicsMode==='flat'} onClick={() => appearance({graphicsMode:'flat'})}><Square size={21}/><strong>Flat</strong><small>Fosco e direto.<br/>Consumo mínimo.</small></button><button type="button" aria-pressed={p.appearance.graphicsMode==='acrylic'} onClick={() => appearance({graphicsMode:'acrylic'})}><Layers size={21}/><strong>Acrílico</strong><small>Vidro e microtextura.<br/>Circuitos sob a luz.</small></button></div>
-          <div className="pm-material-demo" aria-label="Amostra do tema"><div className="pm-demo-rail"><i/><i/><i/></div><div><small>PRÉVIA DO MATERIAL</small><strong>PentaMark</strong><p>Passe o cursor sobre o painel.</p><div className="pm-demo-strokes"><i/><i/></div></div><Layers size={34}/></div>
-          <p className="pm-field-hint">O acrílico usa WebGL sob demanda. A luz revela detalhes sem desfocar o texto; em repouso, o material não mantém uma animação contínua.</p>
+        <DialogSection title="Gráficos">
+          <div className="pm-material-options"><button type="button" aria-pressed={p.appearance.graphicsMode==='flat'} onClick={() => appearance({graphicsMode:'flat'})}><Square size={21}/><strong>Flat</strong></button><button type="button" aria-pressed={p.appearance.graphicsMode==='acrylic'} onClick={() => appearance({graphicsMode:'acrylic'})}><Layers size={21}/><strong>Acrílico</strong></button></div>
+
         </DialogSection>
       </>}
       {tab==='type' && <>
-        <DialogSection title="Fontes" hint="Interface e documento podem ter personalidades diferentes."><div className="pm-field-grid">
+        <DialogSection title="Fontes"><div className="pm-field-grid">
           <label className="pm-field">Fonte da interface<select aria-label="Fonte da interface" value={p.appearance.uiFont} onChange={e => appearance({uiFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           <label className="pm-field">Fonte do editor<select aria-label="Fonte do editor" value={p.appearance.editorFont} onChange={e => appearance({editorFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           {p.appearance.uiFont==='custom' && <label className="pm-field wide">Fonte instalada da interface<input value={p.appearance.customUiFont} onChange={e => appearance({customUiFont:e.target.value})}/></label>}

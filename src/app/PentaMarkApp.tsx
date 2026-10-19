@@ -1032,7 +1032,6 @@ export default function PentaMarkApp() {
             onDragStart={(event) => onDragStart(event, { kind: "note", path: note.path })}
             onDragEnd={() => { setDragging(null); setDropTarget(null); }}
             onClick={() => void openNote(note.path, true)}
-            onDoubleClick={() => startRename("note", note.path)}
             onContextMenu={(event) => openContext(event, { type: "note", path: note.path, x: event.clientX, y: event.clientY })}
             title={`${note.path} — arraste para mover`}
           >
@@ -1087,7 +1086,6 @@ export default function PentaMarkApp() {
             onDragStart={(event) => !root && onDragStart(event, { kind: "folder", path })}
             onDragEnd={() => { setDragging(null); setDropTarget(null); }}
             onClick={() => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })}
-            onDoubleClick={() => !root && startRename("folder", path)}
             onContextMenu={(event) => openContext(event, root ? { type: "blank", x: event.clientX, y: event.clientY } : { type: "folder", path, x: event.clientX, y: event.clientY })}
             title={`${root ? "Raiz do cofre" : path} — solte itens aqui para mover`}
           >

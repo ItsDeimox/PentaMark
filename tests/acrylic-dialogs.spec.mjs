@@ -13,7 +13,7 @@ test('MCP is immediately available and opening its panel never activates the bri
   const dialog=page.getByRole('dialog',{name:'Ponte MCP',exact:true});
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel('Token da ponte')).toHaveAttribute('type','password');
-  await expect(dialog.locator('.pm-acrylic-pane')).toHaveCount(1);
+  await expect(dialog.locator('.pm-dialog > .pm-acrylic-pane')).toHaveCount(1);
   await expect(dialog.getByText('Streamable HTTP',{exact:true})).toBeVisible();
   await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();
   expect((await (await page.request.get('/api/config')).json()).aiBridgeEnabled).toBe(before.aiBridgeEnabled);
@@ -56,7 +56,7 @@ test('cursor circuit illumination changes real pixels only on its active backing
 for(const [button,title] of [['Compartilhar','Compartilhar o cofre'],['Conectar a um cofre','Conectar a um cofre'],['Celular e acesso remoto','PentaMark no celular']]){
  test(`${title} uses the shared acrylic dialog with bounded mobile geometry`,async({page},info)=>{
   await page.setViewportSize({width:390,height:660});await tools(page);await page.getByRole('button',{name:button,exact:true}).click();
-  const dialog=page.getByRole('dialog',{name:title,exact:true});await expect(dialog).toBeVisible();await expect(dialog.locator('.pm-acrylic-pane')).toHaveCount(1);
+  const dialog=page.getByRole('dialog',{name:title,exact:true});await expect(dialog).toBeVisible();await expect(dialog.locator('.pm-dialog > .pm-acrylic-pane')).toHaveCount(1);
   const b=await dialog.locator('.pm-dialog').boundingBox();expect(b.x).toBeGreaterThanOrEqual(0);expect(b.x+b.width).toBeLessThanOrEqual(391);expect(b.y+b.height).toBeLessThanOrEqual(661);
   await page.screenshot({path:info.outputPath('mobile.png')});await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();
  });

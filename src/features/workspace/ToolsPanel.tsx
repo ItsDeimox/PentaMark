@@ -35,11 +35,11 @@ export function ToolsPanel(p: {
       <div className="pm-mode-grid">{modes.map(({id,label,name,icon:Icon}) => <button key={id} aria-label={name} title={name}
         aria-pressed={p.mode===id} onClick={()=>p.onMode(id)}><Icon size={17}/><span>{label}</span></button>)}</div>
     </section>
-    <section className="pm-tool-section"><div className="pm-section-label">MATERIAL</div>
+    <section className="pm-tool-section"><div className="pm-section-label">GRÁFICOS</div>
       <div className="pm-material-switch" role="group" aria-label="Modo gráfico">
         <button aria-pressed={p.graphics==='flat'} onClick={()=>p.onGraphics('flat')}><Square size={16}/>Flat</button>
         <button aria-pressed={p.graphics==='acrylic'} onClick={()=>p.onGraphics('acrylic')}><Layers size={16}/>Acrílico</button>
-      </div><p className="pm-material-hint">{p.graphics==='acrylic'?'Vidro texturizado · WebGL sob demanda':'Superfícies foscas · consumo mínimo'}</p>
+      </div>
     </section>
     <section className="pm-tool-section"><div className="pm-section-label"><span>DOCUMENTO</span><span className="pm-history-controls">
       <button aria-label="Voltar" disabled={!p.canBack} onClick={p.onBack}><ArrowLeft size={14}/></button>

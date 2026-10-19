@@ -18,7 +18,7 @@ export function DialogPresence({ open, children }: { open: boolean; children: Re
 }
 
 /** The browser top layer owns modality, including nested confirmation dialogs. */
-export function DialogFrame({ title, subtitle, icon: Icon, children, footer, navigation, onClose, onSubmit, className = '', eyebrow = 'PENTAMARK' }: {
+export function DialogFrame({ title, subtitle, icon: Icon, children, footer, navigation, onClose, onSubmit, className = '', eyebrow = '' }: {
   title: string; subtitle?: string; icon: LucideIcon; children: ReactNode; footer?: ReactNode; navigation?: ReactNode;
   onClose: () => void; onSubmit?: (event: FormEvent<HTMLFormElement>) => void; className?: string; eyebrow?: string;
 }) {
@@ -64,7 +64,7 @@ export function DialogFrame({ title, subtitle, icon: Icon, children, footer, nav
     <form className={`pm-modal pm-dialog ${className}`} onSubmit={event => { event.preventDefault(); if (open) onSubmit?.(event); }} inert={!open}>
       <header className="pm-dialog-header">
         <div className="pm-dialog-emblem" aria-hidden="true"><Icon size={22}/></div>
-        <div className="pm-dialog-heading"><span className="pm-dialog-eyebrow">{eyebrow}</span><h2 id={titleId}>{title}</h2>{subtitle && <p id={descriptionId}>{subtitle}</p>}</div>
+        <div className="pm-dialog-heading">{eyebrow && <span className="pm-dialog-eyebrow">{eyebrow}</span>}<h2 id={titleId}>{title}</h2>{subtitle && <p id={descriptionId}>{subtitle}</p>}</div>
         <button type="button" className="pm-dialog-close" onClick={onClose} aria-label={`Fechar ${title}`}><X size={18}/></button>
       </header>
       <div className="pm-dialog-content">{navigation}<div className="pm-dialog-body">{children}</div></div>
