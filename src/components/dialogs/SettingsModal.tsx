@@ -30,6 +30,10 @@ export function SettingsModal(props: {
       <section className="pm-settings-section"><h3><Palette size={15} />Tema</h3><div className="pm-theme-grid">
         {themes.map((theme) => <button key={theme.id} className={props.appearance.theme === theme.id ? "active" : ""} onClick={() => props.setAppearance((current) => ({ ...current, theme: theme.id }))}><span style={{ background: theme.color }} /><strong>{theme.name}</strong></button>)}
       </div></section>
+      <section className="pm-settings-section"><h3><Palette size={15} />Modo gráfico</h3>
+        <div className="pm-material-switch"><button aria-pressed={props.appearance.graphicsMode !== "acrylic"} onClick={() => props.setAppearance(c => ({ ...c, graphicsMode: "flat" }))}>Flat</button><button aria-pressed={props.appearance.graphicsMode === "acrylic"} onClick={() => props.setAppearance(c => ({ ...c, graphicsMode: "acrylic" }))}>Acrílico</button></div>
+        <small className="pm-settings-hint">Acrílico usa WebGL sob demanda, com refração do fundo óptico, textura e blur. Sem WebGL, o painel usa vidro nativo.</small>
+      </section>
       <section className="pm-settings-section"><h3><Type size={15} />Fontes</h3><div className="pm-settings-grid">
         <label>Interface<select value={props.appearance.uiFont} onChange={(event) => props.setAppearance((current) => ({ ...current, uiFont: event.target.value }))}><option value="technical">Técnica · PentaMark</option><option value="modern">Moderna</option><option value="rounded">Arredondada</option><option value="mono">Monoespaçada</option><option value="serif">Serifada</option><option value="custom">Personalizada</option></select></label>
         <label>Editor<select value={props.appearance.editorFont} onChange={(event) => props.setAppearance((current) => ({ ...current, editorFont: event.target.value }))}><option value="mono">Monoespaçada</option><option value="technical">Técnica · PentaMark</option><option value="modern">Moderna</option><option value="rounded">Arredondada</option><option value="serif">Serifada</option><option value="custom">Personalizada</option></select></label>

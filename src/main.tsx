@@ -11,7 +11,7 @@ import "@fontsource/chakra-petch/latin-400-italic.css";
 import "@fontsource/chakra-petch/latin-500.css";
 import "@fontsource/chakra-petch/latin-600.css";
 import "@fontsource/chakra-petch/latin-700.css";
-import "./features/workspace/approved-workspace.css";
+import "./features/workspace/chrome.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -22,4 +22,5 @@ export type LiveEditorProps = {
   onLinkHover: (event: MouseEvent) => void;
   onLinkLeave: () => void;
   onContextMenu: (event: MouseEvent) => void;
+  onEditBlock?: (from: number, to: number) => void;
 };

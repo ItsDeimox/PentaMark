@@ -48,10 +48,88 @@ test('context menu offers directory immediately and preview remains anchored', a
   await link.hover();
   const preview=page.locator('.pm-link-hover-preview').first();
   await expect(preview).toBeVisible();
+  await page.waitForTimeout(200);
   const initial=await preview.boundingBox();
   const box=await link.boundingBox();await page.mouse.move(box.x + 2, box.y + 2);
   await page.waitForTimeout(100);
   expect(await preview.boundingBox()).toEqual(initial);
   await preview.getByText('Link B', {exact:true}).hover();
   await expect(page.locator('.pm-link-hover-preview')).toHaveCount(2);
+});
+
+test('block source applies through an undoable transaction and cancel keeps the document intact', async ({ page }) => {
+  await blocks(page);
+  const editor=page.getByRole('textbox',{name:'Editor Markdown em Live Preview'});
+  const current=()=>page.evaluate(async()=>{
+    const response=await fetch('/api/note?path='+encodeURIComponent('03 - Blocos.md'));
+    return (await response.json()).content;
+  });
+  const original=await current();
+  const open=()=>page.locator('.pm-live-widget .pm-callout').first().getByText('Mais uma linha',{exact:false}).click();
+  await open();
+  const source=page.getByRole('textbox',{name:'Fonte Markdown do bloco'});
+  const before=await source.inputValue();
+  await source.fill(before.replace('Uma citação','Uma citação revisada'));
+  await page.getByRole('button',{name:'Aplicar',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Editar bloco'})).not.toBeVisible();
+  await editor.focus();await page.keyboard.press('Control+s');
+  await expect.poll(current).toContain('Uma citação revisada');
+  await page.keyboard.press('Control+z');await page.keyboard.press('Control+s');
+  await expect.poll(current).toBe(original);
+  await open();await source.fill(before+'\n> alteração descartada');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Cancelar',exact:true}).click();
+  await expect.poll(current).toBe(original);
+});
+
+test('texture renders real pixels, stops while idle and releases all surfaces in Flat mode', async ({ page }, testInfo) => {
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('/');
+  await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
+  await page.getByRole('button',{name:'Acrílico',exact:true}).click();
+  const canvas=page.locator('canvas[data-material="acrylic"]');
+  await expect(canvas).toHaveAttribute('data-renderer','webgl');
+  await page.mouse.move(1000,900);await page.waitForTimeout(600);
+  const rendered=await page.locator('.pm-sidebar .pm-acrylic-pane').evaluate(c=>{
+    const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let count=0;const shades=new Set();
+    for(let i=3;i<data.length;i+=4){if(data[i]>0)count++;if(i%28===3)shades.add(data[i-3]+','+data[i-2]+','+data[i-1]);}
+    return {count,shades:shades.size};
+  });
+  expect(rendered.count).toBeGreaterThan(1000);expect(rendered.shades).toBeGreaterThan(10);
+  const frames=await canvas.getAttribute('data-draws');await page.waitForTimeout(400);
+  expect(await canvas.getAttribute('data-draws')).toBe(frames);
+  await page.screenshot({path:testInfo.outputPath('acrylic-tools.png')});
+  await page.getByRole('button',{name:'Flat',exact:true}).click();
+  await expect(canvas).toHaveCount(0);await expect(page.locator('.pm-acrylic-pane')).toHaveCount(0);
+  await page.screenshot({path:testInfo.outputPath('flat-tools.png')});
+  expect(errors).toEqual([]);
+});
+
+test('WebGL unavailable retains a usable native acrylic fallback', async ({ page }) => {
+  await page.addInitScript(()=>{
+    const get=HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext=function(kind,...args){return kind==='webgl'||kind==='webgl2'?null:get.call(this,kind,...args);};
+  });
+  await page.goto('/');await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
+  await page.getByRole('button',{name:'Acrílico',exact:true}).click();
+  await expect(page.locator('canvas[data-material="acrylic"]')).toHaveAttribute('data-renderer','fallback');
+  await expect(page.getByRole('button',{name:'Editor Markdown',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Flat',exact:true}).click();
+  await expect(page.locator('canvas[data-material="acrylic"]')).toHaveCount(0);
+});
+
+test('folders animate through intermediate heights and document edges fade', async ({ page }) => {
+  await page.goto('/');await expect(page.locator('.pm-note-item').first()).toBeVisible();
+  const folder=page.locator('.pm-folder').filter({has:page.locator(':scope > .pm-folder-title').filter({hasText:'Planejamento'})}).first();
+  const title=folder.locator(':scope > .pm-folder-title');
+  await title.click();
+  const disclosure=folder.locator(':scope > .pm-tree-disclosure');
+  await expect(disclosure).toHaveAttribute('data-expanded','true');
+  const samples=await disclosure.evaluate(el=>new Promise(resolve=>{
+    const values=[];const sample=()=>{values.push(el.getBoundingClientRect().height);if(values.length<12)requestAnimationFrame(sample);else resolve(values);};sample();
+  }));
+  expect(new Set(samples.map(n=>Math.round(n))).size).toBeGreaterThan(2);
+  const fade=await page.locator('.pm-live-pane').evaluate(el=>getComputedStyle(el).maskImage);
+  expect(fade).toContain('linear-gradient');
 });
