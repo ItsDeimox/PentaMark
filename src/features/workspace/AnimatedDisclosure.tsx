@@ -7,7 +7,7 @@ export function AnimatedDisclosure({open,children}:{open:boolean;children:()=>Re
  useLayoutEffect(()=>{
   const el=ref.current;if(!el)return;
   if(open&&!mounted){setMounted(true);return;}
-  const start=el.getBoundingClientRect().height;
+  const start=parseFloat(getComputedStyle(el).height)||0;
   running.current?.cancel();running.current=null;el.style.height=`${start}px`;
   const end=open?(el.firstElementChild as HTMLElement|null)?.scrollHeight||0:0;
   const finish=()=>{el.style.height=open?'auto':'0px';if(!open)setMounted(false);};
@@ -17,8 +17,9 @@ export function AnimatedDisclosure({open,children}:{open:boolean;children:()=>Re
   animation.onfinish=()=>{if(running.current!==animation)return;finish();running.current=null;animation.cancel();};
   return()=>{
    if(running.current!==animation)return;
-   // Commit the displayed height before cancellation so a reverse has no jump.
-   el.style.height=`${el.getBoundingClientRect().height}px`;
+   // Computed height is in CSS pixels, unlike getBoundingClientRect under app zoom.
+   // Keep those units when reversing the animation.
+   el.style.height=`${parseFloat(getComputedStyle(el).height)||0}px`;
    running.current=null;animation.cancel();
   };
  },[open,mounted]);

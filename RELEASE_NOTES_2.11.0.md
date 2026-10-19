@@ -3,7 +3,7 @@
 ## O que mudou
 
 - Removida a renomeação por duplo clique de notas e pastas. A ação Renomear continua no menu de contexto e nas ferramentas.
-- Expansão das pastas usa a altura exibida como início da animação e desmonta o conteúdo ao terminar, em vez de usar um temporizador de remoção. Reversões mantêm continuidade.
+- Expansão das pastas usa a altura exibida como início da animação e desmonta o conteúdo ao terminar, em vez de usar um temporizador de remoção. Reversões mantêm continuidade. A altura é medida em pixels CSS para não esticar a pasta ao usar escala aumentada.
 - O acrílico deixa de ser uma camada quase opaca. Painéis, Conta e cartões internos usam transparência real, blur e apenas o contorno óptico do material. As bordas CSS dessas superfícies ficam transparentes, preservando as dimensões.
 - Cantos mais contidos, incluindo avatar e prévia de Conta. Removidos textos ornamentais e explicações técnicas que ocupavam a interface; avisos de acesso e segurança continuam presentes.
 - Material passa a ser chamado Gráficos. Flat permanece disponível.
@@ -19,6 +19,6 @@ O renderer mantém um contexto WebGL e buffers limitados. Superfícies sem inter
 
 ## Verificação e distribuição
 
-A suíte inclui os testes anteriores e novos cenários para renomeação, expansão, transparência medida no shader, iluminação dos controles, revelação horizontal, reversão e ausência de deslocamento do documento ao iluminar a marca. O resultado efetivo fica na execução de CI do commit distribuído. O workflow Windows também inicializa o portátil, carrega sua interface e grava/lê uma nota descartável.
+A suíte inclui os testes anteriores e novos cenários para renomeação, expansão, transparência medida no shader, iluminação dos controles, revelação horizontal, reversão, ausência de deslocamento do documento ao iluminar a marca e fechamento das pastas com escala de 160%. O resultado efetivo fica na execução de CI do commit distribuído. O workflow Windows também inicializa o portátil, carrega sua interface e grava/lê uma nota descartável.
 
 Faça backup do cofre e feche o executável antigo antes de abrir o novo. O portátil não precisa de Node.js e continua sem assinatura digital. As alterações permanecem na branch de revisão; não há merge automático. As dependências existentes não foram atualizadas nesta entrega. Não houve benchmark na GPU do autor nem teste em celular físico.
