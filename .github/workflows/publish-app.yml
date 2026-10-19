@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/publish-app.yml'
       - 'package.json'
+      - 'RELEASE_NOTES_*.md'
   workflow_dispatch:
 permissions:
   contents: write
@@ -46,7 +47,9 @@ jobs:
           if (!(Test-Path $exe)) { throw "Executavel nao encontrado: $exe" }
           if ((Get-Item $exe).Length -lt 40000000) { throw 'Executavel incompleto.' }
           Get-Item $exe, $ready, $android | Select-Object Name, Length | Format-Table -AutoSize
-          Get-FileHash $exe -Algorithm SHA256 | Format-List
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @{ version=$version; commit=$env:GITHUB_SHA; executable=(Split-Path $exe -Leaf); sha256=$hash; bytes=(Get-Item $exe).Length; nativeSmoke='passed' } | ConvertTo-Json | Set-Content 'release-packages/build-manifest.json' -Encoding utf8NoBOM
+          Get-Content 'release-packages/build-manifest.json'
       - name: Publicar artifacts para verificacao
         uses: actions/upload-artifact@v4
         with:
@@ -54,6 +57,7 @@ jobs:
           path: |
             desktop-dist/*.exe
             release-packages/*.zip
+            release-packages/build-manifest.json
           retention-days: 7
           if-no-files-found: error
       - name: Criar release e anexar pacotes

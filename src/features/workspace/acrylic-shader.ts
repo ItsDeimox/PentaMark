@@ -30,7 +30,9 @@ void main(){
  float reflection=radial*(spread*(control?.15:.024)+.012)*quiet;
  float wire=0.,aura=0.;
  if(!control){
-   vec2 uv=p/uSize;
+   // Subpixel refraction through the static microtexture, not a repeated tile.
+   vec2 micro=vec2(hash(floor(p*.8)),hash(floor(p*.8)+17.))-.5;
+   vec2 uv=(p+micro*.48)/uSize;
    wire=texture2D(uCircuit,uv).a;
    vec2 texel=vec2(1.3)/uSize;
    aura=(texture2D(uCircuit,uv+vec2(texel.x,0.)).a+texture2D(uCircuit,uv-vec2(texel.x,0.)).a+texture2D(uCircuit,uv+vec2(0.,texel.y)).a+texture2D(uCircuit,uv-vec2(0.,texel.y)).a)*.25;

@@ -30,12 +30,13 @@
  box-shadow:0 16px 42px #0003;
 }
 .pm-shell[data-graphics="acrylic"] .pm-dialog { background:rgba(12,24,32,.24); backdrop-filter:blur(18px) saturate(1.16); -webkit-backdrop-filter:blur(18px) saturate(1.16); box-shadow:0 24px 80px #0004; }
-.pm-shell[data-graphics="acrylic"] .pm-dialog-layer[data-entered="true"]::backdrop { background:rgb(3 9 14 / .34); }
-.pm-shell[data-graphics="acrylic"] :is(.pm-identity-card,.pm-material-demo,.pm-vault-location) {
+.pm-shell[data-graphics="acrylic"] .pm-dialog-layer[data-entered="true"]::backdrop { background:rgb(3 9 14 / .34); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); }
+.pm-shell[data-graphics="acrylic"] :is(.pm-identity-card,.pm-material-demo,.pm-vault-location,.pm-notice,.pm-connection-status,.pm-option-row,.pm-client-card,.pm-mobile-setup-card) {
  background:rgba(18,37,48,.12); backdrop-filter:blur(7px) saturate(1.1); -webkit-backdrop-filter:blur(7px) saturate(1.1); box-shadow:none;
 }
 .pm-shell[data-graphics="acrylic"][data-gl="webgl"] .pm-material-host { border-color:transparent !important; }
-.pm-shell[data-graphics="acrylic"] .pm-material-control { position:relative; isolation:isolate; }
+.pm-shell[data-graphics="acrylic"] .pm-material-control { isolation:isolate; }
+.pm-shell[data-graphics="acrylic"] .pm-material-relative { position:relative; }
 .pm-shell[data-graphics="acrylic"] .pm-material-control>.pm-acrylic-pane { border-radius:inherit; }
 .pm-shell[data-graphics="acrylic"] :is(.pm-dialog button,.pm-mode-grid button,.pm-material-switch button,.pm-workspace-tools .pm-tool-mcp) { border-color:transparent; }
 .pm-shell[data-graphics="acrylic"] :is(.pm-dialog button.primary,.pm-dialog button[aria-pressed="true"],.pm-mode-grid button[aria-pressed="true"],.pm-material-switch button[aria-pressed="true"],.pm-workspace-tools .pm-tool-mcp) {
@@ -50,3 +51,7 @@
 .pm-shell[data-gl="fallback"] :is(.pm-sidebar,.pm-workspace-panel,.pm-dialog,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools,.pm-identity-card) { background:rgba(17,30,39,.66); border-color:var(--pm-border); }
 .pm-shell .pm-acrylic-pane { border-radius:0; }
 @media(prefers-reduced-motion:reduce){.pm-shell .pm-sidebar{transition:none !important;}.pm-shell .pm-sidebar[data-fragmenting="true"]{clip-path:none !important;}}
+
+.pm-shell .pm-settings-dialog { height:min(580px,100%); }
+.pm-shell .pm-material-options button { display:flex; align-items:center; justify-content:flex-start; gap:12px; min-height:50px; padding:12px 16px; }
+.pm-shell[data-graphics="acrylic"] .pm-material-host[data-surface="inset"] { position:relative; }

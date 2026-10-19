@@ -3,7 +3,7 @@ import { createCircuitMap } from './circuit-layout';
 import { fragmentClip } from './fragment-reveal';
 
 const CHROME='.pm-sidebar,.pm-workspace-panel,.pm-modal,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools,.pm-asset-workspace>header,.pm-asset-workspace>footer,.pm-lock-banner,.pm-toast,.pm-mobile-dock';
-const INSET='.pm-identity-card,.pm-material-demo,.pm-vault-location';
+const INSET='.pm-identity-card,.pm-material-demo,.pm-vault-location,.pm-notice,.pm-connection-status,.pm-option-row,.pm-client-card,.pm-mobile-setup-card';
 const DOCUMENT='.pm-callout,.pm-properties,.pm-kanban,.pm-markdown pre';
 const SURFACES=`${CHROME},${INSET},${DOCUMENT}`;
 const MAX_TARGETS=20, BACKING_BUDGET=8_000_000, SCRATCH_BUDGET=2_000_000;
@@ -55,7 +55,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const intersections=new IntersectionObserver(entries=>{entries.forEach(e=>e.isIntersecting?intersecting.add(e.target):intersecting.delete(e.target));layoutDirty=true;invalidate();});
  function release(panel:HTMLElement,target:Target){
   if(target.texture&&!lost)context.deleteTexture(target.texture);
-  target.pane.remove();target.pane.width=target.pane.height=1;panel.classList.remove('pm-material-host','pm-material-control');delete panel.dataset.surface;targets.delete(panel);
+  target.pane.remove();target.pane.width=target.pane.height=1;panel.classList.remove('pm-material-host','pm-material-control','pm-material-relative');delete panel.dataset.surface;targets.delete(panel);
  }
  function collect(){
   registryDirty=false;resized.disconnect();intersections.disconnect();intersecting.clear();
@@ -73,12 +73,13 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    if(!panel.isConnected||(!controls.has(panel)&&!intersecting.has(panel)))continue;
    const rect=panel.getBoundingClientRect(),s=getComputedStyle(panel);
    if(rect.width<2||rect.height<2||s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<.01||rect.bottom<=0||rect.top>=innerHeight||rect.right<=0||rect.left>=innerWidth)continue;
-   const width=panel.offsetWidth,height=panel.offsetHeight,scale=rect.width/Math.max(1,width),x=rect.left,y=rect.top;
+   const scale=rect.width/Math.max(1,panel.offsetWidth),width=panel.clientWidth,height=panel.clientHeight,x=rect.left+panel.clientLeft*scale,y=rect.top+panel.clientTop*scale;
    const left=Math.max(0,-x/scale),top=Math.max(0,-y/scale),cropWidth=Math.min(width-left,(innerWidth-Math.max(0,x))/scale),cropHeight=Math.min(height-top,(innerHeight-Math.max(0,y))/scale);
    if(cropWidth<1||cropHeight<1)continue;
-   visible.push([panel,{x,y,scale,width,height,left,top,cropWidth,cropHeight,radius:parseFloat(s.borderRadius)||0}]);if(visible.length>=MAX_TARGETS)break;
+   visible.push([panel,{x,y,scale,width,height,left,top,cropWidth,cropHeight,radius:Math.max(0,(parseFloat(s.borderRadius)||0)-panel.clientLeft)}]);if(visible.length>=MAX_TARGETS)break;
   }
   const live=new Set(visible.map(([p])=>p));targets.forEach((t,p)=>{if(!live.has(p))release(p,t);});
+  controls.forEach(p=>{if(!p.isConnected||(p!==control&&!targets.has(p)))controls.delete(p);});
   const area=visible.reduce((n,[,g])=>n+g.cropWidth*g.cropHeight*g.scale*g.scale,0);
   const densityBudget=Math.min(devicePixelRatio||1,1.5,Math.sqrt(BACKING_BUDGET/Math.max(1,area)));
   const textureDensity=Math.min(1.25,Math.sqrt(2_000_000/Math.max(1,visible.reduce((n,[p,g])=>n+(controls.has(p)?0:g.width*g.height),0))));
@@ -89,13 +90,13 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
     const pane=document.createElement('canvas');pane.className='pm-acrylic-pane';pane.setAttribute('aria-hidden','true');pane.dataset.circuit='true';
     const ctx=pane.getContext('2d');if(!ctx)continue;
     const kind=controls.has(panel)?1:panel.matches(DOCUMENT)?3:panel.matches(INSET)?2:0;
-    panel.prepend(pane);panel.classList.add('pm-material-host');if(kind===1)panel.classList.add('pm-material-control');panel.dataset.surface=kind===1?'control':kind===3?'document':kind===2?'inset':'chrome';
+    panel.prepend(pane);panel.classList.add('pm-material-host');if(kind===1){panel.classList.add('pm-material-control');if(getComputedStyle(panel).position==='static')panel.classList.add('pm-material-relative');}panel.dataset.surface=kind===1?'control':kind===3?'document':kind===2?'inset':'chrome';
     target={pane,ctx,g,density,dirty:true,hover:0,pointer:[-10000,-10000],paints:0,kind,texture:null,textureKey:''};targets.set(panel,target);
    }else{
     if(Math.abs(density-target.density)>.001||Object.keys(g).some(k=>Math.abs(g[k as keyof Geometry]-target!.g[k as keyof Geometry])>.1))target.dirty=true;
     target.g=g;target.density=density;
    }
-   target.pane.style.cssText=`left:${g.left-panel.clientLeft}px;top:${panel.scrollTop+g.top-panel.clientTop}px;width:${g.cropWidth}px;height:${g.cropHeight}px;`;
+   target.pane.style.cssText=`left:${g.left}px;top:${panel.scrollTop+g.top}px;width:${g.cropWidth}px;height:${g.cropHeight}px;`;
    const td=Math.min(textureDensity,2048/Math.max(g.width,g.height));
    const textureKey=`${g.width}:${g.height}:${td.toFixed(2)}`;
    if(target.kind!==1&&(!target.texture||target.textureKey!==textureKey)){
@@ -108,13 +109,14 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  }
  function finishReveal(){
   motion=null;reveal=navigation?1:0;
-  if(sidebar){sidebar.dataset.reveal=String(reveal);delete sidebar.dataset.fragmenting;sidebar.style.removeProperty('clip-path');sidebar.style.removeProperty('--pm-reveal-x');ownedStyle=sidebar.style.cssText;}
+  if(sidebar){sidebar.dataset.reveal=String(reveal);delete sidebar.dataset.fragmenting;if(navigation)sidebar.style.removeProperty('clip-path');else sidebar.style.clipPath='inset(0 100% 0 0)';sidebar.style.removeProperty('--pm-reveal-x');ownedStyle=sidebar.style.cssText;}
   layoutDirty=true;
  }
  function beginReveal(){
   const next=shell.dataset.navigation==='true';if(next===navigation)return;navigation=next;
   if(!sidebar||reduced.matches||lost){finishReveal();return;}
   motion={from:reveal,to:next?1:0,start:performance.now(),duration:280*Math.max(.32,Math.abs((next?1:0)-reveal))};
+  sidebar.style.clipPath=fragmentClip(reveal,sidebar.offsetWidth,sidebar.offsetHeight);sidebar.style.setProperty('--pm-reveal-x',`${-9*(1-reveal)}px`);ownedStyle=sidebar.style.cssText;
   sidebar.dataset.fragmenting='true';intersecting.add(sidebar);layoutDirty=true;invalidate();
  }
  function render(now:number){
@@ -149,7 +151,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
   if(animate)frame=requestAnimationFrame(render);
  }
  const internal=(n:Node)=>n===canvas||(n instanceof Element&&n.matches('.pm-acrylic-pane'));
- const strip=(s:string)=>s.replace(/\bpm-material-(?:host|control)\b/g,'').trim();
+ const strip=(s:string)=>s.replace(/\bpm-material-(?:host|control|relative)\b/g,'').trim();
  const changed=new MutationObserver(records=>{
   let registry=false,layout=false;
   for(const r of records){
@@ -167,7 +169,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const aim=(element:Element|null,x:number,y:number)=>{
   active.clear();let p=element?.closest<HTMLElement>(SURFACES)||null;
   while(p){active.add(p);p=p.parentElement?.closest<HTMLElement>(SURFACES)||null;}
-  const next=element?.closest<HTMLElement>('button:not(:disabled)')||null;
+  const next=element?.closest<HTMLElement>('button:not(:disabled):not(.pm-mobile-scrim):not(.pm-workspace-scrim):not(.pm-brand-anchor)')||null;
   if(next!==control){control=next&&shell.contains(next)?next:null;if(control)controls.add(control);layoutDirty=true;}
   cursor=[x,y];invalidate();
  };
@@ -186,7 +188,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  window.addEventListener('resize',layout);window.addEventListener('blur',leave);document.addEventListener('visibilitychange',visibility);reduced.addEventListener('change',layout);
  canvas.addEventListener('webglcontextlost',onLost);canvas.addEventListener('webglcontextrestored',restored);invalidate();
  return()=>{
-  stopped=true;cancelAnimationFrame(frame);changed.disconnect();resized.disconnect();intersections.disconnect();finishReveal();if(sidebar)delete sidebar.dataset.reveal;
+  stopped=true;cancelAnimationFrame(frame);changed.disconnect();resized.disconnect();intersections.disconnect();finishReveal();if(sidebar){delete sidebar.dataset.reveal;sidebar.style.removeProperty('clip-path');sidebar.style.removeProperty('--pm-reveal-x');}
   targets.forEach((t,p)=>release(p,t));
   shell.removeEventListener('pointermove',pointer);shell.removeEventListener('pointerleave',leave);shell.removeEventListener('focusin',focus);shell.removeEventListener('scroll',layout,true);shell.removeEventListener('transitionrun',moving);shell.removeEventListener('animationstart',moving);shell.removeEventListener('transitionend',layout);
   window.removeEventListener('resize',layout);window.removeEventListener('blur',leave);document.removeEventListener('visibilitychange',visibility);reduced.removeEventListener('change',layout);
