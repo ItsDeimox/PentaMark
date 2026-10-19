@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           git archive --format=tar.gz -o /tmp/pentamark-source.tar.gz HEAD
-          tar -tzf /tmp/pentamark-source.tar.gz | head -20
+          tar -tzf /tmp/pentamark-source.tar.gz | sed -n '1,20p'
       - uses: actions/upload-artifact@v4
         with:
           name: pentamark-source-snapshot
