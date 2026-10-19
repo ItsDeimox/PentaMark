@@ -16,21 +16,21 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Apply verified visual changes once
-        if: hashFiles('scripts/visual-delta.0') != ''
-        run: python scripts/apply-visual-delta.py
+      - name: Apply verified finishing changes once
+        if: hashFiles('scripts/visual-polish.py') != ''
+        run: python scripts/visual-polish.py
       - run: npm ci --ignore-scripts
       - run: npm run check
       - name: Record compiled source on the development branch
-        if: hashFiles('scripts/visual-delta.0') != ''
+        if: hashFiles('scripts/visual-polish.py') != ''
         run: |
           test "${GITHUB_REF}" = 'refs/heads/agent/visual-acrylic'
           git diff --check
-          git add src docs tests playwright.config.mjs
-          git rm scripts/visual-delta.* scripts/apply-visual-delta.py
+          git add src package.json package-lock.json scripts/build-mobile-host.mjs LEIA-ME-Desktop.md mobile/LEIA-ME.md README.md
+          git rm scripts/visual-polish.py
           git config user.name 'PentaMark development'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: redesign chrome with acrylic material and stable block editing'
+          git commit -m 'fix: focus animated tree inputs and dismiss source overlays once'
           git push origin HEAD:agent/visual-acrylic
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
