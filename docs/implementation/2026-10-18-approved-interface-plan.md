@@ -1,55 +1,32 @@
-# Approved PentaMark Interface Implementation Plan
+# PentaMark: implementação do guia visual aprovado
 
-> Execute inline, task by task, with regression evidence before production changes.
+Autoridade: `PentaMark-Guia-Visual-Aprovado.zip`. Contrato preservado em `approved-visual-spec.md`. A imagem principal prevalece sobre concepts históricas. A referência privada não foi republicada.
 
-**Goal:** Implement the approved square graphite document-first workspace and stable inline editing in the existing application.
+## Primeiro incremento: interface e edição inline
 
-**Architecture:** Preserve the existing app, Markdown renderer and shared document geometry. Add focused workspace controls and theme styling; decouple source inspection from inline layout. Do not replace persistence or collaboration.
+- [x] Partir do aplicativo existente, mantendo host, cofre, colaboração e renderização compartilhada.
+- [x] Acrescentar testes com cofre sintético isolado e executar a versão anterior antes das mudanças.
+- [x] Implementar superfícies grafite, componentes quadrados e navegação flutuante.
+- [x] Recolher a árvore sem deslocar a coluna do documento, perdendo rolagem ou expansão.
+- [x] Apresentar busca, ferramentas e formatação contextual sob demanda.
+- [x] Preservar os quatro modos, preferências existentes e acesso às configurações.
+- [x] Remover o salto causado pela exposição de marcadores inline e de títulos ao receber foco.
+- [x] Manter edição, seleção, formatação, salvamento, desfazer e refazer.
+- [x] Tratar Escape rápido, criação/renomeação com árvore fechada e Ctrl+B dentro de campos.
+- [x] Adaptar a composição a telas menores e respeitar movimento reduzido.
+- [x] Registrar testes e screenshots do aplicativo real em CI.
 
-**Tech Stack:** React, TypeScript, CodeMirror 6, Vite, Node host, Playwright/Chromium.
+Os itens marcados indicam código implementado. O resultado de cada execução da validação deve ser consultado no workflow `Approved workspace regression`, não presumido a partir desta lista.
 
-**Spec:** docs/implementation/approved-visual-spec.md.
+## Próximos incrementos, ainda não implementados
 
-## Global constraints
+- [ ] Edição dos blocos complexos sem substituir sua geometria: YAML, tabelas, código, Mermaid, callouts e mídia. O comportamento anterior desses widgets permanece.
+- [ ] Mapa neural baseado na hierarquia e nos vínculos reais, com organização estável, navegação por teclado/toque e renderização GLSL limitada ao necessário.
+- [ ] Atividade MCP com eventos reais, arquivos afetados, diferenças e estados verificáveis. A conexão/configuração MCP existente continua disponível, sem painel fictício de atividade.
+- [ ] Perfil de desempenho com cofres grandes e carregamento sob demanda das dependências pesadas.
+- [ ] Regressões completas de colaboração em dois clientes, permissões/conflitos e dispositivos físicos.
+- [ ] Empacotamento e teste do executável Windows e do host móvel.
 
-0px corners; #181A1B/#17191A graphite; no decorative background image; 140-200ms panels; no document geometry animation; preserve shortcuts/preferences; fixture-only tests; no automatic merge or main deployment.
+## Fronteira de entrega
 
-## Review focus
-
-- Collapse preserves document coordinates, selection, tree scroll and expanded paths.
-- Controls remain reachable with keyboard, touch, narrow screens and application scaling.
-- Formatted text near wrap boundaries does not reflow on focus or selection.
-- Source edits/formatting retain undo and saving, including stale source protection.
-- Every existing mode/action retains an accessible route.
-
-## Task 1: Establish regression evidence
-
-- [ ] Add an isolated fixture vault and browser tests against the real local host.
-- [ ] Run baseline typecheck/build.
-- [ ] Observe approved-layout assertions fail before changes and record any reproduced editor defect.
-
-## Task 2: Workspace and on-demand controls
-
-Files: src/features/workspace/*, src/app/PentaMarkApp.tsx, src/app/constants.tsx, src/main.tsx.
-
-- [ ] Implement square graphite tokens, floating tree, opener and stable document column.
-- [ ] Move permanent tools into on-demand controls, preserving actions.
-- [ ] Preserve tree/selection/scroll; restore focus; honor reduced motion.
-- [ ] Validate 1672x941, 1280x800, 390x844, scaled UI and saved preferences.
-
-## Task 3: Stable inline editing
-
-Files: src/features/editor/LivePreviewEditor.tsx, src/features/editor/live-preview/* and focused workspace components.
-
-- [ ] Reproduce focus-induced marker reflow.
-- [ ] Keep syntax inspection out of rendered geometry while preserving explicit source access.
-- [ ] Exercise caret, selection, edits, undo, save and source conflicts.
-- [ ] Run typecheck/build and all new tests; capture the actual UI.
-
-## Subsequent increments
-
-Neural map: real hierarchy, stable layout, keyboard/touch, optional bounded GLSL and hidden-view suspension. AI activity: actual MCP events/diffs and truthful states. Further regression coverage: two-client collaboration, Windows packaging and large-vault profiling.
-
-## Delivery boundary
-
-Report implemented/tested/pending separately. Do not claim subsequent increments finished. Keep main unchanged for review.
+Branch de revisão: `agent/approved-visual-guide`. Não mesclar nem publicar automaticamente. Este incremento não representa a execução completa do guia.

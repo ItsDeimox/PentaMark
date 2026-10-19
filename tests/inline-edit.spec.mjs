@@ -63,7 +63,8 @@ test('editing, contextual formatting, save, undo and redo remain functional', as
   await page.keyboard.press('Control+s');
   await expect.poll(() => readSource(page)).not.toContain('**Validação de edição**');
   await expect.poll(() => readSource(page)).toContain('Validação de edição');
-  await page.keyboard.press('Control+Shift+z');
+  // Use the uppercase key emitted by a physical Shift+Z, not a synthetic lowercase z.
+  await page.keyboard.press('Control+Shift+Z');
   await page.keyboard.press('Control+s');
   await expect.poll(() => readSource(page)).toContain('**Validação de edição**');
   // Restore this synthetic note through the explicit source editor.

@@ -2,14 +2,16 @@ name: Approved workspace regression
 on:
   push:
     branches: [agent/approved-visual-guide]
+  pull_request:
+    branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: approved-workspace-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   browser:
-    if: github.ref == 'refs/heads/agent/approved-visual-guide'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -17,22 +19,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Apply checksum-verified keyboard refinement once
-        if: hashFiles('scripts/refine-keyboard.py') != ''
-        run: python scripts/refine-keyboard.py
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - name: Record compiled refinement on the isolated branch
-        if: hashFiles('scripts/refine-keyboard.py') != ''
-        run: |
-          test "${GITHUB_REF}" = 'refs/heads/agent/approved-visual-guide'
-          git diff --check
-          git add src/app/PentaMarkApp.tsx src/features/editor/LivePreviewEditor.tsx
-          git rm scripts/refine-keyboard.py
-          git config user.name 'PentaMark development'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix: preserve keyboard actions during fast workspace transitions'
-          git push origin HEAD:agent/approved-visual-guide
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - uses: actions/upload-artifact@v4
