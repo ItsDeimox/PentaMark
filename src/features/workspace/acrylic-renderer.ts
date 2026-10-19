@@ -130,11 +130,11 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    if(t>=1)finishReveal();
   }
   if(layoutDirty||now<movingUntil)measure();
-  const delta=Math.min(40,Math.max(1,now-lastTime));lastTime=now;
+  const delta=Math.min(110,Math.max(1,now-lastTime));lastTime=now;
   let animate=!!motion||now<movingUntil;
   for(const [panel,target] of targets){
    const desired=active.has(panel)||panel===control?1:0;
-   if(Math.abs(target.hover-desired)>.004){target.hover=reduced.matches?desired:target.hover+(desired-target.hover)*(1-Math.exp(-delta/38));if(Math.abs(target.hover-desired)<=.004)target.hover=desired;target.dirty=true;animate ||= target.hover!==desired;}
+   if(Math.abs(target.hover-desired)>.01){target.hover=reduced.matches?desired:target.hover+(desired-target.hover)*(1-Math.exp(-delta/38));if(Math.abs(target.hover-desired)<=.01)target.hover=desired;target.dirty=true;animate ||= target.hover!==desired;}
    if(desired){const p:[number,number]=[(cursor[0]-target.g.x)/target.g.scale,(cursor[1]-target.g.y)/target.g.scale];if(Math.abs(p[0]-target.pointer[0])+Math.abs(p[1]-target.pointer[1])>.15){target.pointer=p;target.dirty=true;}}
    if(target.kind===1&&panel!==control&&target.hover===0){controls.delete(panel);release(panel,target);continue;}
    if(!target.dirty)continue;

@@ -28,12 +28,20 @@ void main(){
  // A single edge, with the same local falloff as Checkpoint's controls.
  float edge=(.035+radial*(control?.88:.38))*rim;
  float reflection=radial*(spread*(control?.15:.024)+.012)*quiet;
- float wire=0.,aura=0.;
+ float wire=0.,aura=0.,spectrum=0.;
  if(!control){
    // Subpixel refraction through the static microtexture, not a repeated tile.
    vec2 micro=vec2(hash(floor(p*.8)),hash(floor(p*.8)+17.))-.5;
    vec2 uv=(p+micro*.48)/uSize;
-   wire=texture2D(uCircuit,uv).a;
+   // Lens thickness refracts the procedural circuit substrate, with two
+   // slightly offset spectral samples near the lit rim (never the DOM text).
+   vec2 outward=normalize((p-h)/max(h,vec2(1.))+vec2(.00001));
+   vec2 bend=outward*(.75+rim*1.35)/uSize;
+   wire=texture2D(uCircuit,uv+bend).a;
+   vec2 disperse=outward*1.35/uSize;
+   float redTrace=texture2D(uCircuit,uv+bend+disperse).a;
+   float blueTrace=texture2D(uCircuit,uv+bend-disperse).a;
+   spectrum=(redTrace-blueTrace)*rim*(.25+radial*.75);
    vec2 texel=vec2(1.3)/uSize;
    aura=(texture2D(uCircuit,uv+vec2(texel.x,0.)).a+texture2D(uCircuit,uv-vec2(texel.x,0.)).a+texture2D(uCircuit,uv+vec2(0.,texel.y)).a+texture2D(uCircuit,uv-vec2(0.,texel.y)).a)*.25;
  }
@@ -45,5 +53,7 @@ void main(){
  vec3 glass=vec3(.075,.10,.12)+uAccent*.025;
  vec3 light=mix(uAccent,vec3(.92,.98,1.),control?.30:.15);
  vec3 rgb=(glass*body+light*optical)/max(body+optical,.001);
- gl_FragColor=vec4(rgb,alpha);
+ float rimDispersion=rim*(.007+radial*(control?.028:.021));
+ rgb+=vec3(rimDispersion+spectrum*.034, .001*rim, -rimDispersion*.67-spectrum*.02);
+ gl_FragColor=vec4(max(rgb,vec3(0.)),alpha);
 }`;

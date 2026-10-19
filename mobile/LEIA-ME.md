@@ -1,4 +1,4 @@
-# PentaMark Mobile Host 2.11.0
+# PentaMark Mobile Host 2.12.0
 
 Este pacote transforma um Android em host do PentaMark sem Electron e sem instalar dependências do projeto. O servidor, a interface móvel e a Ponte MCP já estão compilados.
 

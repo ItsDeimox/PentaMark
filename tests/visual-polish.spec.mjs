@@ -3,13 +3,16 @@ import {test, expect} from '@playwright/test';
 async function editorReady(page) {
   await page.goto('/');
   await expect(page.getByRole('textbox', {name: 'Editor Markdown em Live Preview'})).toBeVisible();
+  await expect(page.locator('.pm-note-item').first()).toBeVisible();
 }
 
 test('the selection bar exposes eight direct actions with accessible custom shortcut hints', async ({page}) => {
   await editorReady(page);
   const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});
-  await editor.click();
-  await page.keyboard.press('Control+a');
+  await editor.focus();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Shift+Home');
   const bar = page.getByRole('toolbar', {name:'Formatação da seleção'});
   await expect(bar).toBeVisible();
   for (const label of ['Negrito','Itálico','Título','Lista','Tarefa','Citação','Link','Código']) {
@@ -26,9 +29,14 @@ test('the selection bar exposes eight direct actions with accessible custom shor
 
 test('selected text glows without reflow; reduced motion makes the energy static', async ({page}) => {
   await editorReady(page);
+  await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
+  await page.getByRole('button',{name:'Acrílico',exact:true}).click();
+  await page.keyboard.press('Escape');
   const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});
-  await editor.click();
-  await page.keyboard.press('Control+a');
+  await editor.focus();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Shift+Home');
   const drawn = page.locator('.cm-selectionBackground').first();
   await expect(drawn).toBeVisible();
   const before = await page.locator('.pm-live-codemirror .cm-content').boundingBox();
@@ -47,6 +55,7 @@ test('the selected Live mode keeps a blurred glass backplate and the close X sta
   await page.getByRole('button',{name:'Acrílico',exact:true}).click();
   const active=page.getByRole('button',{name:'Live Preview',exact:true});
   const idle=page.getByRole('button',{name:'Editor Markdown',exact:true});
+  await idle.hover();
   for (const button of [active,idle]) {
     const result = await button.evaluate(el=>({filter:getComputedStyle(el).backdropFilter, bg:getComputedStyle(el).backgroundColor}));
     expect(result.filter).toContain('blur(');

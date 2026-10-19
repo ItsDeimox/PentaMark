@@ -26,13 +26,13 @@ export function ToolsPanel(p: {
     { id:'preview', label:'Leitura', name:'Somente leitura', icon:Eye },
     { id:'split', label:'Dividido', name:'Editor + visualização', icon:Columns2 },
   ];
-  const action = ({label,icon:Icon,run,disabled,danger}: Action) => <button key={label} className={`pm-tool-action ${danger?'danger':''}`} disabled={disabled}
+  const action = ({label,icon:Icon,run,disabled,danger}: Action) => <button key={label} className={`pm-tool-action ${danger?'danger':''}`} data-tooltip={label} disabled={disabled}
     onClick={run}><Icon size={16}/><span>{label}</span></button>;
   const leave = (run:()=>void) => () => { p.onClose(); run(); };
   return <WorkspacePanel open={p.open} title="Ferramentas e ações" onClose={p.onClose} className="pm-workspace-tools">
-    <button type="button" className="pm-tool-mcp" aria-label="Ponte MCP" onClick={leave(p.onMcp)}><Bot size={19}/><span><strong>Ponte MCP</strong><small>Conectar ferramentas de IA</small></span><i data-active={p.mcpEnabled}/></button>
+    <button type="button" className="pm-tool-mcp" aria-label="Ponte MCP" data-tooltip="Ponte MCP" onClick={leave(p.onMcp)}><Bot size={19}/><span><strong>Ponte MCP</strong><small>Conectar ferramentas de IA</small></span><i data-active={p.mcpEnabled}/></button>
     <section className="pm-tool-section"><div className="pm-section-label"><span>VISUALIZAÇÃO</span><span className="pm-tool-saved"><Check size={11}/>{p.saved?'Salvo':'Alterado'}</span></div>
-      <div className="pm-mode-grid">{modes.map(({id,label,name,icon:Icon}) => <button key={id} aria-label={name} title={name}
+      <div className="pm-mode-grid">{modes.map(({id,label,name,icon:Icon}) => <button key={id} aria-label={name} data-tooltip={name}
         aria-pressed={p.mode===id} onClick={()=>p.onMode(id)}><Icon size={17}/><span>{label}</span></button>)}</div>
     </section>
     <section className="pm-tool-section"><div className="pm-section-label">GRÁFICOS</div>
@@ -45,13 +45,13 @@ export function ToolsPanel(p: {
       <button aria-label="Voltar" disabled={!p.canBack} onClick={p.onBack}><ArrowLeft size={14}/></button>
       <button aria-label="Avançar" disabled={!p.canForward} onClick={p.onForward}><ArrowRight size={14}/></button></span></div>
       <div className="pm-tools-format" role="toolbar" aria-label="Formatação" onMouseDown={e=>e.preventDefault()}>
-        {FORMAT_ACTIONS.slice(0, formats?FORMAT_ACTIONS.length:5).map(({kind,label,shortcut,icon:Icon})=><button key={kind} disabled={!p.canEdit} aria-label={label} title={`${label} · ${shortcut}`} onClick={()=>p.onFormat(kind)}><Icon size={16}/></button>)}
-        <button aria-label="Todos os formatos" aria-expanded={formats} onClick={()=>setFormats(v=>!v)}><ChevronDown size={15}/></button>
-        <label title="Anexar arquivos"><ImagePlus size={16}/><input aria-label="Anexar arquivos" type="file" multiple disabled={!p.canEdit} onChange={e=>{if(e.target.files)p.onUpload(e.target.files);e.target.value='';}}/></label>
+        {FORMAT_ACTIONS.slice(0, formats?FORMAT_ACTIONS.length:5).map(({kind,label,shortcut,icon:Icon})=><button key={kind} disabled={!p.canEdit} aria-label={label} data-tooltip={label} data-shortcut={shortcut} onClick={()=>p.onFormat(kind)}><Icon size={16}/></button>)}
+        <button aria-label="Todos os formatos" data-tooltip="Mais formatos" aria-expanded={formats} onClick={()=>setFormats(v=>!v)}><ChevronDown size={15}/></button>
+        <label data-tooltip="Anexar arquivos"><ImagePlus size={16}/><input aria-label="Anexar arquivos" type="file" multiple disabled={!p.canEdit} onChange={e=>{if(e.target.files)p.onUpload(e.target.files);e.target.value='';}}/></label>
       </div>
-      <div className="pm-tool-zoom"><span>Texto</span><button aria-label="Diminuir zoom do editor" onClick={()=>p.onZoom(-1)}><ZoomOut size={15}/></button><output>{p.editorSize}px</output><button aria-label="Aumentar zoom do editor" onClick={()=>p.onZoom(1)}><ZoomIn size={15}/></button><button aria-label="Sincronizar rolagem" aria-pressed={p.syncScroll} title="Sincronizar rolagem" onClick={p.onSync}><ArrowRightLeft size={15}/></button></div>
+      <div className="pm-tool-zoom"><span>Texto</span><button aria-label="Diminuir zoom do editor" data-tooltip="Diminuir zoom" onClick={()=>p.onZoom(-1)}><ZoomOut size={15}/></button><output>{p.editorSize}px</output><button aria-label="Aumentar zoom do editor" data-tooltip="Aumentar zoom" onClick={()=>p.onZoom(1)}><ZoomIn size={15}/></button><button aria-label="Sincronizar rolagem" data-tooltip="Sincronizar rolagem" aria-pressed={p.syncScroll} title="Sincronizar rolagem" onClick={p.onSync}><ArrowRightLeft size={15}/></button></div>
       {action({label:'Mostrar no diretório',icon:ExternalLink,run:leave(p.onReveal),disabled:!p.hasNote})}
-      <button className="pm-tool-action" aria-label="Mais ações" aria-expanded={fileActions} onClick={()=>setFileActions(v=>!v)}><FolderOpen size={16}/><span>Arquivo e cofre</span><ChevronDown size={14}/></button>
+      <button className="pm-tool-action" aria-label="Mais ações" data-tooltip="Ações do arquivo" aria-expanded={fileActions} onClick={()=>setFileActions(v=>!v)}><FolderOpen size={16}/><span>Arquivo e cofre</span><ChevronDown size={14}/></button>
       {fileActions && <div className="pm-tool-file-actions">{[
         {label:'Nova nota',icon:FilePlus2,run:leave(p.onNew)},
         {label:'Renomear',icon:Pencil,run:leave(p.onRename),disabled:!p.hasNote},

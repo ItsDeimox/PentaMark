@@ -140,6 +140,7 @@ import { AcrylicLayer } from "../features/workspace/AcrylicLayer";
 import { LinkPreviewStack, type LinkPreviewHandle } from "../features/workspace/LinkPreviewStack";
 import { QuickOpen } from "../features/workspace/QuickOpen";
 import { SelectionTools } from "../features/workspace/SelectionTools";
+import { TooltipLayer } from "../features/workspace/TooltipLayer";
 import { useWorkspaceNavigation } from "../features/workspace/useWorkspaceNavigation";
 
 type InstallPromptEvent = Event & {
@@ -1147,8 +1148,8 @@ export default function PentaMarkApp() {
       <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
         {saveState === "conflict" && <button className="pm-conflict-button" onClick={() => setConflictOpen(true)}>Conflito · Ver diff</button>}
         {saveState !== "saved" && saveState !== "conflict" && <span role="status">{saveState === "saving" ? "Salvando..." : "Alterado"}</span>}
-        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo"><Search size={18} /><span>Abrir</span><kbd>Ctrl P</kbd></button>
-        <button data-workspace-trigger aria-expanded={toolsOpen} aria-label="Ferramentas e ações" onClick={() => setToolsOpen(value => !value)}><MoreHorizontal size={21} /></button>
+        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo" data-tooltip="Buscar arquivos" data-shortcut="Ctrl P"><Search size={18} /><span>Abrir</span><kbd>Ctrl P</kbd></button>
+        <button data-workspace-trigger aria-expanded={toolsOpen} aria-label="Ferramentas e ações" data-tooltip="Ferramentas" onClick={() => setToolsOpen(value => !value)}><MoreHorizontal size={21} /></button>
       </nav>
       <aside
         ref={navigation.sidebarRef} inert={!navigation.visible} aria-hidden={!navigation.visible}
@@ -1229,6 +1230,7 @@ export default function PentaMarkApp() {
           {uploading && <div className="pm-drop-zone"><ImagePlus size={26} /><strong>Sincronizando arquivos…</strong><span>Imagens, vídeos e anexos vão para o cofre</span></div>}
           </>}
         </DocumentWorkspace>
+        {activePath && <div key={activePath} className="pm-note-resolve" aria-hidden="true" />}
 
         <MobileDock
           mode={viewMode}
@@ -1273,6 +1275,7 @@ export default function PentaMarkApp() {
       <DialogPresence open={!!kanbanDialog}>{kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}</DialogPresence>
       <DialogPresence open={mobileSetupOpen}><MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} /></DialogPresence>
       <DialogPresence open={settingsOpen}><SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} /></DialogPresence>
+      <TooltipLayer />
       {toast && <div className="pm-toast">{toast}</div>}
     </main>
   );
