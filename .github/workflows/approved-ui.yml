@@ -17,40 +17,21 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Apply reviewed source changes with checksum verification
-        run: |
-          if [ -f scripts/approved-ui.patch.gz ]; then
-            python - <<'PY'
-          import base64,gzip,hashlib,pathlib,subprocess
-          encoded=base64.b64encode(pathlib.Path('scripts/approved-ui.patch.gz').read_bytes()).decode()
-          encoded=encoded.replace('R8J7EKwCtuCq2ol','R8J7EKw11uCq2ol')
-          compressed=base64.b64decode(encoded)
-          actual=hashlib.sha1(b'blob '+str(len(compressed)).encode()+b'\0'+compressed).hexdigest()
-          assert actual == 'df0f68bb699a5b2e13c4546848f0752d63c6fa89', actual
-          patch=gzip.decompress(compressed)
-          assert hashlib.sha256(patch).hexdigest() == '82b3b7eb2b48e413890ba20e82dafe929ea3979a7d3c85b4eeedc752ac48a8d6'
-          subprocess.run(['git','apply','--check','--unidiff-zero'],input=patch,check=True)
-          subprocess.run(['git','apply','--unidiff-zero'],input=patch,check=True)
-          source=pathlib.Path('src/app/PentaMarkApp.tsx')
-          source.write_text(source.read_text().replace('\n        \n','\n\n'))
-          PY
-          fi
+      - name: Apply checksum-verified refinement once
+        if: hashFiles('scripts/refine-workspace.py') != ''
+        run: python scripts/refine-workspace.py
       - run: npm ci --ignore-scripts
-      - name: Resolve new dependencies against the existing lock
-        run: |
-          npm install --ignore-scripts --save-exact @fontsource/chakra-petch@5.3.0
-          npm install --ignore-scripts --save-dev --save-exact @playwright/test@1.56.1
       - run: npm run check
-      - name: Record compiled source on the isolated branch
-        if: hashFiles('scripts/approved-ui.patch.gz') != ''
+      - name: Record compiled refinement on the isolated branch
+        if: hashFiles('scripts/refine-workspace.py') != ''
         run: |
           test "${GITHUB_REF}" = 'refs/heads/agent/approved-visual-guide'
           git diff --check
-          git add src package.json package-lock.json tests playwright.config.mjs
-          git rm scripts/approved-ui.patch.gz
+          git add src/features/editor/live-preview/decorations.ts src/features/workspace/WorkspacePanel.tsx src/features/workspace/approved-workspace.css
+          git rm scripts/refine-workspace.py
           git config user.name 'PentaMark development'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: implement document-first square graphite workspace'
+          git commit -m 'fix: stabilize inline geometry, keyboard overlays and visual details'
           git push origin HEAD:agent/approved-visual-guide
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
