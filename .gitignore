@@ -4,6 +4,8 @@ mobile-dist/
 desktop-dist/
 dist/
 coverage/
+test-results/
+playwright-report/
 
 local/mcp-bridge.mjs
 

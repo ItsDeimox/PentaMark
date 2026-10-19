@@ -26,7 +26,7 @@ const headingSpacing = [
  * Live Preview consumes the same object for measured layout decorations.
  */
 export const DOCUMENT_LAYOUT = Object.freeze({
-  reader: Object.freeze({ width: 790, paddingTop: 44, paddingBottom: 130, sidePadding: 32 }),
+  reader: Object.freeze({ width: 1040, paddingTop: 28, paddingBottom: 130, sidePadding: 32 }),
   paragraph: Object.freeze({ top: 0, bottom: 18 }),
   heading: Object.freeze({ spacing: headingSpacing, ruledPaddingBottom: 20 }),
   list: Object.freeze({ top: 10, bottom: 22, indent: 24, itemIndent: 4, itemGap: 5 }),

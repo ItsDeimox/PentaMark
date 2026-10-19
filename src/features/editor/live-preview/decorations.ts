@@ -55,12 +55,11 @@ function mark(
 function revealOrHideMarkers(
   ranges: LiveDecorationRange[],
   markers: SourceRange[],
-  active: boolean,
+  _active: boolean,
 ) {
-  for (const marker of markers) {
-    if (active) mark(ranges, marker.from, marker.to, "pm-live-syntax");
-    else hide(ranges, marker.from, marker.to);
-  }
+  // Inline source markers never enter measured text geometry on focus.
+  // Complete syntax remains editable in the explicit Markdown source mode.
+  for (const marker of markers) hide(ranges, marker.from, marker.to);
 }
 
 function customInlineDecorations(
@@ -78,8 +77,7 @@ function customInlineDecorations(
     const from = absoluteStart + match.index!;
     const to = from + match[0].length;
     protectedRanges.push({ from, to });
-    if (active(from, to)) mark(ranges, from, to, "pm-live-comment");
-    else hide(ranges, from, to);
+    hide(ranges, from, to);
   }
 
   for (const match of text.matchAll(/(!?)\[\[([^\]\n]+)\]\]/g)) {
@@ -298,8 +296,7 @@ export function buildLivePreviewDecorations(
           if (heading[2] === "-#") classes.push("pm-live-heading-ruled");
           const markerFrom = line.from + heading[1].length;
           const markerTo = markerFrom + heading[2].length + heading[3].length;
-          if (lineActive) mark(ranges, markerFrom, markerTo, "pm-live-syntax pm-live-block-syntax");
-          else hide(ranges, markerFrom, markerTo);
+          hide(ranges, markerFrom, markerTo);
         }
       } else if (block.type === "list") {
         const list = /^(\s*)([-+*]|\d+[.)])(\s+)(?:\[( |x|X)\](\s+))?/.exec(lineText);
@@ -311,15 +308,12 @@ export function buildLivePreviewDecorations(
             // The semantic checkbox consumes the whitespace after `[ ]` too.
             // Leaving it in the document shifted task text by one rendered space.
             const prefixTo = taskMarkerStart + 3 + list[5].length;
-            if (lineActive) mark(ranges, markerFrom, prefixTo, "pm-live-syntax pm-live-block-syntax");
-            else ranges.push(Decoration.replace({
+            ranges.push(Decoration.replace({
               widget: new LiveTaskWidget(taskMarkerStart, list[4].toLowerCase() === "x", propsRef),
             }).range(markerFrom, prefixTo));
           } else {
             const markerTo = markerFrom + list[2].length + list[3].length;
-            if (lineActive) {
-              mark(ranges, markerFrom, markerTo, "pm-live-syntax pm-live-block-syntax");
-            } else if (/^[-+*]$/.test(list[2])) {
+            if (/^[-+*]$/.test(list[2])) {
               ranges.push(Decoration.replace({ widget: new LiveListMarkerWidget("•") }).range(markerFrom, markerTo));
             } else {
               const label = `${list[2].replace(/[.)]$/, "")}.`;
@@ -332,8 +326,7 @@ export function buildLivePreviewDecorations(
         if (quote) {
           const markerFrom = line.from + quote[1].length;
           const markerTo = markerFrom + 1 + quote[2].length;
-          if (lineActive) mark(ranges, markerFrom, markerTo, "pm-live-syntax pm-live-block-syntax");
-          else hide(ranges, markerFrom, markerTo);
+          hide(ranges, markerFrom, markerTo);
         }
       }
 

@@ -5,22 +5,24 @@ import type { Appearance, FormatKind, VaultState } from "../domain/types";
 export const EMPTY_STATE: VaultState = { notes: [], assets: [], folders: [], clients: 1, connections: [], locks: [], urls: [], vaultName: "PentaMark" };
 export const DEFAULT_APPEARANCE: Appearance = {
   theme: "pentagory",
-  uiFont: "modern",
-  editorFont: "mono",
+  uiFont: "technical",
+  editorFont: "technical",
   customUiFont: "",
   customEditorFont: "",
   appScale: 1,
-  uiSize: 12,
-  editorSize: 15,
+  uiSize: 18,
+  editorSize: 22,
 };
 
 export const UI_FONTS: Record<string, string> = {
+  technical: '"Chakra Petch", "Segoe UI", sans-serif',
   modern: 'Inter, "Segoe UI", system-ui, sans-serif',
   rounded: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
   mono: '"Cascadia Code", Consolas, monospace',
   serif: 'Georgia, "Times New Roman", serif',
 };
 export const EDITOR_FONTS: Record<string, string> = {
+  technical: '"Chakra Petch", "Segoe UI", sans-serif',
   mono: '"Cascadia Code", Consolas, monospace',
   modern: 'Inter, "Segoe UI", system-ui, sans-serif',
   rounded: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
