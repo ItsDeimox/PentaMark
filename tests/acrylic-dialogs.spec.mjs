@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 async function tools(page) {
   await page.goto('/');
-  await expect(page.locator('.pm-note-item').first()).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
   await page.getByRole('button',{name:'Acrílico',exact:true}).click();
 }
@@ -46,10 +46,10 @@ test('cursor circuit illumination changes real pixels only on its active backing
   await tools(page);await page.getByRole('button',{name:'Configurações',exact:true}).click();
   const panel=page.locator('.pm-dialog');await expect(panel).toBeVisible();await page.mouse.move(1,1);await page.waitForTimeout(600);
   const pane=panel.locator(':scope > .pm-acrylic-pane');await expect(pane).toHaveAttribute('data-circuit','true');
-  const pixels=()=>pane.evaluate(c=>Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data));
+  const pixels=()=>pane.evaluate(c=>{const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let hash=2166136261;for(let i=0;i<data.length;i++)hash=Math.imul(hash^data[i],16777619);return hash>>>0;});
   const before=await pixels();const b=await panel.boundingBox();const sidebar=await page.locator('.pm-sidebar > .pm-acrylic-pane').getAttribute('data-paints');
   await page.mouse.move(b.x+b.width*.65,b.y+b.height*.5);await page.waitForTimeout(450);
-  const after=await pixels();expect(after.some((n,i)=>n!==before[i])).toBe(true);
+  const after=await pixels();expect(after).not.toBe(before);
   expect(await page.locator('.pm-sidebar > .pm-acrylic-pane').getAttribute('data-paints')).toBe(sidebar);
   const count=await pane.getAttribute('data-paints');await page.waitForTimeout(400);expect(await pane.getAttribute('data-paints')).toBe(count);
 });

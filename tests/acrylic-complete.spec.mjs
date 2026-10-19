@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 async function open(page, label, acrylic = true) {
-  await page.goto('/');await expect(page.locator('.pm-note-item').first()).toBeVisible();
+  await page.goto('/');await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
   if(acrylic) await page.getByRole('button',{name:'Acrílico',exact:true}).click();
   await page.getByRole('button',{name:label==='Conectados'?/^\d+ conectado/:label,exact:label!=='Conectados'}).click();
@@ -24,6 +24,7 @@ test('stale settings show a conflict instead of overwriting the edited server fi
     await page.getByLabel('Nome do cofre',{exact:true}).fill('Local unsaved name');
     await page.request.put('/api/config',{data:{...before,vaultName:'Concurrent fixture name'}});
     await page.getByRole('button',{name:'Salvar configurações',exact:true}).click();
+    await page.getByRole('alert').scrollIntoViewIfNeeded();
     await expect(page.getByRole('alert')).toContainText('mudou');
     expect((await (await page.request.get('/api/config')).json()).vaultName).toBe('Concurrent fixture name');
   } finally {await page.request.put('/api/config',{data:before});}

@@ -60,8 +60,8 @@ export function SettingsModal(p: {
       </>}
       {tab==='type' && <>
         <DialogSection title="Fontes" hint="Interface e documento podem ter personalidades diferentes."><div className="pm-field-grid">
-          <label className="pm-field">Fonte da interface<select value={p.appearance.uiFont} onChange={e => appearance({uiFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          <label className="pm-field">Fonte do editor<select value={p.appearance.editorFont} onChange={e => appearance({editorFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label className="pm-field">Fonte da interface<select aria-label="Fonte da interface" value={p.appearance.uiFont} onChange={e => appearance({uiFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label className="pm-field">Fonte do editor<select aria-label="Fonte do editor" value={p.appearance.editorFont} onChange={e => appearance({editorFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           {p.appearance.uiFont==='custom' && <label className="pm-field wide">Fonte instalada da interface<input value={p.appearance.customUiFont} onChange={e => appearance({customUiFont:e.target.value})}/></label>}
           {p.appearance.editorFont==='custom' && <label className="pm-field wide">Fonte instalada do editor<input value={p.appearance.customEditorFont} onChange={e => appearance({customEditorFont:e.target.value})}/></label>}
         </div></DialogSection>
