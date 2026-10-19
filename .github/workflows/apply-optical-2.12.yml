@@ -1,0 +1,112 @@
+name: Validate and package optical polish
+on:
+  push:
+    branches: [agent/visual-acrylic]
+    paths: [.github/workflows/apply-optical-2.12.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify and apply requested visual update
+        run: |
+          python - <<'PY'
+          import base64, hashlib, lzma, pathlib, subprocess
+          raw=''.join(pathlib.Path(f'scripts/optical-2.12-{i}.b64').read_text() for i in range(6))
+          assert len(raw)==13820, ('Unexpected chunk length',len(raw))
+          blob=base64.b64decode(raw,validate=True)
+          assert hashlib.sha256(blob).hexdigest()=='5b6e2d223975ee292346838fa0481c4a4985a1dd39f42331be6de09a14b491b1', 'Uploaded archive checksum mismatch'
+          patch=lzma.decompress(blob)
+          assert hashlib.sha256(patch).hexdigest()=='828fb77e0a81b411a8e00477df22578dc786e1116c0b567c592f04f2c83d41fc', 'Patch checksum mismatch'
+          subprocess.run(['git','apply','--check'],input=patch,check=True)
+          subprocess.run(['git','apply'],input=patch,check=True)
+          PY
+          git diff --check
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: TypeScript and production bundle
+        run: npm run check
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser regression suite
+        run: npx playwright test
+      - name: Commit verified upgrade on the isolated branch
+        id: commit
+        run: |
+          git rm -f scripts/optical-2.12-{0,1,2,3,4,5}.b64
+          git add -A
+          git config user.name 'PentaMark CI'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: optical interface polish, text energy and contextual tooltips'
+          git push origin HEAD:agent/visual-acrylic
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Publish test traces and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optical-polish-browser-tests
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows:
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/visual-acrylic
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify source revision
+        shell: pwsh
+        run: |
+          $expected="${{ needs.validate.outputs.sha }}"
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Source changed between tests and package." }
+      - name: Install dependencies
+        run: npm ci
+      - name: Build production frontend
+        run: npm run check
+      - name: Package portable Windows application
+        run: npm run desktop:build -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify packaged Windows startup and local vault
+        shell: pwsh
+        run: ./scripts/verify-windows-app.ps1
+      - name: Build Android host
+        run: npm run mobile:bundle
+      - name: Package PC and Android hosts
+        shell: pwsh
+        run: |
+          $version=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force release-packages | Out-Null
+          Compress-Archive -Path @('Iniciar-PentaMark.bat','Iniciar-PentaMark.sh','Configurar-Acesso-Remoto-Tailscale.bat','local','local-dist','package.json','package-lock.json','README.md','CELULAR.md','LEIA-ME-Desktop.md','LICENSE') -DestinationPath "release-packages/PentaMark-$version-Pronto.zip" -CompressionLevel Optimal
+          Compress-Archive -Path 'mobile-dist/*' -DestinationPath "release-packages/PentaMark-$version-Mobile-Host-Android.zip" -CompressionLevel Optimal
+          $exe="desktop-dist/PentaMark-Desktop-$version-Windows.exe"
+          if (!(Test-Path $exe) -or (Get-Item $exe).Length -lt 40000000) { throw 'Executable missing or incomplete' }
+          Get-FileHash $exe -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PentaMark-2.12.0-Windows-and-hosts
+          path: |
+            desktop-dist/PentaMark-Desktop-2.12.0-Windows.exe
+            release-packages/*.zip
+          if-no-files-found: error
+          retention-days: 7
