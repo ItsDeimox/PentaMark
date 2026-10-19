@@ -65,3 +65,97 @@ test('clicking bold near wrapping boundaries preserves the rendered block height
   console.log('inline-focus-height-deltas', JSON.stringify(changes));
   expect(Math.max(...changes)).toBeLessThanOrEqual(1);
 });
+
+test('opening a heading for editing keeps the first letter in place', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('pentamark:view', 'live'));
+  await page.goto('/');
+  const heading = page.locator('.pm-live-heading-1').first();
+  await expect(heading).toBeVisible();
+  const rect = () => heading.evaluate(el => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const at = node.textContent.indexOf('Visão');
+      if (at >= 0) { const r = document.createRange(); r.setStart(node, at); r.setEnd(node, at + 1); const b = r.getBoundingClientRect(); return { x: b.x, y: b.y }; }
+    }
+    throw new Error('Heading text not found');
+  });
+  const before = await rect();
+  await heading.click();
+  const after = await rect();
+  console.log('heading-first-character', { before, after });
+  expect(Math.abs(before.x - after.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(before.y - after.y)).toBeLessThanOrEqual(1);
+});
+
+test('quick open is keyboard operated and restores focus without moving text', async ({ page }) => {
+  await page.goto('/');
+  const trigger = page.getByRole('button', { name: 'Abrir arquivo', exact: true });
+  await expect(trigger).toBeVisible();
+  await trigger.focus();
+  await page.keyboard.press('Control+p');
+  await expect(page.getByRole('combobox', { name: 'Buscar arquivos' })).toBeFocused();
+  await page.getByRole('combobox').fill('Direcao');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.pm-document-path')).toContainText('01 - Direcao');
+  await page.keyboard.press('Control+p');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Abrir arquivo' })).not.toBeVisible();
+});
+
+test('tools preserve all view modes and appearance preferences', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ferramentas e ações', exact: true }).click();
+  for (const label of ['Editor Markdown', 'Editor + visualização', 'Somente leitura', 'Live Preview']) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Configurações', exact: true }).click();
+  await expect(page.getByText('Ponte IA · Codex / MCP', { exact: true })).toBeVisible();
+  await expect(page.locator('select').first()).toHaveValue('technical');
+});
+
+test('tree expansion and scroll survive collapse', async ({ page }) => {
+  await page.goto('/');
+  const folder = page.locator('.pm-folder-title').filter({ hasText: 'Planejamento' }).first();
+  await folder.click();
+  await page.locator('.pm-note-list').evaluate(el => el.scrollTop = 310);
+  const scroll = await page.locator('.pm-note-list').evaluate(el => el.scrollTop);
+  await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
+  await page.waitForTimeout(230);
+  await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
+  await expect(folder).toHaveAttribute('aria-expanded', 'true');
+  expect(await page.locator('.pm-note-list').evaluate(el => el.scrollTop)).toBe(scroll);
+});
+
+for (const viewport of [{ width: 1672, height: 941 }, { width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`workspace remains usable at ${viewport.width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await expect(page.getByRole('textbox', { name: 'Editor Markdown em Live Preview' })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: testInfo.outputPath(`workspace-${viewport.width}.png`) });
+    const geometry = await page.locator('.pm-shell').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
+    expect(geometry.scroll).toBeLessThanOrEqual(geometry.width + 1);
+    if (viewport.width < 1100) {
+      const editor = page.getByRole('textbox', { name: 'Editor Markdown em Live Preview' });
+      const before = await editor.boundingBox();
+      await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
+      await expect(page.locator('.pm-sidebar')).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('mobile-tree.png') });
+      const after = await editor.boundingBox();
+      expect(after.width).toBe(before.width);
+      await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
+    }
+  });
+}
+
+test('saved font and scale remain respected and reduced motion has no panel animation', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('pentamark:appearance', JSON.stringify({ uiFont: 'mono', editorFont: 'serif', uiSize: 14, editorSize: 18, appScale: 1.5 })));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const styles = await page.locator('.pm-shell').evaluate(el => ({ ui: el.style.getPropertyValue('--pm-ui-font'), font: el.style.getPropertyValue('--pm-editor-font'), scale: el.style.zoom }));
+  expect(styles.ui).toContain('Consolas'); expect(styles.font).toContain('Georgia'); expect(styles.scale).toBe('1.5');
+  await page.getByRole('button', { name: 'Ferramentas e ações', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Ferramentas e ações' })).toBeVisible();
+  expect(await page.getByRole('dialog', { name: 'Ferramentas e ações' }).evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0s');
+});

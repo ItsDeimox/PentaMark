@@ -23,6 +23,7 @@
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.8",
+    "@fontsource/chakra-petch": "5.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "diff": "^7.0.0",
     "dompurify": "3.2.6",
@@ -36,6 +37,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@types/dompurify": "3.0.5",
     "@types/node": "22.10.5",
     "@types/react": "19.0.3",

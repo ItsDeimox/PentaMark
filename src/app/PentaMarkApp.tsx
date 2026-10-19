@@ -128,6 +128,10 @@ import {
   titleOf,
 } from "../shared/path";
 import { decodeSource, replaceNth } from "../shared/text";
+import { WorkspacePanel } from "../features/workspace/WorkspacePanel";
+import { QuickOpen } from "../features/workspace/QuickOpen";
+import { SelectionTools } from "../features/workspace/SelectionTools";
+import { useWorkspaceNavigation } from "../features/workspace/useWorkspaceNavigation";
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -140,10 +144,10 @@ export default function PentaMarkApp() {
   const [content, setContent] = useState("");
   const [revision, setRevision] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("pentamark:view") as ViewMode) || (isMobileViewport() ? "live" : "split"));
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("pentamark:view") as ViewMode) || "live");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebar, setMobileSidebar] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem("pentamark:sidebar")) || 278);
+  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem("pentamark:sidebar")) || Math.min(440, Math.max(268, window.innerWidth * .265)));
   const [split, setSplit] = useState(() => Number(localStorage.getItem("pentamark:split")) || 50);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
@@ -176,6 +180,8 @@ export default function PentaMarkApp() {
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [uploading, setUploading] = useState(false);
   const [desktopVault, setDesktopVault] = useState<DesktopVaultInfo | null>(null);
@@ -187,7 +193,7 @@ export default function PentaMarkApp() {
       const migrated = localStorage.getItem("pentamark:2k-scale-migrated") === "1";
       if (!migrated && window.screen.width >= 1900) {
         localStorage.setItem("pentamark:2k-scale-migrated", "1");
-        return { ...DEFAULT_APPEARANCE, ...stored, uiSize: Math.max(12, stored.uiSize || 0), editorSize: Math.max(15, stored.editorSize || 0) };
+        return { ...DEFAULT_APPEARANCE, ...stored, uiSize: stored.uiSize ?? DEFAULT_APPEARANCE.uiSize, editorSize: stored.editorSize ?? DEFAULT_APPEARANCE.editorSize };
       }
       return { ...DEFAULT_APPEARANCE, ...stored };
     }
@@ -195,6 +201,7 @@ export default function PentaMarkApp() {
   });
   const [hostConfig, setHostConfig] = useState<HostConfig>({ vaultName: "PentaMark", port: 3417, openBrowser: true, maxUploadMB: 2048, lockEditedNotes: false, cleanupUnusedAssets: false, aiBridgeEnabled: false, aiBridgeToken: "", isHost: false });
 
+  const navigation = useWorkspaceNavigation(appearance.appScale, sidebarOpen, mobileSidebar, setSidebarOpen, setMobileSidebar);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const liveEditorApiRef = useRef<LiveEditorApi | null>(null);
   const previewPaneRef = useRef<HTMLDivElement>(null);
@@ -746,6 +753,9 @@ export default function PentaMarkApp() {
     setContext(null);
     setRenaming(null);
     setDraft({ kind, parent, value: "" });
+    setSidebarOpen(true);
+    setMobileSidebar(true);
+    setToolsOpen(false);
     expandParents(parent);
   }, [expandParents]);
 
@@ -937,14 +947,14 @@ export default function PentaMarkApp() {
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === "n") { event.preventDefault(); beginDraft("note"); }
-      if (key === "p") { event.preventDefault(); searchRef.current?.focus(); }
+      if (key === "p") { event.preventDefault(); setToolsOpen(false); setQuickOpen(true); }
       if (key === "s") { event.preventDefault(); void saveNow(); }
       const editingLive = document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest(".pm-live-codemirror"));
-      if (key === "b" && document.activeElement !== textareaRef.current && !editingLive) { event.preventDefault(); setSidebarOpen((value) => !value); }
+      if (key === "b" && document.activeElement !== textareaRef.current && !editingLive) { event.preventDefault(); if (window.innerWidth / appearance.appScale < 1100) setMobileSidebar(value => !value); else setSidebarOpen(value => !value); }
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [beginDraft, saveNow]);
+  }, [beginDraft, saveNow, appearance.appScale]);
 
   const uploadFiles = useCallback(async (files: FileList | File[]) => {
     if (!files.length) return;
@@ -980,7 +990,7 @@ export default function PentaMarkApp() {
     const start = event.clientX;
     const width = sidebarWidth;
     document.body.classList.add("pm-resizing");
-    const move = (next: PointerEvent) => setSidebarWidth(Math.min(520, Math.max(220, width + next.clientX - start)));
+    const move = (next: PointerEvent) => setSidebarWidth(Math.min(520, Math.max(220, width + (next.clientX - start) / appearance.appScale)));
     const up = () => { document.body.classList.remove("pm-resizing"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
@@ -1109,7 +1119,7 @@ export default function PentaMarkApp() {
           <div style={{ "--pm-depth": depth } as React.CSSProperties}>{inlineInput("folder", renaming.value, (value) => setRenaming({ ...renaming, value }), () => void commitRename(), renameRef)}</div>
         ) : (
           <button
-            className="pm-folder-title"
+            className="pm-folder-title" aria-expanded={isOpen}
             style={{ "--pm-depth": depth } as React.CSSProperties}
             draggable={!root}
             onDragStart={(event) => !root && onDragStart(event, { kind: "folder", path })}
@@ -1122,7 +1132,7 @@ export default function PentaMarkApp() {
             {!root && <GripVertical className="pm-drag-grip" size={12} />}
             {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
-            <span>{root ? "Cofre" : baseName(path)}</span>
+            <span>{root ? (vault.vaultName || "Cofre") : baseName(path)}</span>
             {!isOpen && !!folderUsers.length && <PresenceStack clients={folderUsers} compact onClientClick={navigateToClient} />}
             <small>{childrenFolders.length + childrenNotes.length + childrenAssets.length}</small>
           </button>
@@ -1143,6 +1153,7 @@ export default function PentaMarkApp() {
   const uiFont = appearance.uiFont === "custom" ? appearance.customUiFont || UI_FONTS.modern : UI_FONTS[appearance.uiFont] || UI_FONTS.modern;
   const editorFont = appearance.editorFont === "custom" ? appearance.customEditorFont || EDITOR_FONTS.mono : EDITOR_FONTS[appearance.editorFont] || EDITOR_FONTS.mono;
   const shellStyle = {
+    ...DOCUMENT_STYLE_VARIABLES,
     ...DOCUMENT_STYLE_VARIABLES,
     zoom: appearance.appScale,
     width: `${100 / appearance.appScale}vw`,
@@ -1186,22 +1197,30 @@ export default function PentaMarkApp() {
   };
 
   return (
-    <main className="pm-shell" data-theme={appearance.theme} style={shellStyle}>
+    <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} style={shellStyle}>
       <div className="pm-ambient" />
+      {!navigation.visible && <button ref={navigation.openerRef} className="pm-navigation-opener" onClick={() => navigation.setVisible(true)} aria-label="Mostrar ou ocultar arquivos" title="Abrir arquivos"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 12 24 28H8L3 12Z" /></svg></button>}
+      <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
+        {saveState === "conflict" && <button className="pm-conflict-button" onClick={() => setConflictOpen(true)}>Conflito · Ver diff</button>}
+        {saveState !== "saved" && saveState !== "conflict" && <span role="status">{saveState === "saving" ? "Salvando..." : "Alterado"}</span>}
+        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo"><Search size={18} /><span>Abrir</span><kbd>Ctrl P</kbd></button>
+        <button data-workspace-trigger aria-expanded={toolsOpen} aria-label="Ferramentas e ações" onClick={() => setToolsOpen(value => !value)}><MoreHorizontal size={21} /></button>
+      </nav>
       <aside
-        className={`pm-sidebar ${sidebarOpen ? "" : "pm-sidebar--closed"} ${mobileSidebar ? "pm-sidebar--mobile" : ""}`}
+        ref={navigation.sidebarRef} inert={!navigation.visible} aria-hidden={!navigation.visible}
+        className={`pm-sidebar ${navigation.visible ? "" : "pm-sidebar--closed"}`}
         onContextMenu={(event) => { if ((event.target as HTMLElement).closest("button,input")) return; openContext(event, { type: "blank", x: event.clientX, y: event.clientY }); }}
       >
         <div className="pm-brand">
           <div className="pm-mark"><span /></div>
           <div className="pm-brand-copy"><strong>PentaMark</strong></div>
-          <button className="pm-icon-button pm-mobile-only" aria-label="Fechar arquivos" onClick={() => setMobileSidebar(false)} title="Fechar"><X size={17} /></button>
+          <button className="pm-sidebar-collapse" aria-label="Mostrar ou ocultar arquivos" onClick={() => navigation.setVisible(false)} title="Recolher arquivos"><ChevronRight size={15} /><span>Recolher</span></button>
         </div>
 
-        <div className="pm-search"><Search size={14} /><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar notas..." /><kbd>Ctrl P</kbd></div>
+
 
         <div className="pm-library-head" {...folderDropProps("")}>
-          <span>ARQUIVOS</span>
+          <span>{vault.vaultName || "Cofre"}</span>
           <div>
             <button title="Nova nota inline" onClick={() => beginDraft("note")}><FilePlus2 size={13} /></button>
             <button title="Nova pasta inline" onClick={() => beginDraft("folder")}><FolderPlus size={13} /></button>
@@ -1216,85 +1235,16 @@ export default function PentaMarkApp() {
           onContextMenu={(event) => { if ((event.target as HTMLElement).closest("button,input")) return; openContext(event, { type: "blank", x: event.clientX, y: event.clientY }); }}
           {...folderDropProps("")}
         >
-          {query ? (
-            filteredNotes.length || filteredAssets.length ? <>{filteredNotes.map((note) => noteRow(note, 0))}{filteredAssets.map((asset) => assetRow(asset, 0))}</> : <div className="pm-empty-search">Nenhum arquivo encontrado.</div>
-          ) : folderTree("", 0, true)}
+          {folderTree("", 0, true)}
         </div>
 
-        <div className="pm-sidebar-bottom">
-          <button className="pm-connected-button" onClick={() => setClientsOpen(true)}><Users size={14} /><span>{vault.clients} conectado{vault.clients === 1 ? "" : "s"}</span><i className="pm-live-dot" /></button>
-          <button onClick={() => setConnectOpen(true)}><LogIn size={14} /><span>Conectar a um cofre</span></button>
-          <button onClick={() => { setMobileSidebar(false); setMobileSetupOpen(true); }}><Smartphone size={14} /><span>Celular e acesso remoto</span></button>
-          <button onClick={() => setProfileOpen(true)}><UserCircle size={14} /><span>Conta</span><PresenceAvatar client={{ id: clientId, name: deviceName, avatar: deviceAvatar, color: colorForClient(clientId) }} tiny /></button>
-          <button onClick={() => setSettingsOpen(true)}><Settings size={14} /><span>Configurações</span></button>
-        </div>
+        <div className="pm-sidebar-create"><button onClick={() => beginDraft("note")}><FilePlus2 size={18} />Nova nota</button></div>
       </aside>
-      {mobileSidebar && <button type="button" className="pm-mobile-scrim" aria-label="Fechar arquivos" onClick={() => setMobileSidebar(false)} />}
-      {sidebarOpen && <div className="pm-sidebar-resizer pm-desktop-only" onPointerDown={resizeSidebar} />}
+      {navigation.compact && navigation.visible && <button type="button" className="pm-mobile-scrim" aria-label="Fechar arquivos" onClick={() => navigation.setVisible(false)} />}
+      {!navigation.compact && navigation.visible && <div className="pm-sidebar-resizer" onPointerDown={resizeSidebar} />}
 
       <section className="pm-workspace">
-        <header className="pm-topbar">
-          <div className="pm-title-area">
-            <button className="pm-icon-button pm-mobile-only" aria-label="Abrir arquivos" onClick={() => setMobileSidebar(true)}><Menu size={18} /></button>
-            <button className="pm-icon-button pm-desktop-only" aria-label="Mostrar ou ocultar arquivos" onClick={() => setSidebarOpen((value) => !value)} title="Mostrar/ocultar arquivos">
-              {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
-            </button>
-            <span className="pm-history-controls" data-history-version={historyVersion}>
-              <button className="pm-icon-button" disabled={noteHistory.current.index <= 0} onClick={() => navigateHistory(-1)} title="Voltar · Alt+← · botão lateral"><ArrowLeft size={15} /></button>
-              <button className="pm-icon-button" disabled={noteHistory.current.index < 0 || noteHistory.current.index >= noteHistory.current.paths.length - 1} onClick={() => navigateHistory(1)} title="Avançar · Alt+→ · botão lateral"><ArrowRight size={15} /></button>
-            </span>
-            <div className="pm-breadcrumb">
-              <button className="pm-vault-breadcrumb" onClick={() => void showVault()} onContextMenu={(event) => { event.preventDefault(); void chooseVault(); }} title="Clique para abrir a pasta · botão direito para trocar de cofre"><Archive size={13} /><span>{desktopVault?.name || "Cofre"}</span></button>
-              <span>/</span><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong>
-            </div>
-            {!!activeFileUsers.length && <PresenceStack clients={activeFileUsers} onClientClick={navigateToClient} />}
-          </div>
-          <div className="pm-top-actions">
-            {activeLock && <button className="pm-file-lock" onClick={() => setClientsOpen(true)} title={`${activeLock.name} está editando`}><Lock size={12} />{activeLock.name}</button>}
-            {saveState === "conflict" && conflict ? (
-              <button className="pm-conflict-button" onClick={() => setConflictOpen(true)} title="Visualizar diferenças"><GitCompareArrows size={13} />Conflito · Ver diff</button>
-            ) : (
-              <span className={`pm-save-state pm-save-state--${saveState}`}>{saveState === "saved" ? "Salvo" : saveState === "saving" ? "Salvando" : "Alterado"}</span>
-            )}
-            <div className="pm-view-switch" aria-label="Modo de visualização">
-              <button className={viewMode === "edit" ? "active" : ""} onClick={() => setViewMode("edit")} title="Editor Markdown"><Edit3 size={15} /></button>
-              <button className={viewMode === "split" ? "active" : ""} onClick={() => setViewMode("split")} title="Editor + visualização"><Columns2 size={15} /></button>
-              <button className={viewMode === "preview" ? "active" : ""} onClick={() => setViewMode("preview")} title="Somente leitura"><Eye size={15} /></button>
-              <button className={viewMode === "live" ? "active" : ""} onClick={() => setViewMode("live")} title="Live Preview"><Sparkles size={15} /></button>
-            </div>
-            <button className="pm-share-button" aria-label="Compartilhar" onClick={() => setShareOpen(true)}><Share2 size={14} /><span>Compartilhar</span></button>
-            <div className="pm-menu-wrap">
-              <button className="pm-icon-button" aria-label="Mais ações" onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}><MoreHorizontal size={17} /></button>
-              {moreOpen && <div className="pm-popover pm-note-menu" onPointerDown={(event) => event.stopPropagation()}>
-                <button onClick={() => beginDraft("note", parentOf(activePath))}><FilePlus2 size={14} />Nova nota aqui</button>
-                <button onClick={() => void chooseVault()}><FolderOpen size={14} />Abrir outro cofre</button>
-                {activePath && <button onClick={() => startRename("note", activePath)}><Pencil size={14} />Renomear</button>}
-                {activePath && <button onClick={() => void duplicateNote(activePath)}><CopyPlus size={14} />Duplicar</button>}
-                {activePath && <button className="danger" onClick={() => void deleteItem("note", activePath)}><Trash2 size={14} />Excluir</button>}
-              </div>}
-            </div>
-          </div>
-        </header>
-
-        <div className="pm-toolbar" onMouseDown={(event) => { if ((event.target as HTMLElement).closest("button,label")) event.preventDefault(); }}>
-          <button onClick={() => applyFormat("bold")} title="Negrito — Ctrl+B"><Bold size={15} /></button>
-          <button onClick={() => applyFormat("italic")} title="Itálico — Ctrl+I"><Italic size={15} /></button>
-          <button onClick={() => applyFormat("heading")} title="Título — Ctrl+Shift+H"><Heading2 size={15} /></button><span />
-          <button onClick={() => applyFormat("bullet")} title="Lista — Ctrl+Shift+8"><List size={15} /></button>
-          <button onClick={() => applyFormat("task")} title="Tarefa — Ctrl+Shift+X"><ListTodo size={15} /></button>
-          <button onClick={() => applyFormat("quote")} title="Citação — Ctrl+Shift+Q"><Quote size={15} /></button>
-          <button onClick={() => applyFormat("code")} title="Código — Ctrl+Shift+K"><Code2 size={15} /></button><span />
-          <button onClick={() => applyFormat("link")} title="Link — Ctrl+K"><Link size={15} /></button>
-          <button onClick={() => applyFormat("collapse")} title="Seção recolhível — Ctrl+Alt+D"><PanelTopClose size={15} /></button>
-          <button onClick={() => applyFormat("kanban")} title="Kanban — Ctrl+Alt+K"><LayoutDashboard size={15} /></button>
-          <label className="pm-upload-label" title="Anexar arquivos"><ImagePlus size={15} /><input type="file" multiple onChange={(event) => event.target.files && void uploadFiles(event.target.files)} /></label>
-          <span className="pm-toolbar-spacer" />
-          <button className={syncScroll ? "active" : ""} onClick={() => setSyncScroll((value) => !value)} title={`Sincronização de rolagem: ${syncScroll ? "ligada" : "desligada"}`}><ArrowRightLeft size={14} /></button>
-          <button onClick={() => setAppearance((current) => ({ ...current, editorSize: Math.max(11, current.editorSize - 1) }))} title="Diminuir zoom do editor"><ZoomOut size={14} /></button>
-          <button onClick={() => setAppearance((current) => ({ ...current, editorSize: Math.min(32, current.editorSize + 1) }))} title="Aumentar zoom do editor · Ctrl+Scroll"><ZoomIn size={14} /></button>
-          <span className="pm-document-meta"><Hash size={11} />{words} palavras</span>
-        </div>
-
+        <div className="pm-document-path" title={activePath}><span>{vault.vaultName || "Cofre"}</span><ChevronRight size={15} /><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong></div>
         <DocumentWorkspace
           mode={viewMode}
           onDragOver={(event) => { if (!dragging && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
@@ -1353,6 +1303,76 @@ export default function PentaMarkApp() {
         <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.7.0</span></footer>
       </section>
 
+      <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
+        onClose={() => { setQuickOpen(false); setQuery(""); }} onOpen={entry => { if (entry.kind === "note") void openNote(entry.path, true); else { const asset = vault.assets.find(item => item.path === entry.path); if (asset) setAssetPreview(asset); } }} />
+      <WorkspacePanel open={toolsOpen} title="Ferramentas e ações" onClose={() => setToolsOpen(false)} className="pm-workspace-tools">
+        <header className="pm-topbar">
+          <div className="pm-title-area">
+            <span className="pm-history-controls" data-history-version={historyVersion}>
+              <button className="pm-icon-button" disabled={noteHistory.current.index <= 0} onClick={() => navigateHistory(-1)} title="Voltar · Alt+← · botão lateral"><ArrowLeft size={15} /></button>
+              <button className="pm-icon-button" disabled={noteHistory.current.index < 0 || noteHistory.current.index >= noteHistory.current.paths.length - 1} onClick={() => navigateHistory(1)} title="Avançar · Alt+→ · botão lateral"><ArrowRight size={15} /></button>
+            </span>
+            <div className="pm-breadcrumb">
+              <button className="pm-vault-breadcrumb" onClick={() => void showVault()} onContextMenu={(event) => { event.preventDefault(); void chooseVault(); }} title="Clique para abrir a pasta · botão direito para trocar de cofre"><Archive size={13} /><span>{desktopVault?.name || "Cofre"}</span></button>
+              <span>/</span><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong>
+            </div>
+            {!!activeFileUsers.length && <PresenceStack clients={activeFileUsers} onClientClick={navigateToClient} />}
+          </div>
+          <div className="pm-top-actions">
+            {activeLock && <button className="pm-file-lock" onClick={() => setClientsOpen(true)} title={`${activeLock.name} está editando`}><Lock size={12} />{activeLock.name}</button>}
+            {saveState === "conflict" && conflict ? (
+              <button className="pm-conflict-button" onClick={() => setConflictOpen(true)} title="Visualizar diferenças"><GitCompareArrows size={13} />Conflito · Ver diff</button>
+            ) : (
+              <span className={`pm-save-state pm-save-state--${saveState}`}>{saveState === "saved" ? "Salvo" : saveState === "saving" ? "Salvando" : "Alterado"}</span>
+            )}
+            <div className="pm-view-switch" aria-label="Modo de visualização">
+              <button className={viewMode === "edit" ? "active" : ""} onClick={() => setViewMode("edit")} title="Editor Markdown"><Edit3 size={15} /></button>
+              <button className={viewMode === "split" ? "active" : ""} onClick={() => setViewMode("split")} title="Editor + visualização"><Columns2 size={15} /></button>
+              <button className={viewMode === "preview" ? "active" : ""} onClick={() => setViewMode("preview")} title="Somente leitura"><Eye size={15} /></button>
+              <button className={viewMode === "live" ? "active" : ""} onClick={() => setViewMode("live")} title="Live Preview"><Sparkles size={15} /></button>
+            </div>
+            <button className="pm-share-button" aria-label="Compartilhar" onClick={() => setShareOpen(true)}><Share2 size={14} /><span>Compartilhar</span></button>
+            <div className="pm-menu-wrap">
+              <button className="pm-icon-button" aria-label="Mais ações" onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}><MoreHorizontal size={17} /></button>
+              {moreOpen && <div className="pm-popover pm-note-menu" onPointerDown={(event) => event.stopPropagation()}>
+                <button onClick={() => beginDraft("note", parentOf(activePath))}><FilePlus2 size={14} />Nova nota aqui</button>
+                <button onClick={() => void chooseVault()}><FolderOpen size={14} />Abrir outro cofre</button>
+                {activePath && <button onClick={() => startRename("note", activePath)}><Pencil size={14} />Renomear</button>}
+                {activePath && <button onClick={() => void duplicateNote(activePath)}><CopyPlus size={14} />Duplicar</button>}
+                {activePath && <button className="danger" onClick={() => void deleteItem("note", activePath)}><Trash2 size={14} />Excluir</button>}
+              </div>}
+            </div>
+          </div>
+        </header>
+
+        <div className="pm-toolbar" onMouseDown={(event) => { if ((event.target as HTMLElement).closest("button,label")) event.preventDefault(); }}>
+          <button onClick={() => applyFormat("bold")} title="Negrito — Ctrl+B"><Bold size={15} /></button>
+          <button onClick={() => applyFormat("italic")} title="Itálico — Ctrl+I"><Italic size={15} /></button>
+          <button onClick={() => applyFormat("heading")} title="Título — Ctrl+Shift+H"><Heading2 size={15} /></button><span />
+          <button onClick={() => applyFormat("bullet")} title="Lista — Ctrl+Shift+8"><List size={15} /></button>
+          <button onClick={() => applyFormat("task")} title="Tarefa — Ctrl+Shift+X"><ListTodo size={15} /></button>
+          <button onClick={() => applyFormat("quote")} title="Citação — Ctrl+Shift+Q"><Quote size={15} /></button>
+          <button onClick={() => applyFormat("code")} title="Código — Ctrl+Shift+K"><Code2 size={15} /></button><span />
+          <button onClick={() => applyFormat("link")} title="Link — Ctrl+K"><Link size={15} /></button>
+          <button onClick={() => applyFormat("collapse")} title="Seção recolhível — Ctrl+Alt+D"><PanelTopClose size={15} /></button>
+          <button onClick={() => applyFormat("kanban")} title="Kanban — Ctrl+Alt+K"><LayoutDashboard size={15} /></button>
+          <label className="pm-upload-label" title="Anexar arquivos"><ImagePlus size={15} /><input type="file" multiple onChange={(event) => event.target.files && void uploadFiles(event.target.files)} /></label>
+          <span className="pm-toolbar-spacer" />
+          <button className={syncScroll ? "active" : ""} onClick={() => setSyncScroll((value) => !value)} title={`Sincronização de rolagem: ${syncScroll ? "ligada" : "desligada"}`}><ArrowRightLeft size={14} /></button>
+          <button onClick={() => setAppearance((current) => ({ ...current, editorSize: Math.max(11, current.editorSize - 1) }))} title="Diminuir zoom do editor"><ZoomOut size={14} /></button>
+          <button onClick={() => setAppearance((current) => ({ ...current, editorSize: Math.min(32, current.editorSize + 1) }))} title="Aumentar zoom do editor · Ctrl+Scroll"><ZoomIn size={14} /></button>
+          <span className="pm-document-meta"><Hash size={11} />{words} palavras</span>
+        </div>
+
+        <div className="pm-workspace-account" onClick={() => setToolsOpen(false)}>
+          <button className="pm-connected-button" onClick={() => setClientsOpen(true)}><Users size={14} /><span>{vault.clients} conectado{vault.clients === 1 ? "" : "s"}</span><i className="pm-live-dot" /></button>
+          <button onClick={() => setConnectOpen(true)}><LogIn size={14} /><span>Conectar a um cofre</span></button>
+          <button onClick={() => { setMobileSidebar(false); setMobileSetupOpen(true); }}><Smartphone size={14} /><span>Celular e acesso remoto</span></button>
+          <button onClick={() => setProfileOpen(true)}><UserCircle size={14} /><span>Conta</span><PresenceAvatar client={{ id: clientId, name: deviceName, avatar: deviceAvatar, color: colorForClient(clientId) }} tiny /></button>
+          <button onClick={() => setSettingsOpen(true)}><Settings size={14} /><span>Configurações</span></button>
+        </div>
+      </WorkspacePanel>
+      <SelectionTools enabled={viewMode === "live" && canEditActive && !toolsOpen && !quickOpen} scale={appearance.appScale} onFormat={applyFormat} onMore={() => setToolsOpen(true)} />
       {linkPreview && <aside
         ref={linkPreviewRef}
         className="pm-link-hover-preview pm-markdown"

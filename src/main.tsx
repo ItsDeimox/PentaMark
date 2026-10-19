@@ -6,6 +6,12 @@ import "./app.css";
 import "./features/markdown/obsidian.css";
 import "./features/editor/workspace.css";
 import "./features/markdown/document.css";
+import "@fontsource/chakra-petch/latin-400.css";
+import "@fontsource/chakra-petch/latin-400-italic.css";
+import "@fontsource/chakra-petch/latin-500.css";
+import "@fontsource/chakra-petch/latin-600.css";
+import "@fontsource/chakra-petch/latin-700.css";
+import "./features/workspace/approved-workspace.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
