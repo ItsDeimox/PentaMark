@@ -1,4 +1,4 @@
-# PentaMark Desktop 2.7.0
+# PentaMark Desktop 2.8.0
 
 ## Como abrir
 
@@ -25,7 +25,7 @@ Clique com o botão direito no nome do cofre no topo, use o menu `…` ou abra *
 
 Wikilinks como `[[Nota|apelido]]`, embeds como `![[assets/imagem.png]]`, áudios, vídeos, PDFs, propriedades YAML, callouts, Kanban e blocos `mermaid` são reconhecidos no Preview e no Live Preview. Assets aparecem na árvore e abrem no workspace, com zoom por scroll e movimento por arraste para imagens.
 
-O Live Preview revela a fonte Markdown da linha tocada pelo cursor/seleção. O Kanban permite criar, editar, remover e arrastar cartões entre colunas, alternar o layout horizontal/vertical e recolher o quadro inteiro.
+O Live Preview mantém a leitura estável ao clicar e selecionar; use o modo Editor Markdown para acessar explicitamente os marcadores da fonte. O Kanban permite criar, editar, remover e arrastar cartões entre colunas, alternar o layout horizontal/vertical e recolher o quadro inteiro.
 
 ## Ponte IA
 

@@ -1308,7 +1308,7 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.7.0</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.8.0</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}

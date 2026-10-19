@@ -21,7 +21,7 @@ await Promise.all([
 
 await writeFile(join(outputRoot, "package.json"), `${JSON.stringify({
   name: "pentamark-mobile-host",
-  version: "2.7.0",
+  version: "2.8.0",
   private: true,
   type: "module",
   scripts: { start: "node local/server.mjs" },
