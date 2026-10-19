@@ -17,21 +17,21 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Apply checksum-verified refinement once
-        if: hashFiles('scripts/refine-workspace.py') != ''
-        run: python scripts/refine-workspace.py
+      - name: Apply checksum-verified keyboard refinement once
+        if: hashFiles('scripts/refine-keyboard.py') != ''
+        run: python scripts/refine-keyboard.py
       - run: npm ci --ignore-scripts
       - run: npm run check
       - name: Record compiled refinement on the isolated branch
-        if: hashFiles('scripts/refine-workspace.py') != ''
+        if: hashFiles('scripts/refine-keyboard.py') != ''
         run: |
           test "${GITHUB_REF}" = 'refs/heads/agent/approved-visual-guide'
           git diff --check
-          git add src/features/editor/live-preview/decorations.ts src/features/workspace/WorkspacePanel.tsx src/features/workspace/approved-workspace.css
-          git rm scripts/refine-workspace.py
+          git add src/app/PentaMarkApp.tsx src/features/editor/LivePreviewEditor.tsx
+          git rm scripts/refine-keyboard.py
           git config user.name 'PentaMark development'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix: stabilize inline geometry, keyboard overlays and visual details'
+          git commit -m 'fix: preserve keyboard actions during fast workspace transitions'
           git push origin HEAD:agent/approved-visual-guide
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test

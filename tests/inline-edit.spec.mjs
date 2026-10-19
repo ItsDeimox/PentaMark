@@ -22,6 +22,10 @@ async function readSource(page) {
 test('bold, code and wikilink text retain their measured position on focus', async ({ page }) => {
   await openEditingFixture(page);
   for (const selector of ['.pm-live-strong', '.pm-live-inline-code', '.pm-live-link']) {
+    if (selector !== ".pm-live-strong") {
+      await page.getByRole("textbox", { name: "Editor Markdown em Live Preview" }).focus();
+      await page.keyboard.press("Control+End");
+    }
     const element = page.locator(selector).first();
     await element.scrollIntoViewIfNeeded();
     await page.getByRole('button', { name: 'Abrir arquivo', exact: true }).focus();
@@ -58,6 +62,7 @@ test('editing, contextual formatting, save, undo and redo remain functional', as
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+s');
   await expect.poll(() => readSource(page)).not.toContain('**Validação de edição**');
+  await expect.poll(() => readSource(page)).toContain('Validação de edição');
   await page.keyboard.press('Control+Shift+z');
   await page.keyboard.press('Control+s');
   await expect.poll(() => readSource(page)).toContain('**Validação de edição**');
@@ -81,4 +86,34 @@ test('rapid open/close and keyboard switching between overlays do not trap focus
     await page.keyboard.press('Control+p'); await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Abrir arquivo' })).not.toBeVisible();
   }
+});
+
+test('new-note and rename actions reopen a collapsed tree and close obstructing panels', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
+  await page.keyboard.press('Control+p');
+  await expect(page.getByRole('combobox')).toBeFocused();
+  await page.keyboard.press('Control+n');
+  await expect(page.getByRole('dialog', { name: 'Abrir arquivo' })).not.toBeVisible();
+  const input = page.getByPlaceholder('Nome da nota');
+  await expect(input).toBeFocused();
+  await input.fill('90 - Nova nota de teste'); await input.press('Enter');
+  await expect(page.locator('.pm-document-path')).toContainText('90 - Nova nota de teste');
+  await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
+  await page.getByRole('button', { name: 'Ferramentas e ações', exact: true }).click();
+  await page.getByRole('button', { name: 'Mais ações', exact: true }).click();
+  await page.getByRole('button', { name: 'Renomear', exact: true }).click();
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('90 - Nova nota de teste');
+  await input.fill('91 - Nota renomeada'); await input.press('Enter');
+  await expect(page.locator('.pm-document-path')).toContainText('91 - Nota renomeada');
+});
+
+test('Ctrl+B in the quick-open text field does not change the tree state', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('Control+p');
+  await expect(page.getByRole('combobox')).toBeFocused();
+  const before = await page.locator('.pm-sidebar').getAttribute('aria-hidden');
+  await page.keyboard.press('Control+b');
+  expect(await page.locator('.pm-sidebar').getAttribute('aria-hidden')).toBe(before);
 });
