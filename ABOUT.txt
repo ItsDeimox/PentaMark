@@ -1,0 +1,9 @@
+PentaMark v2.12.0 portable Windows executable
+SHA-256: 544f93cc0b8d66630b63da54c6eff25d3ae5d1a39a1ae7561d68fe936f415ff5
+Size: 83506319 bytes
+Validated source commit: 4b408aa5092295293894422ec76bd788f66db98a
+Build and test run: https://github.com/ItsDeimox/PentaMark/actions/runs/39314679888
+
+This download branch contains only the validated Windows executable and
+this metadata file. It does not change the main or review branch source.
+The executable is unsigned; make a backup of your Markdown vault.
