@@ -1,7 +1,7 @@
 import { useState, type ComponentType } from 'react';
 import { ArrowLeft, ArrowRight, ArrowRightLeft, Check, ChevronDown, Code2, Columns2, CopyPlus, ExternalLink,
   Eye, FilePlus2, FolderOpen, ImagePlus, LogIn, Pencil, Settings, Share2, Smartphone, Sparkles, Trash2,
-  UserCircle, Users, ZoomIn, ZoomOut, Square, Layers } from 'lucide-react';
+  Bot, UserCircle, Users, ZoomIn, ZoomOut, Square, Layers } from 'lucide-react';
 import { FORMAT_ACTIONS } from '../../app/constants';
 import type { FormatKind, ViewMode, GraphicsMode } from '../../domain/types';
 import { WorkspacePanel } from './WorkspacePanel';
@@ -16,7 +16,7 @@ export function ToolsPanel(p: {
   onNew: () => void; onRename: () => void; onDuplicate: () => void; onDelete: () => void;
   onReveal: () => void; onVault: () => void; onShare: () => void; onClients: () => void;
   onConnect: () => void; onMobile: () => void; onProfile: () => void; onSettings: () => void;
-  clients: number; saved: boolean;
+  onMcp: () => void; mcpEnabled: boolean; clients: number; saved: boolean;
 }) {
   const [fileActions, setFileActions] = useState(false);
   const [formats, setFormats] = useState(false);
@@ -30,6 +30,7 @@ export function ToolsPanel(p: {
     onClick={run}><Icon size={16}/><span>{label}</span></button>;
   const leave = (run:()=>void) => () => { p.onClose(); run(); };
   return <WorkspacePanel open={p.open} title="Ferramentas e ações" onClose={p.onClose} className="pm-workspace-tools">
+    <button type="button" className="pm-tool-mcp" aria-label="Ponte MCP" onClick={leave(p.onMcp)}><Bot size={19}/><span><strong>Ponte MCP</strong><small>Conectar ferramentas de IA</small></span><i data-active={p.mcpEnabled}/></button>
     <section className="pm-tool-section"><div className="pm-section-label"><span>VISUALIZAÇÃO</span><span className="pm-tool-saved"><Check size={11}/>{p.saved?'Salvo':'Alterado'}</span></div>
       <div className="pm-mode-grid">{modes.map(({id,label,name,icon:Icon}) => <button key={id} aria-label={name} title={name}
         aria-pressed={p.mode===id} onClick={()=>p.onMode(id)}><Icon size={17}/><span>{label}</span></button>)}</div>

@@ -7,17 +7,21 @@ async function openBlocks(page) {
   await expect(page.locator('.pm-document-path')).toContainText('03 - Blocos');
 }
 const editCallout=page=>page.locator('.pm-live-widget .pm-callout').getByText('Mais uma linha',{exact:false}).click();
-test('dirty source asks only once when dismissing by backdrop and retains a keyboard focus trap',async({page})=>{
+test('dirty source has a single acrylic confirmation and cancel returns to the source editor',async({page})=>{
   await openBlocks(page);await editCallout(page);
   const source=page.getByRole('textbox',{name:'Fonte Markdown do bloco'});
   await expect(source).toBeFocused();
   await source.fill((await source.inputValue())+'\n> confirmação única');
   await page.getByRole('button',{name:'Aplicar',exact:true}).focus();await page.keyboard.press('Tab');
   await expect(page.getByRole('button',{name:'Fechar Editar bloco',exact:true})).toBeFocused();
-  let count=0;page.on('dialog',async d=>{count++;await d.accept();});
-  await page.locator('.pm-workspace-scrim').click({position:{x:8,y:8}});
-  await expect(page.getByRole('dialog',{name:'Editar bloco'})).not.toBeVisible();
-  expect(count).toBe(1);
+  await page.locator('.pm-dialog-layer').click({position:{x:8,y:8}});
+  const confirm=page.getByRole('dialog',{name:'Descartar alterações',exact:true});
+  await expect(confirm).toHaveCount(1);await expect(confirm.getByRole('button',{name:'Cancelar',exact:true})).toBeFocused();
+  await page.keyboard.press('Escape');await expect(confirm).not.toBeVisible();
+  await expect(source).toHaveValue(/confirmação única/);
+  await page.locator('.pm-dialog-layer').click({position:{x:8,y:8}});
+  await expect(confirm).toHaveCount(1);await confirm.getByRole('button',{name:'Descartar',exact:true}).click();
+  await expect(page.locator('.pm-block-source-dialog')).toHaveCount(0);
 });
 test('a concurrent document update cannot be overwritten by a stale block editor',async({page})=>{
   await openBlocks(page);
@@ -28,7 +32,7 @@ test('a concurrent document update cannot be overwritten by a stale block editor
   await source.fill((await source.inputValue())+'\n> alteração local');
   const updated=await page.request.put(url,{data:{content:original.content.replace('Uma citação','Atualização concorrente de teste. Uma citação'),baseRevision:original.revision}});
   expect(updated.ok()).toBe(true);
-  await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toContainText('Atualização concorrente de teste');
+  await expect(page.locator('.pm-live-codemirror .cm-content')).toContainText('Atualização concorrente de teste');
   await page.getByRole('button',{name:'Aplicar',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('mudou');
   const remote=await (await page.request.get(url)).json();

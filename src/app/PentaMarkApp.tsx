@@ -1,3 +1,9 @@
+import { version as APP_VERSION } from "../../package.json";
+import { DialogPresence } from "../components/dialogs/DialogFrame";
+import { ShareModal } from "../components/dialogs/ShareModal";
+import { McpModal } from "../components/dialogs/McpSettings";
+import { useConfirmation } from "../components/dialogs/Confirmation";
+import { saveHostSettings } from "../api/host-settings";
 import { useTreeInputFocus } from "../features/workspace/useTreeInputFocus";
 import {
   Archive,
@@ -142,6 +148,8 @@ type InstallPromptEvent = Event & {
 };
 
 export default function PentaMarkApp() {
+  const confirmation = useConfirmation();
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [vault, setVault] = useState<VaultState>(EMPTY_STATE);
   const [activePath, setActivePath] = useState("");
   const [content, setContent] = useState("");
@@ -525,13 +533,14 @@ export default function PentaMarkApp() {
   useEffect(() => {
     let lastMouseNavigation = 0;
     const mouse = (event: MouseEvent) => {
-      if (event.button !== 3 && event.button !== 4) return;
+      if (document.querySelector("dialog[open]") || (event.button !== 3 && event.button !== 4)) return;
       event.preventDefault();
       if (Date.now() - lastMouseNavigation < 120) return;
       lastMouseNavigation = Date.now();
       navigateHistory(event.button === 3 ? -1 : 1);
     };
     const key = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (!event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
       event.preventDefault();
       navigateHistory(event.key === "ArrowLeft" ? -1 : 1);
@@ -660,16 +669,15 @@ export default function PentaMarkApp() {
     }
     if (createPath) {
       event.preventDefault();
-      if (!window.confirm(`A nota "${titleOf(createPath)}" não existe. Criar agora?`)) return true;
-      void request("/api/note", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: ensureMarkdown(createPath), content: `# ${titleOf(createPath)}\n\n` }),
-      }).then(async () => { await refreshState(); await openNote(ensureMarkdown(createPath), true); }).catch((error) => notify(error instanceof Error ? error.message : "Não deu para criar a nota"));
+      void confirmation({ title: "Criar nota", message: `A nota "${titleOf(createPath)}" não existe. Criar agora?`, accept: "Criar nota" }).then(async approved => {
+        if (!approved) return;
+        await request("/api/note", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: ensureMarkdown(createPath), content: `# ${titleOf(createPath)}\n\n` }) });
+        await refreshState(); await openNote(ensureMarkdown(createPath), true);
+      }).catch(error => notify(error instanceof Error ? error.message : "Não deu para criar a nota"));
       return true;
     }
     return false;
-  }, [closeLinkPreview, expandParents, notify, openNote, refreshState]);
+  }, [confirmation, closeLinkPreview, expandParents, notify, openNote, refreshState]);
 
   const openAssetTarget = useCallback((target: string) => {
     const asset = resolveAssetTarget(target, activePathRef.current, vault.assets);
@@ -762,7 +770,7 @@ export default function PentaMarkApp() {
   const deleteItem = useCallback(async (kind: TreeItemKind, path: string) => {
     setContext(null);
     const label = kind === "folder" ? "a pasta e tudo dentro dela" : kind === "asset" ? "o asset" : "a nota";
-    if (!window.confirm(`Mover ${label} para a lixeira?`)) return;
+    if (!await confirmation({ title: "Mover para a lixeira", message: `Mover ${label} para a lixeira?\n${path}`, accept: "Mover para a lixeira", danger: true })) return;
     try {
       await request(`/api/${kind}?path=${encodeURIComponent(path)}&clientId=${encodeURIComponent(clientId)}`, { method: "DELETE" });
       if (kind === "note" && activePathRef.current === path) { setActivePath(""); setContent(""); }
@@ -770,7 +778,7 @@ export default function PentaMarkApp() {
       if (kind === "asset" && assetPreview?.path === path) setAssetPreview(null);
       await refreshState();
     } catch (error) { notify(error instanceof Error ? error.message : "Não deu para apagar"); }
-  }, [assetPreview?.path, clientId, notify, refreshState]);
+  }, [confirmation, assetPreview?.path, clientId, notify, refreshState]);
 
   const duplicateNote = useCallback(async (path: string) => {
     setContext(null);
@@ -888,6 +896,7 @@ export default function PentaMarkApp() {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (event.key === "Escape") { setQuickOpen(false); setToolsOpen(false); return; }
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
@@ -1118,14 +1127,15 @@ export default function PentaMarkApp() {
     "--pm-ui-size": `${appearance.uiSize}px`,
     "--pm-editor-size": `${appearance.editorSize}px`,
   } as React.CSSProperties;
-  const saveSettings = async () => {
+  const commitHostConfig = async (draft: HostConfig, baseline: HostConfig) => {
+    const saved = await saveHostSettings(draft, baseline);
+    setHostConfig(saved);
+    await refreshState();
+  };
+  const saveSettings = async (draft: HostConfig, baseline: HostConfig) => {
+    await commitHostConfig(draft, baseline);
     localStorage.setItem("pentamark:appearance", JSON.stringify(appearance));
-    try {
-      if (hostConfig.isHost) await request("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(hostConfig) });
-      setSettingsOpen(false);
-      if (hostConfig.isHost) await refreshState();
-      notify(hostConfig.isHost ? "Configurações salvas — porta nova vale no próximo início" : "Aparência salva neste dispositivo");
-    } catch (error) { notify(error instanceof Error ? error.message : "Não deu para salvar as configurações"); }
+    notify("Configurações salvas. Alterações de rede podem exigir reiniciar o host.");
   };
 
   return (
@@ -1229,7 +1239,7 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.9.0</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
@@ -1248,28 +1258,23 @@ export default function PentaMarkApp() {
         onReveal={() => void openInFolder(assetPreview ? "asset" : "note", assetPreview?.path || activePath)}
         onVault={() => void chooseVault()} onShare={() => setShareOpen(true)} onClients={() => setClientsOpen(true)}
         onConnect={() => setConnectOpen(true)} onMobile={() => setMobileSetupOpen(true)} onProfile={() => setProfileOpen(true)}
-        onSettings={() => setSettingsOpen(true)} clients={vault.clients} saved={saveState === "saved"} />
+        onMcp={() => setMcpOpen(true)} mcpEnabled={hostConfig.aiBridgeEnabled} onSettings={() => setSettingsOpen(true)} clients={vault.clients} saved={saveState === "saved"} />
       <SelectionTools enabled={viewMode === "live" && canEditActive && !toolsOpen && !quickOpen} scale={appearance.appScale} onFormat={applyFormat} onMore={() => setToolsOpen(true)} />
       <LinkPreviewStack ref={previewsRef} context={markdownContext} scale={appearance.appScale} onOpen={path => void openNote(path, true)} />
 
       {context && <ContextDropdown context={context} scale={appearance.appScale} onClose={() => setContext(null)} onFormat={applyFormat} onBeginDraft={beginDraft} onRename={startRename} onDuplicate={duplicateNote} onDelete={deleteItem} onExpand={setAllExpanded} onOpen={(path) => void openNote(path, true)} onReveal={(kind, path) => void openInFolder(kind, path)} onPreviewAsset={(path) => { setContext(null); const asset = vault.assets.find((item) => item.path === path); if (asset) setAssetPreview(asset); }} onChooseVault={() => void chooseVault()} />}
 
-      {shareOpen && <div className="pm-modal-backdrop" onMouseDown={() => setShareOpen(false)}><div className="pm-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="pm-modal-close" aria-label="Fechar compartilhamento" onClick={() => setShareOpen(false)}><X size={17} /></button>
-        <div className="pm-modal-icon"><Share2 size={21} /></div><h2>Compartilhar o cofre</h2><p>No celular e fora de casa, prefira o endereço HTTPS criado pelo Tailscale. Na mesma rede Wi-Fi, o endereço local também funciona.</p>
-        <div className="pm-url-list">{shareUrls.map((url) => <button key={url} onClick={() => void copyValue(url)}><Copy size={14} /><code>{url}</code><span>{connectionLabel(url)}</span></button>)}</div>
-        <div className="pm-share-note"><Server size={14} />O aparelho host precisa continuar ligado e com o PentaMark aberto.</div>
-        <button className="pm-modal-inline-action" onClick={() => { setShareOpen(false); setMobileSetupOpen(true); }}><Smartphone size={14} />Configurar celular e Tailscale</button>
-        <button className="pm-modal-inline-action" onClick={() => { setShareOpen(false); setConnectOpen(true); }}><LogIn size={14} />Entrar em outro cofre</button>
-      </div></div>}
+      <DialogPresence open={shareOpen}><ShareModal urls={shareUrls} onClose={() => setShareOpen(false)} onNotify={notify}
+        onMobile={() => { setShareOpen(false); setMobileSetupOpen(true); }} onConnect={() => { setShareOpen(false); setConnectOpen(true); }}/></DialogPresence>
+      <DialogPresence open={mcpOpen}><McpModal config={hostConfig} urls={shareUrls} onClose={() => setMcpOpen(false)} onNotify={notify} onSave={async (draft, baseline) => { await commitHostConfig(draft, baseline); notify("Configuração MCP salva"); }}/></DialogPresence>
 
-      {connectOpen && <ConnectModal address={connectionAddress} setAddress={setConnectionAddress} deviceName={deviceName} setDeviceName={setDeviceName} onClose={() => setConnectOpen(false)} onConnect={connectToVault} />}
-      {clientsOpen && <ClientsModal vault={vault} currentClientId={clientId} isHost={hostConfig.isHost} onPermission={(targetId, permission) => { void request("/api/permission", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: targetId, permission }) }).then(() => refreshState()).catch((error) => notify(error instanceof Error ? error.message : "Não deu para alterar a permissão")); }} onClose={() => setClientsOpen(false)} onConnect={() => { setClientsOpen(false); setConnectOpen(true); }} onRefresh={() => void refreshState()} />}
-      {profileOpen && <ProfileModal name={deviceName} avatar={deviceAvatar} color={colorForClient(clientId)} onClose={() => setProfileOpen(false)} onSave={saveProfile} onError={notify} />}
-      {conflictOpen && conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}
-      {kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}
-      {mobileSetupOpen && <MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} />}
-      {settingsOpen && <SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} setConfig={setHostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={() => void saveSettings()} onNotify={notify} />}
+      <DialogPresence open={connectOpen}><ConnectModal address={connectionAddress} setAddress={setConnectionAddress} deviceName={deviceName} setDeviceName={setDeviceName} onClose={() => setConnectOpen(false)} onConnect={connectToVault} /></DialogPresence>
+      <DialogPresence open={clientsOpen}><ClientsModal vault={vault} currentClientId={clientId} isHost={hostConfig.isHost} onPermission={(targetId, permission) => { void request("/api/permission", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: targetId, permission }) }).then(() => refreshState()).catch((error) => notify(error instanceof Error ? error.message : "Não deu para alterar a permissão")); }} onClose={() => setClientsOpen(false)} onConnect={() => { setClientsOpen(false); setConnectOpen(true); }} onRefresh={() => void refreshState()} /></DialogPresence>
+      <DialogPresence open={profileOpen}><ProfileModal name={deviceName} avatar={deviceAvatar} color={colorForClient(clientId)} onClose={() => setProfileOpen(false)} onSave={saveProfile} onError={notify} /></DialogPresence>
+      <DialogPresence open={conflictOpen && !!conflict}>{conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}</DialogPresence>
+      <DialogPresence open={!!kanbanDialog}>{kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}</DialogPresence>
+      <DialogPresence open={mobileSetupOpen}><MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} /></DialogPresence>
+      <DialogPresence open={settingsOpen}><SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} /></DialogPresence>
       {toast && <div className="pm-toast">{toast}</div>}
     </main>
   );

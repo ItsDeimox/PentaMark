@@ -183,44 +183,10 @@
 .pm-shell .pm-live-widget:hover { background:transparent; }
 .pm-block-edit-trigger { position:absolute; right:6px; top:5px; padding:3px 7px; font-size:11px !important; line-height:1.4; color:var(--pm-muted); background:var(--pm-panel-2); border:1px solid var(--pm-border) !important; opacity:0; transition:opacity 120ms; }
 .pm-live-widget:hover > .pm-block-edit-trigger,.pm-live-widget:focus-within > .pm-block-edit-trigger { opacity:1; }
-.pm-shell .pm-block-source-panel { z-index:650; left:50%; right:auto; top:10%; width:min(740px,calc(100% - 32px)); max-height:80%; transform:translate(-50%,-5px); }
-.pm-shell .pm-block-source-panel[data-entered="true"] { transform:translate(-50%,0); }
-.pm-block-source-caption { display:flex; align-items:center; gap:8px; color:var(--pm-muted); font-size:.8em; margin:12px 0; }
-.pm-block-source-caption small { margin-left:auto; max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--pm-faint); }
-.pm-shell .pm-block-source-panel textarea { display:block; width:100%; min-height:180px; height:36vh; max-height:50vh; resize:vertical; background:var(--pm-bg-base); color:var(--pm-text); border:1px solid var(--pm-border); border-radius:5px; padding:14px; font-family:'Cascadia Code',Consolas,monospace !important; font-size:14px; line-height:1.7; }
-.pm-block-source-actions { display:flex; align-items:center; gap:8px; margin-top:14px; font-size:.8em; }
-.pm-block-source-actions > span { flex:1; color:var(--pm-faint); font-size:.85em; }
-.pm-block-source-actions button { display:flex; align-items:center; gap:7px; padding:9px 13px; background:var(--pm-panel-2); color:var(--pm-text); }
-.pm-block-source-actions button.primary { color:var(--pm-cyan); background:var(--pm-cyan-soft); }
-.pm-block-source-error { padding:10px; border-left:2px solid var(--pm-danger); color:var(--pm-danger); font-size:.8em; }
 /* Checkbox center is the first text line's center, not the whole list item. */
 .pm-shell .pm-live-line--list.pm-live-task-line { position:relative; }
 .pm-shell .pm-live-task-checkbox { position:absolute; left:var(--pm-md-task-checkbox-left); top:calc(var(--pm-md-line-height) * .5em - 8px); width:16px; height:16px; margin:0; transform:none; border-radius:3px; }
 .pm-shell .pm-markdown input[type="checkbox"] { width:16px; height:16px; margin:0 8px 0 0; vertical-align:middle; transform:none; border-radius:3px; }
-/* Dialogs share material and control metrics, with no legacy gradients. */
-.pm-shell .pm-modal-backdrop { z-index:600; background:#070b0e70; backdrop-filter:none; padding:22px; animation:pm-backdrop-in 140ms both; }
-.pm-shell .pm-modal { padding:26px; background:var(--pm-panel); border:1px solid var(--pm-border); border-radius:12px; animation:pm-surface-in 180ms var(--pm-ease) both; color:var(--pm-text); }
-.pm-shell .pm-modal h2 { font-weight:500; color:var(--pm-text); font-size:1.25em !important; }
-.pm-shell .pm-modal p { color:var(--pm-muted); font-size:.86em !important; line-height:1.7; }
-.pm-shell .pm-modal :is(button,input,select,textarea) { background-image:none !important; border-radius:5px; color:var(--pm-text); font-size:.86em !important; box-shadow:none; }
-.pm-shell .pm-modal :is(input:not([type="checkbox"]):not([type="range"]),select,textarea) { background:var(--pm-bg-base); border:1px solid var(--pm-border); min-height:36px; padding:9px 11px; }
-.pm-shell .pm-modal button { background-color:transparent; border-color:var(--pm-border) !important; }
-.pm-shell .pm-modal button:hover { background-color:var(--pm-panel-2); color:var(--pm-cyan); }
-.pm-shell .pm-modal :is(.primary,button.active) { background:var(--pm-cyan-soft) !important; color:var(--pm-cyan) !important; border-color:var(--pm-border-bright) !important; }
-.pm-shell .pm-modal-icon { background:var(--pm-cyan-soft); color:var(--pm-cyan); border:1px solid var(--pm-border); border-radius:7px; box-shadow:none; width:40px; height:40px; }
-.pm-shell .pm-settings-modal { width:min(780px,100%); max-height:90%; }
-.pm-shell .pm-settings-section { padding:20px 0; border-color:var(--pm-border); }
-.pm-shell .pm-settings-section h3 { color:var(--pm-muted); font-size:.85em; margin:0 0 13px; }
-.pm-shell .pm-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-.pm-shell .pm-settings-grid .wide { grid-column:1 / -1; }
-.pm-shell .pm-settings-grid label { color:var(--pm-muted); font-size:.82em !important; display:flex; flex-direction:column; gap:8px; }
-.pm-shell .pm-settings-grid .pm-check-row,.pm-shell .pm-check-row { display:flex; flex-direction:row; align-items:flex-start; gap:10px; line-height:1.6; }
-.pm-shell .pm-check-row input[type="checkbox"] { flex:0 0 16px; width:16px; height:16px; margin:3px 0 0; accent-color:var(--pm-cyan); }
-.pm-shell .pm-check-row span { min-width:0; }
-.pm-shell .pm-check-row small { display:block; font-size:.85em; color:var(--pm-faint); }
-.pm-shell .pm-theme-grid button { background:var(--pm-panel-2); min-height:60px; border:1px solid var(--pm-border); }
-.pm-shell .pm-theme-grid span { box-shadow:none; }
-.pm-shell :is(.pm-host-only-note,.pm-vault-settings,.pm-connect-hint,.pm-share-note,.pm-ai-urls button,.pm-url-list button) { border-color:var(--pm-border); background:var(--pm-panel-2); color:var(--pm-muted); border-radius:5px; }
 .pm-shell .pm-toast { z-index:800; background:var(--pm-panel); border:1px solid var(--pm-border); border-radius:7px; color:var(--pm-text); box-shadow:0 8px 28px #0004; }
 .pm-acrylic-layer { position:absolute; visibility:hidden; inset:0; width:100%; height:100%; pointer-events:none; }
 .pm-material-host { isolation:isolate; }

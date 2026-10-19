@@ -1,5 +1,7 @@
+import { CopyAddress } from './CopyAddress';
+import { DialogFrame } from './DialogFrame';
 import { Check, Copy, Download, HardDrive, Server, ShieldCheck, Smartphone, X } from "lucide-react";
-import { connectionLabel, copyText } from "../../shared/client";
+import { connectionLabel } from "../../shared/client";
 
 export function MobileSetupModal(props: {
   urls: string[];
@@ -9,19 +11,8 @@ export function MobileSetupModal(props: {
   onClose: () => void;
   onNotify: (message: string) => void;
 }) {
-  const copy = async (value: string) => {
-    try {
-      await copyText(value);
-      props.onNotify("Endereço copiado");
-    } catch (error) {
-      props.onNotify(error instanceof Error ? error.message : "Não deu para copiar");
-    }
-  };
-
-  return <div className="pm-modal-backdrop" onMouseDown={props.onClose}><div className="pm-modal pm-mobile-setup-modal" onMouseDown={(event) => event.stopPropagation()}>
-    <button type="button" className="pm-modal-close" aria-label="Fechar configuração do celular" onClick={props.onClose}><X size={17} /></button>
-    <div className="pm-mobile-setup-heading"><div className="pm-modal-icon"><Smartphone size={22} /></div><div><h2>PentaMark no celular</h2><p>Instale, conecte e edite o mesmo cofre de qualquer lugar.</p></div></div>
-
+  return <DialogFrame title="PentaMark no celular" subtitle="Acesso ao cofre e instalação neste aparelho." icon={Smartphone} onClose={props.onClose} className="pm-mobile-dialog"
+    footer={<><span className="pm-footer-hint">{props.installed ? 'Aberto como aplicativo' : 'Acesso pelo navegador'}</span><button type="button" className="secondary" onClick={props.onClose}>Fechar</button></>}>
     <div className="pm-mobile-setup-scroll">
       <section className="pm-mobile-setup-card featured">
         <header><ShieldCheck size={18} /><div><strong>Recomendado: PC host + Tailscale</strong><small>O cofre continua no PC; o celular vira um editor seguro e instalável.</small></div></header>
@@ -35,7 +26,7 @@ export function MobileSetupModal(props: {
 
       <section className="pm-mobile-setup-card">
         <header><Server size={18} /><div><strong>Endereços disponíveis</strong><small>Para sair de casa, prefira o endereço Tailscale HTTPS.</small></div></header>
-        <div className="pm-mobile-url-list">{props.urls.map((url) => <button type="button" key={url} onClick={() => void copy(url)}><span><b>{connectionLabel(url)}</b><code>{url}</code></span><Copy size={14} /></button>)}</div>
+        <div className="pm-mobile-url-list">{props.urls.map((url) => <CopyAddress key={url} label={connectionLabel(url)} value={url} onNotify={props.onNotify}/>)}</div>
         <p className="pm-mobile-help">O Radmin VPN oficial é para Windows. No Android e no iPhone, use Tailscale. Não publique a porta 3417 diretamente na internet.</p>
       </section>
 
@@ -44,5 +35,5 @@ export function MobileSetupModal(props: {
         <p className="pm-mobile-help">É uma opção portátil, mas o Android pode encerrar o servidor em segundo plano. Para uso diário e colaboração, o PC ligado ou um servidor com disco persistente é mais confiável.</p>
       </section>
     </div>
-  </div></div>;
+  </DialogFrame>;
 }

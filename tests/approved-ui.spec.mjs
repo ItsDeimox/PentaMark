@@ -110,8 +110,11 @@ test('tools preserve all view modes and appearance preferences', async ({ page }
     await page.getByRole('button', { name: label, exact: true }).click();
   }
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
-  await expect(page.getByText('Ponte IA · Codex / MCP', { exact: true })).toBeVisible();
-  await expect(page.locator('select').first()).toHaveValue('technical');
+  const dialog = page.getByRole('dialog', { name: 'Configurações', exact: true });
+  await dialog.getByRole('tab', { name: 'MCP', exact: true }).click();
+  await expect(dialog.getByText('Streamable HTTP', { exact: true })).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Tipografia', exact: true }).click();
+  await expect(dialog.getByLabel('Fonte da interface', { exact: true })).toHaveValue('technical');
 });
 
 test('tree expansion and scroll survive collapse', async ({ page }) => {

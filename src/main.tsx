@@ -1,3 +1,4 @@
+import { ConfirmationProvider } from "./components/dialogs/Confirmation";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import PentaMarkApp from "./PentaMarkApp";
@@ -12,10 +13,11 @@ import "@fontsource/chakra-petch/latin-500.css";
 import "@fontsource/chakra-petch/latin-600.css";
 import "@fontsource/chakra-petch/latin-700.css";
 import "./features/workspace/chrome.css";
+import "./components/dialogs/dialogs.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <PentaMarkApp />
+    <ConfirmationProvider><PentaMarkApp /></ConfirmationProvider>
   </React.StrictMode>,
 );
 
