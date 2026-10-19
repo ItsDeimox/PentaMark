@@ -1,0 +1,52 @@
+/* Optical surfaces share one silhouette. Transparent borders reserve layout only. */
+.pm-shell[data-theme] { --pm-radius: 9px; }
+.pm-shell .pm-sidebar { transform: translateX(0); transform-origin: left center; transition:transform 190ms cubic-bezier(.2,.8,.2,1),opacity 150ms,visibility 0s; }
+.pm-shell .pm-sidebar--closed { transform:translateX(-18px); transition-delay:0s,0s,190ms; }
+.pm-shell[data-graphics="acrylic"] .pm-sidebar[data-fragmenting="true"] {
+ visibility:visible; opacity:1; transform:translateX(var(--pm-reveal-x,0px)); transition:none; will-change:clip-path;
+}
+.pm-shell .pm-tree-disclosure { display:block; overflow:hidden; opacity:1; transition:none; }
+.pm-shell .pm-tree-disclosure>.pm-folder-children { overflow:hidden; }
+.pm-shell .pm-dialog { border-radius:9px; }
+.pm-shell .pm-identity-card { position:relative; border-radius:7px; }
+.pm-shell .pm-identity-avatar { border-radius:8px; background:#84cbd40a; border-color:#84cbd423; }
+.pm-shell .pm-identity-avatar img { border-radius:4px; }
+.pm-shell .pm-dialog-emblem { border-radius:6px; }
+.pm-shell .pm-material-demo, .pm-shell .pm-vault-location { position:relative; border-radius:7px; }
+.pm-shell[data-graphics="acrylic"] {
+ --pm-bg-base:#11191e;
+ --pm-panel:#17242c;
+ --pm-panel-2:#1b2a33;
+ --pm-cyan-soft:color-mix(in srgb,var(--pm-accent-base) 8%,transparent);
+ --pm-border:color-mix(in srgb,var(--pm-accent-base) 10%,transparent);
+ --pm-border-bright:color-mix(in srgb,var(--pm-accent-base) 17%,transparent);
+ background:
+   radial-gradient(ellipse at 12% 70%,color-mix(in srgb,var(--pm-accent-base) 6%,transparent),transparent 52%),
+   radial-gradient(ellipse at 83% 14%,color-mix(in srgb,var(--pm-accent-base) 3.5%,transparent),transparent 48%),#11191e;
+}
+.pm-shell[data-graphics="acrylic"] :is(.pm-workspace,.pm-document-workspace,.pm-live-pane,.pm-preview-pane,.pm-editor-pane) { background:transparent; }
+.pm-shell[data-graphics="acrylic"] :is(.pm-sidebar,.pm-workspace-panel,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools) {
+ background:rgba(12,24,32,.22); backdrop-filter:blur(14px) saturate(1.13); -webkit-backdrop-filter:blur(14px) saturate(1.13);
+ box-shadow:0 16px 42px #0003;
+}
+.pm-shell[data-graphics="acrylic"] .pm-dialog { background:rgba(12,24,32,.24); backdrop-filter:blur(18px) saturate(1.16); -webkit-backdrop-filter:blur(18px) saturate(1.16); box-shadow:0 24px 80px #0004; }
+.pm-shell[data-graphics="acrylic"] .pm-dialog-layer[data-entered="true"]::backdrop { background:rgb(3 9 14 / .34); }
+.pm-shell[data-graphics="acrylic"] :is(.pm-identity-card,.pm-material-demo,.pm-vault-location) {
+ background:rgba(18,37,48,.12); backdrop-filter:blur(7px) saturate(1.1); -webkit-backdrop-filter:blur(7px) saturate(1.1); box-shadow:none;
+}
+.pm-shell[data-graphics="acrylic"][data-gl="webgl"] .pm-material-host { border-color:transparent !important; }
+.pm-shell[data-graphics="acrylic"] .pm-material-control { position:relative; isolation:isolate; }
+.pm-shell[data-graphics="acrylic"] .pm-material-control>.pm-acrylic-pane { border-radius:inherit; }
+.pm-shell[data-graphics="acrylic"] :is(.pm-dialog button,.pm-mode-grid button,.pm-material-switch button,.pm-workspace-tools .pm-tool-mcp) { border-color:transparent; }
+.pm-shell[data-graphics="acrylic"] :is(.pm-dialog button.primary,.pm-dialog button[aria-pressed="true"],.pm-mode-grid button[aria-pressed="true"],.pm-material-switch button[aria-pressed="true"],.pm-workspace-tools .pm-tool-mcp) {
+ background:color-mix(in srgb,var(--pm-accent-base) 6%,transparent); border-color:transparent;
+}
+.pm-shell[data-graphics="acrylic"] .pm-dialog button:hover:not(:disabled),.pm-shell[data-graphics="acrylic"] .pm-tool-action:hover { background-color:color-mix(in srgb,var(--pm-accent-base) 4%,transparent); border-color:transparent; }
+.pm-shell[data-graphics="acrylic"] :is(.pm-dialog-header,.pm-dialog-footer,.pm-workspace-panel-heading,.pm-brand,.pm-tool-section,.pm-tool-footer,.pm-preferences-nav) { border-color:color-mix(in srgb,var(--pm-accent-base) 7%,transparent); }
+.pm-shell[data-graphics="acrylic"] :is(.pm-option-row,.pm-notice,.pm-connection-status,.pm-client-card,.pm-mobile-setup-card) { border-color:color-mix(in srgb,var(--pm-accent-base) 6%,transparent); background:#7bd1ea03; }
+.pm-shell[data-graphics="acrylic"] .pm-dialog :is(input:not([type="range"]):not([type="checkbox"]),textarea,select) { background:rgba(7,17,24,.19); border-color:color-mix(in srgb,var(--pm-accent-base) 12%,transparent); }
+.pm-shell[data-graphics="acrylic"] .pm-dialog :is(input,textarea,select):focus { border-color:color-mix(in srgb,var(--pm-accent-base) 45%,transparent); }
+.pm-shell[data-graphics="acrylic"] .pm-dialog-emblem { background:var(--pm-cyan-soft); border-color:transparent; }
+.pm-shell[data-gl="fallback"] :is(.pm-sidebar,.pm-workspace-panel,.pm-dialog,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools,.pm-identity-card) { background:rgba(17,30,39,.66); border-color:var(--pm-border); }
+.pm-shell .pm-acrylic-pane { border-radius:0; }
+@media(prefers-reduced-motion:reduce){.pm-shell .pm-sidebar{transition:none !important;}.pm-shell .pm-sidebar[data-fragmenting="true"]{clip-path:none !important;}}

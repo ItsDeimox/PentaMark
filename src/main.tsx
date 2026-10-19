@@ -14,6 +14,7 @@ import "@fontsource/chakra-petch/latin-600.css";
 import "@fontsource/chakra-petch/latin-700.css";
 import "./features/workspace/chrome.css";
 import "./components/dialogs/dialogs.css";
+import "./features/workspace/glass-polish.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

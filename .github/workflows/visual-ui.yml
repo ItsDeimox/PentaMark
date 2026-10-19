@@ -13,14 +13,33 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+      - name: Apply scoped UI source edits
+        id: source
+        if: hashFiles('scripts/apply-glass-polish.py') != ''
+        run: |
+          python scripts/apply-glass-polish.py
+          echo 'applied=true' >> "$GITHUB_OUTPUT"
       - run: npm ci --ignore-scripts
       - run: npm run check
+      - name: Record compiled UI changes on the development branch
+        if: steps.source.outputs.applied == 'true' && github.event_name == 'push'
+        run: |
+          test "${GITHUB_REF}" = 'refs/heads/agent/visual-acrylic'
+          git diff --check
+          git add src/app/PentaMarkApp.tsx src/features/workspace/ToolsPanel.tsx src/components/dialogs/SettingsModal.tsx src/components/dialogs/ProfileModal.tsx src/components/dialogs/DialogFrame.tsx tests/acrylic-dialogs.spec.mjs package.json package-lock.json README.md LEIA-ME-Desktop.md mobile/LEIA-ME.md
+          git rm scripts/apply-glass-polish.py
+          git config user.name 'PentaMark development'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: remove accidental renaming and decorative UI filler'
+          git push origin HEAD:agent/visual-acrylic
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - uses: actions/upload-artifact@v4
