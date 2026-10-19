@@ -33,6 +33,32 @@ jobs:
           assert hashlib.sha256(patch).hexdigest()=='828fb77e0a81b411a8e00477df22578dc786e1116c0b567c592f04f2c83d41fc', 'Patch checksum mismatch'
           subprocess.run(['git','apply','--check'],input=patch,check=True)
           subprocess.run(['git','apply'],input=patch,check=True)
+          # Verify first, then apply targeted red/green corrections identified by Chromium.
+          from pathlib import Path
+          selection=Path('tests/visual-polish.spec.mjs')
+          script=selection.read_text()
+          target="  await expect(page.getByRole('textbox', {name: 'Editor Markdown em Live Preview'})).toBeVisible();"
+          assert script.count(target)==1
+          script=script.replace(target,target+"\n  await expect(page.locator('.pm-note-item').first()).toBeVisible();")
+          target="  await page.keyboard.press('Control+End');\n  await page.keyboard.press('Shift+Home');"
+          assert script.count(target)==2
+          script=script.replace(target,"  await page.keyboard.press('Control+Home');\n  await page.keyboard.press('End');\n  await page.keyboard.press('Shift+Home');")
+          target="test('selected text glows without reflow; reduced motion makes the energy static', async ({page}) => {\n  await editorReady(page);"
+          assert script.count(target)==1
+          script=script.replace(target,target+"\n  await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();\n  await page.getByRole('button',{name:'Acrílico',exact:true}).click();\n  await page.keyboard.press('Escape');")
+          selection.write_text(script)
+          styling=Path('src/features/workspace/visual-polish.css')
+          style=styling.read_text()
+          assert style.count('transparent 72%);')==1
+          styling.write_text(style.replace('transparent 72%);','transparent 72%) !important;'))
+          renderer=Path('src/features/workspace/acrylic-renderer.ts')
+          source=renderer.read_text()
+          assert 'const delta=Math.min(40,Math.max(1,now-lastTime))' in source
+          source=source.replace('const delta=Math.min(40,Math.max(1,now-lastTime))','const delta=Math.min(110,Math.max(1,now-lastTime))')
+          assert 'Math.abs(target.hover-desired)>.004' in source
+          source=source.replace('Math.abs(target.hover-desired)>.004','Math.abs(target.hover-desired)>.01')
+          source=source.replace('Math.abs(target.hover-desired)<=.004','Math.abs(target.hover-desired)<=.01')
+          renderer.write_text(source)
           PY
           git diff --check
       - name: Install locked dependencies
