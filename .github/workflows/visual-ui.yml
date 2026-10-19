@@ -2,36 +2,25 @@ name: Visual refinements validation
 on:
   push:
     branches: [agent/visual-acrylic]
+  pull_request:
+    branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: visual-refinements-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Apply verified finishing changes once
-        if: hashFiles('scripts/visual-polish.py') != ''
-        run: python scripts/visual-polish.py
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - name: Record compiled source on the development branch
-        if: hashFiles('scripts/visual-polish.py') != ''
-        run: |
-          test "${GITHUB_REF}" = 'refs/heads/agent/visual-acrylic'
-          git diff --check
-          git add src package.json package-lock.json scripts/build-mobile-host.mjs LEIA-ME-Desktop.md mobile/LEIA-ME.md README.md
-          git rm scripts/visual-polish.py
-          git config user.name 'PentaMark development'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix: focus animated tree inputs and dismiss source overlays once'
-          git push origin HEAD:agent/visual-acrylic
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - uses: actions/upload-artifact@v4
