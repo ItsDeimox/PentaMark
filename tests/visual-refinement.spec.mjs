@@ -8,16 +8,28 @@ async function blocks(page) {
   await page.getByRole('combobox').fill('03 - Blocos');
   await page.keyboard.press('Enter');
   await expect(page.locator('.pm-document-path')).toContainText('03 - Blocos');
+  await expect(page.getByRole('dialog', { name: 'Abrir arquivo' })).not.toBeVisible();
 }
 test('opening a complex block for editing leaves the next heading at the same coordinates', async ({ page }) => {
   await blocks(page);
   const anchor = page.locator('.cm-line').filter({ hasText: 'Âncora depois do painel' }).first();
-  const before = await anchor.boundingBox();
-  await page.locator('.pm-live-widget .pm-callout').first().getByText('Mais uma linha', { exact: false }).click();
-  await page.waitForTimeout(250);
-  const after = await anchor.boundingBox();
-  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
-  await expect(page.getByRole('dialog', { name: 'Editar bloco' })).toBeVisible();
+  const callout = page.locator('.pm-live-widget .pm-callout').first().getByText('Mais uma linha', { exact: false });
+  // Settle navigation and Playwright's actionability scrolling BEFORE measuring.
+  // The trace showed 26px of scrolling before pointer dispatch while Quick Open
+  // was closing, not a geometry change caused by opening the source editor.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await callout.click({ trial: true });
+    const before = await anchor.boundingBox();
+    const scroll = await page.locator('.cm-scroller').evaluate(el => el.scrollTop);
+    await callout.click();
+    await expect(page.getByRole('dialog', { name: 'Editar bloco' })).toBeVisible();
+    await page.waitForTimeout(250);
+    const after = await anchor.boundingBox();
+    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+    expect(await page.locator('.cm-scroller').evaluate(el => el.scrollTop)).toBe(scroll);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Editar bloco' })).not.toBeVisible();
+  }
 });
 test('sidebar collapse recenters reading, with rounded compact navigation and animated folder children', async ({ page }) => {
   await page.goto('/');
@@ -56,7 +68,6 @@ test('context menu offers directory immediately and preview remains anchored', a
   await preview.getByText('Link B', {exact:true}).hover();
   await expect(page.locator('.pm-link-hover-preview')).toHaveCount(2);
 });
-
 test('block source applies through an undoable transaction and cancel keeps the document intact', async ({ page }) => {
   await blocks(page);
   const editor=page.getByRole('textbox',{name:'Editor Markdown em Live Preview'});
@@ -81,7 +92,6 @@ test('block source applies through an undoable transaction and cancel keeps the 
   await page.getByRole('button',{name:'Cancelar',exact:true}).click();
   await expect.poll(current).toBe(original);
 });
-
 test('texture renders real pixels, stops while idle and releases all surfaces in Flat mode', async ({ page }, testInfo) => {
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('/');
@@ -105,7 +115,6 @@ test('texture renders real pixels, stops while idle and releases all surfaces in
   await page.screenshot({path:testInfo.outputPath('flat-tools.png')});
   expect(errors).toEqual([]);
 });
-
 test('WebGL unavailable retains a usable native acrylic fallback', async ({ page }) => {
   await page.addInitScript(()=>{
     const get=HTMLCanvasElement.prototype.getContext;
@@ -118,7 +127,6 @@ test('WebGL unavailable retains a usable native acrylic fallback', async ({ page
   await page.getByRole('button',{name:'Flat',exact:true}).click();
   await expect(page.locator('canvas[data-material="acrylic"]')).toHaveCount(0);
 });
-
 test('folders animate through intermediate heights and document edges fade', async ({ page }) => {
   await page.goto('/');await expect(page.locator('.pm-note-item').first()).toBeVisible();
   const folder=page.locator('.pm-folder').filter({has:page.locator(':scope > .pm-folder-title').filter({hasText:'Planejamento'})}).first();
