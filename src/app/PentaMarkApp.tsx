@@ -756,6 +756,8 @@ export default function PentaMarkApp() {
     setSidebarOpen(true);
     setMobileSidebar(true);
     setToolsOpen(false);
+    setQuickOpen(false);
+    setQuery("");
     expandParents(parent);
   }, [expandParents]);
 
@@ -791,7 +793,12 @@ export default function PentaMarkApp() {
     setContext(null);
     setDraft(null);
     setRenaming({ kind, path, value: kind === "note" ? titleOf(path) : baseName(path) });
-  }, []);
+    setSidebarOpen(true);
+    setMobileSidebar(true);
+    setToolsOpen(false);
+    setQuickOpen(false);
+    expandParents(parentOf(path));
+  }, [expandParents]);
 
   const commitRename = useCallback(async () => {
     if (!renaming) return;
@@ -944,13 +951,15 @@ export default function PentaMarkApp() {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setQuickOpen(false); setToolsOpen(false); return; }
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === "n") { event.preventDefault(); beginDraft("note"); }
       if (key === "p") { event.preventDefault(); setToolsOpen(false); setQuickOpen(true); }
       if (key === "s") { event.preventDefault(); void saveNow(); }
       const editingLive = document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest(".pm-live-codemirror"));
-      if (key === "b" && document.activeElement !== textareaRef.current && !editingLive) { event.preventDefault(); if (window.innerWidth / appearance.appScale < 1100) setMobileSidebar(value => !value); else setSidebarOpen(value => !value); }
+      const editingField = document.activeElement instanceof HTMLElement && document.activeElement.matches("input,textarea,select,[contenteditable='true']");
+      if (key === "b" && !editingField && !editingLive) { event.preventDefault(); if (window.innerWidth / appearance.appScale < 1100) setMobileSidebar(value => !value); else setSidebarOpen(value => !value); }
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
@@ -1153,7 +1162,6 @@ export default function PentaMarkApp() {
   const uiFont = appearance.uiFont === "custom" ? appearance.customUiFont || UI_FONTS.modern : UI_FONTS[appearance.uiFont] || UI_FONTS.modern;
   const editorFont = appearance.editorFont === "custom" ? appearance.customEditorFont || EDITOR_FONTS.mono : EDITOR_FONTS[appearance.editorFont] || EDITOR_FONTS.mono;
   const shellStyle = {
-    ...DOCUMENT_STYLE_VARIABLES,
     ...DOCUMENT_STYLE_VARIABLES,
     zoom: appearance.appScale,
     width: `${100 / appearance.appScale}vw`,

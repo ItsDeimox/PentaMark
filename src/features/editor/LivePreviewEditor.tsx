@@ -1,4 +1,4 @@
-import { defaultKeymap, history as codeMirrorHistory, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history as codeMirrorHistory, historyKeymap, redo } from "@codemirror/commands";
 import { markdown as codeMirrorMarkdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, type DecorationSet } from "@codemirror/view";
@@ -83,7 +83,7 @@ export function LivePreviewEditor(props: LiveEditorProps) {
             spellcheck: "true",
           }),
           drawSelection(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
+          keymap.of([{ key: "Mod-Shift-z", run: redo, preventDefault: true }, ...defaultKeymap, ...historyKeymap]),
           readOnlyCompartment.current.of(EditorState.readOnly.of(props.readOnly)),
           previewField,
           EditorView.domEventHandlers({
@@ -136,6 +136,7 @@ export function LivePreviewEditor(props: LiveEditorProps) {
       viewRef.current = view;
       props.apiRef.current = {
         applyFormat(kind) {
+          if (propsRef.current.readOnly || view!.state.readOnly) return;
           const transaction = view!.state.changeByRange((range) => {
             const source = view!.state.doc.toString();
             const formatted = formatSelectionValue(source, range.from, range.to, kind);
