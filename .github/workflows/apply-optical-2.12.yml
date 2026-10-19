@@ -1,4 +1,5 @@
 name: Validate and package optical polish
+# The baseline visual test is provided before applying the signed source patch.
 on:
   push:
     branches: [agent/visual-acrylic]
