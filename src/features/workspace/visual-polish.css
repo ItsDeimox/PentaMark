@@ -46,16 +46,17 @@
 .pm-shell .pm-workspace-panel-heading > button > svg { flex: none; display: block; }
 
 /* The acrylic plate resolves first, then the contents. Flat keeps a short fade. */
-.pm-shell[data-graphics="acrylic"] .pm-workspace-tools[data-entered="true"] {
-  animation: pm-console-resolve 255ms cubic-bezier(.18,.72,.2,1) both;
+.pm-shell .pm-workspace-tools {
+  transform: translate(12px,-6px) scale(.98);
+  transform-origin: top right;
+  transition: opacity 220ms ease, transform 220ms cubic-bezier(.18,.72,.2,1);
+}
+.pm-shell .pm-workspace-tools[data-entered="true"] {
+  opacity: 1;
+  transform: none;
 }
 .pm-shell[data-graphics="acrylic"] .pm-workspace-tools[data-entered="true"] :is(.pm-tool-section,.pm-tool-mcp,.pm-tool-footer) {
   animation: pm-console-content 185ms ease-out both;
-}
-@keyframes pm-console-resolve {
-  0% { clip-path: polygon(100% 0, 100% 0, 100% 16%, 100% 16%, 100% 100%, 100% 100%); opacity: .56; filter: blur(3px); }
-  48% { clip-path: polygon(22% 0, 100% 0, 100% 27%, 91% 27%, 91% 75%, 12% 75%, 12% 100%, 0 100%, 0 0); opacity: .88; filter: blur(.9px); }
-  100% { clip-path: none; opacity: 1; filter: none; }
 }
 @keyframes pm-console-content {
   from { opacity: 0; transform: translateX(5px); }

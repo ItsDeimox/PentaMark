@@ -23,7 +23,7 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
       frame = requestAnimationFrame(() => setEntered(true));
     } else {
       setEntered(false);
-      timer = window.setTimeout(() => setMounted(false), matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180);
+      timer = window.setTimeout(() => setMounted(false), matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 240);
     }
     return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
   }, [open]);

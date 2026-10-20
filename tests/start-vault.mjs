@@ -2,11 +2,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-const data = join(tmpdir(), 'pentamark-approved-ui-tests');
+const port = Number(process.env.PM_TEST_PORT || 3417);
+const data = join(tmpdir(), `pentamark-approved-ui-tests-${port}`);
 const vault = join(data, 'vault');
 await mkdir(join(vault, 'Planejamento'), { recursive: true });
 await mkdir(join(vault, 'Referencias'), { recursive: true });
-await writeFile(join(data, 'pentamark.config.json'), JSON.stringify({ vaultName: 'Cofre de validacao', port: 3417, bind: '127.0.0.1', openBrowser: false, aiBridgeEnabled: false, cleanupUnusedAssets: false, lockEditedNotes: false }));
+await writeFile(join(data, 'pentamark.config.json'), JSON.stringify({ vaultName: 'Cofre de validacao', port, bind: '127.0.0.1', openBrowser: false, aiBridgeEnabled: false, cleanupUnusedAssets: false, lockEditedNotes: false }));
 await writeFile(join(vault, '00 - Visao Geral.md'), `# Visão Geral do Projeto
 
 Um espaço para compreender, registrar e conectar.

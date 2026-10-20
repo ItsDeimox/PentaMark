@@ -1,5 +1,4 @@
 import { ACRYLIC_FRAGMENT, ACRYLIC_VERTEX } from './acrylic-shader';
-import { createCircuitMap } from './circuit-layout';
 import { fragmentClip } from './fragment-reveal';
 
 const CHROME='.pm-sidebar,.pm-workspace-panel,.pm-modal,.pm-context-menu,.pm-copy-path-submenu,.pm-link-hover-preview,.pm-asset-workspace>header,.pm-asset-workspace>footer,.pm-lock-banner,.pm-toast,.pm-mobile-dock';
@@ -8,7 +7,7 @@ const DOCUMENT='.pm-callout,.pm-properties,.pm-kanban,.pm-markdown pre';
 const SURFACES=`${CHROME},${INSET},${DOCUMENT}`;
 const MAX_TARGETS=20, BACKING_BUDGET=8_000_000, SCRATCH_BUDGET=2_000_000;
 type Geometry={x:number;y:number;scale:number;width:number;height:number;left:number;top:number;cropWidth:number;cropHeight:number;radius:number};
-type Target={pane:HTMLCanvasElement;ctx:CanvasRenderingContext2D;g:Geometry;density:number;dirty:boolean;hover:number;pointer:[number,number];paints:number;kind:number;texture:WebGLTexture|null;textureKey:string};
+type Target={pane:HTMLCanvasElement;ctx:CanvasRenderingContext2D;g:Geometry;density:number;dirty:boolean;hover:number;pointer:[number,number];paints:number;kind:number};
 
 export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement):()=>void {
  let gl:WebGLRenderingContext|null=null;
@@ -19,7 +18,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const uniforms=new Map<string,WebGLUniformLocation|null>();
  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
  const sidebar=shell.querySelector<HTMLElement>('.pm-sidebar');
- let program:WebGLProgram|null=null,buffer:WebGLBuffer|null=null,empty:WebGLTexture|null=null;
+ let program:WebGLProgram|null=null,buffer:WebGLBuffer|null=null;
  let frame=0,stopped=false,lost=false,registryDirty=true,layoutDirty=true,movingUntil=0,lastTime=0,draws=0;
  let candidates:HTMLElement[]=[],cursor:[number,number]=[-10000,-10000],control:HTMLElement|null=null;
  let navigation=shell.dataset.navigation==='true',reveal=navigation?1:0,ownedStyle='';
@@ -39,22 +38,16 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    context.useProgram(program);buffer=context.createBuffer();if(!buffer)throw new Error('Buffer allocation');
    context.bindBuffer(context.ARRAY_BUFFER,buffer);context.bufferData(context.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),context.STATIC_DRAW);
    const position=context.getAttribLocation(program,'aPosition');context.enableVertexAttribArray(position);context.vertexAttribPointer(position,2,context.FLOAT,false,0,0);
-   for(const name of ['uSize','uCrop','uBuffer','uPointer','uAccent','uCircuit','uDensity','uRadius','uHover','uKind','uReveal'])uniforms.set(name,context.getUniformLocation(program,name));
-   context.uniform3f(uniform('uAccent'),accent[0],accent[1],accent[2]);context.uniform1i(uniform('uCircuit'),0);
-   empty=context.createTexture();context.bindTexture(context.TEXTURE_2D,empty);context.texImage2D(context.TEXTURE_2D,0,context.RGBA,1,1,0,context.RGBA,context.UNSIGNED_BYTE,new Uint8Array(4));
-   textureParameters();canvas.dataset.renderer='webgl';shell.dataset.gl='webgl';
+   for(const name of ['uSize','uCrop','uCropSize','uBuffer','uPointer','uAccent','uDensity','uRadius','uHover','uKind','uReveal'])uniforms.set(name,context.getUniformLocation(program,name));
+   context.uniform3f(uniform('uAccent'),accent[0],accent[1],accent[2]);
+   canvas.dataset.renderer='webgl';shell.dataset.gl='webgl';
   }finally{shaders.forEach(s=>context.deleteShader(s));}
- }
- function textureParameters(){
-  context.texParameteri(context.TEXTURE_2D,context.TEXTURE_MIN_FILTER,context.LINEAR);context.texParameteri(context.TEXTURE_2D,context.TEXTURE_MAG_FILTER,context.LINEAR);
-  context.texParameteri(context.TEXTURE_2D,context.TEXTURE_WRAP_S,context.CLAMP_TO_EDGE);context.texParameteri(context.TEXTURE_2D,context.TEXTURE_WRAP_T,context.CLAMP_TO_EDGE);
  }
  function invalidate(){if(!frame&&!stopped&&!lost&&!document.hidden){lastTime=performance.now();frame=requestAnimationFrame(render);}}
  const resized=new ResizeObserver(()=>{layoutDirty=true;invalidate();});
  const intersecting=new Set<Element>();
  const intersections=new IntersectionObserver(entries=>{entries.forEach(e=>e.isIntersecting?intersecting.add(e.target):intersecting.delete(e.target));layoutDirty=true;invalidate();});
  function release(panel:HTMLElement,target:Target){
-  if(target.texture&&!lost)context.deleteTexture(target.texture);
   target.pane.remove();target.pane.width=target.pane.height=1;panel.classList.remove('pm-material-host','pm-material-control','pm-material-relative');delete panel.dataset.surface;targets.delete(panel);
  }
  function collect(){
@@ -82,28 +75,20 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
   controls.forEach(p=>{if(!p.isConnected||(p!==control&&!targets.has(p)))controls.delete(p);});
   const area=visible.reduce((n,[,g])=>n+g.cropWidth*g.cropHeight*g.scale*g.scale,0);
   const densityBudget=Math.min(devicePixelRatio||1,1.5,Math.sqrt(BACKING_BUDGET/Math.max(1,area)));
-  const textureDensity=Math.min(1.25,Math.sqrt(2_000_000/Math.max(1,visible.reduce((n,[p,g])=>n+(controls.has(p)?0:g.width*g.height),0))));
   for(const [panel,g] of visible){
    const density=Math.min(densityBudget*g.scale,Math.sqrt(SCRATCH_BUDGET/(g.cropWidth*g.cropHeight)),2048/Math.max(g.cropWidth,g.cropHeight));
    let target=targets.get(panel);
    if(!target){
-    const pane=document.createElement('canvas');pane.className='pm-acrylic-pane';pane.setAttribute('aria-hidden','true');pane.dataset.circuit='true';
+    const pane=document.createElement('canvas');pane.className='pm-acrylic-pane';pane.setAttribute('aria-hidden','true');pane.dataset.material='frosted';
     const ctx=pane.getContext('2d');if(!ctx)continue;
     const kind=controls.has(panel)?1:panel.matches(DOCUMENT)?3:panel.matches(INSET)?2:0;
     panel.prepend(pane);panel.classList.add('pm-material-host');if(kind===1){panel.classList.add('pm-material-control');if(getComputedStyle(panel).position==='static')panel.classList.add('pm-material-relative');}panel.dataset.surface=kind===1?'control':kind===3?'document':kind===2?'inset':'chrome';
-    target={pane,ctx,g,density,dirty:true,hover:0,pointer:[-10000,-10000],paints:0,kind,texture:null,textureKey:''};targets.set(panel,target);
+    target={pane,ctx,g,density,dirty:true,hover:0,pointer:[-10000,-10000],paints:0,kind};targets.set(panel,target);
    }else{
     if(Math.abs(density-target.density)>.001||Object.keys(g).some(k=>Math.abs(g[k as keyof Geometry]-target!.g[k as keyof Geometry])>.1))target.dirty=true;
     target.g=g;target.density=density;
    }
    target.pane.style.cssText=`left:${g.left}px;top:${panel.scrollTop+g.top}px;width:${g.cropWidth}px;height:${g.cropHeight}px;`;
-   const td=Math.min(textureDensity,2048/Math.max(g.width,g.height));
-   const textureKey=`${g.width}:${g.height}:${td.toFixed(2)}`;
-   if(target.kind!==1&&(!target.texture||target.textureKey!==textureKey)){
-    if(target.texture)context.deleteTexture(target.texture);target.texture=context.createTexture();context.bindTexture(context.TEXTURE_2D,target.texture);
-    const seed=Array.from(panel.className.replace(/pm-material-\w+/g,'')).reduce((n,c)=>(Math.imul(n,31)+c.charCodeAt(0))|0,7);
-    const map=createCircuitMap(g.width,g.height,td,seed);context.texImage2D(context.TEXTURE_2D,0,context.RGBA,context.RGBA,context.UNSIGNED_BYTE,map);textureParameters();map.width=map.height=1;target.textureKey=textureKey;target.dirty=true;
-   }
   }
   canvas.dataset.surfaces=String(targets.size);
  }
@@ -141,9 +126,9 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    const g=target.g,d=target.density,w=Math.max(1,Math.floor(g.cropWidth*d)),h=Math.max(1,Math.floor(g.cropHeight*d));
    if(canvas.width!==w)canvas.width=w;if(canvas.height!==h)canvas.height=h;
    context.viewport(0,0,w,h);context.clearColor(0,0,0,0);context.clear(context.COLOR_BUFFER_BIT);
-   context.uniform2f(uniform('uSize'),g.width,g.height);context.uniform2f(uniform('uCrop'),g.left,g.top);context.uniform2f(uniform('uBuffer'),w,h);context.uniform2f(uniform('uPointer'),...target.pointer);
+   context.uniform2f(uniform('uSize'),g.width,g.height);context.uniform2f(uniform('uCrop'),g.left,g.top);context.uniform2f(uniform('uCropSize'),g.cropWidth,g.cropHeight);context.uniform2f(uniform('uBuffer'),w,h);context.uniform2f(uniform('uPointer'),...target.pointer);
    context.uniform1f(uniform('uDensity'),d);context.uniform1f(uniform('uRadius'),Math.min(g.radius,g.width/2,g.height/2));context.uniform1f(uniform('uHover'),target.hover);context.uniform1f(uniform('uKind'),target.kind);context.uniform1f(uniform('uReveal'),panel===sidebar?reveal:1);
-   context.bindTexture(context.TEXTURE_2D,target.texture||empty);context.drawArrays(context.TRIANGLES,0,6);
+   context.drawArrays(context.TRIANGLES,0,6);
    if(target.pane.width!==w)target.pane.width=w;if(target.pane.height!==h)target.pane.height=h;
    target.ctx.clearRect(0,0,w,h);target.ctx.drawImage(canvas,0,0);target.pane.dataset.paints=String(++target.paints);target.dirty=false;canvas.dataset.draws=String(++draws);
   }
@@ -186,7 +171,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const moving=(e:Event)=>{if(e.target instanceof Element&&e.target.matches(`${SURFACES},.pm-dialog-layer`)){movingUntil=performance.now()+(reduced.matches?0:240);layout();}};
  const visibility=()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0;active.clear();control=null;finishReveal();}else{targets.forEach(t=>t.dirty=true);layout();}};
  const onLost=(e:Event)=>{e.preventDefault();lost=true;cancelAnimationFrame(frame);frame=0;finishReveal();fallback();};
- const restored=()=>{lost=false;program=null;buffer=null;empty=null;uniforms.clear();try{initialize();targets.forEach(t=>{t.texture=null;t.textureKey='';t.dirty=true;});registryDirty=true;layout();}catch{lost=true;fallback();}};
+ const restored=()=>{lost=false;program=null;buffer=null;uniforms.clear();try{initialize();targets.forEach(t=>{t.dirty=true;});registryDirty=true;layout();}catch{lost=true;fallback();}};
  try{initialize();}catch(error){if(buffer)context.deleteBuffer(buffer);if(program)context.deleteProgram(program);fallback();console.warn('Material indisponível.',error);return()=>{resized.disconnect();intersections.disconnect();delete shell.dataset.gl;};}
  changed.observe(shell,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','open','data-entered','data-visible','data-navigation']});
  shell.addEventListener('pentamark:pointer-reconcile',reconcile);
@@ -201,6 +186,6 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
   shell.removeEventListener('pointermove',pointer);shell.removeEventListener('pointerleave',leave);shell.removeEventListener('focusin',focus);shell.removeEventListener('scroll',layout,true);shell.removeEventListener('transitionrun',moving);shell.removeEventListener('animationstart',moving);shell.removeEventListener('transitionend',layout);
   window.removeEventListener('resize',layout);window.removeEventListener('blur',leave);document.removeEventListener('visibilitychange',visibility);reduced.removeEventListener('change',layout);
   canvas.removeEventListener('webglcontextlost',onLost);canvas.removeEventListener('webglcontextrestored',restored);
-  if(!lost){if(buffer)context.deleteBuffer(buffer);if(program)context.deleteProgram(program);if(empty)context.deleteTexture(empty);}canvas.width=canvas.height=1;delete shell.dataset.gl;
+  if(!lost){if(buffer)context.deleteBuffer(buffer);if(program)context.deleteProgram(program);}canvas.width=canvas.height=1;delete shell.dataset.gl;
  };
 }
