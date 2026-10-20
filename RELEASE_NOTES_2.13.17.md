@@ -7,6 +7,7 @@
 - Mídia local servida diretamente ao WebView, sem carregar anexos inteiros como base64 para exibição.
 - Botão Voltar fecha painéis antes de minimizar; suspensão solicita salvamento. Preferências ficam no aparelho.
 - Corrigida uma corrida de salvamento que podia misturar conteúdo de duas notas ao trocar de arquivo durante a consulta de um conflito.
+- A busca aguarda o índice inicial do cofre antes de aceitar entrada, evitando perder a abertura por Enter durante a inicialização.
 
 ## Instalação Android
 

@@ -156,6 +156,7 @@ export default function PentaMarkApp() {
   const confirmation = useConfirmation();
   const [mcpOpen, setMcpOpen] = useState(false);
   const [vault, setVault] = useState<VaultState>(EMPTY_STATE);
+  const [vaultReady, setVaultReady] = useState(false);
   const [activePath, setActivePath] = useState("");
   const [content, setContent] = useState("");
   const [revision, setRevision] = useState("");
@@ -293,6 +294,7 @@ export default function PentaMarkApp() {
     try {
       const next = await request<VaultState>("/api/state");
       setVault({ ...next, assets: next.assets || [], connections: next.connections || [], locks: next.locks || [] });
+      setVaultReady(true);
       setHostConfig((current) => ({ ...current, vaultName: next.vaultName }));
       if (!activePathRef.current && next.notes[0]) {
         const last = isAndroidLocal ? localStorage.getItem('pentamark:android:last-note') : '';
@@ -1341,7 +1343,7 @@ export default function PentaMarkApp() {
         <footer className="pm-statusbar"><span className="online"><Wifi size={10} />{isAndroidLocal ? (saveState === 'saved' ? 'Salvo no aparelho' : 'Alterações locais') : 'Sincronizado'}</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
       </section>
 
-      <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
+      <QuickOpen open={quickOpen} loading={!vaultReady} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
         onClose={() => { setQuickOpen(false); setQuery(""); }} onOpen={entry => { if (entry.kind === "note") void openNote(entry.path, true); else { const asset = vault.assets.find(item => item.path === entry.path); if (asset) setAssetPreview(asset); } }} />
       <ToolsPanel open={toolsOpen} onClose={() => setToolsOpen(false)} mode={viewMode} onMode={setViewMode}
         graphics={appearance.graphicsMode || "flat"} onGraphics={mode => setAppearance(current => {
