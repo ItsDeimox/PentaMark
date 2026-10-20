@@ -8,6 +8,7 @@
 - Diagramas Mermaid usam cores do tema e rótulos SVG sanitizados. Previews e incorporações têm cache limitado, deduplicação, cancelamento e proteção contra ciclos. Navegação das prévias por Ctrl/Meta + clique.
 - Controles nativos preservam semântica e teclado com aparência personalizada do tema. Painel de ferramentas revela e recolhe horizontalmente da direita para a esquerda, com movimento reduzido respeitado.
 - Mantidas as melhorias de imagens da 2.13.15.
+- Checkboxes da leitura não recebem uma segunda bolinha de lista e compartilham o alinhamento vertical do Live; listas normais com tarefas aninhadas preservam seus marcadores.
 
 Casos cuja representação não pode ser mapeada com segurança (por exemplo, HTML arbitrário e YAML estruturado) usam a edição explícita da fonte no próprio bloco; nenhuma posição aproximada é usada para salvar texto.
 
@@ -15,5 +16,6 @@ Casos cuja representação não pode ser mapeada com segurança (por exemplo, HT
 
 - `npm run check`: TypeScript e bundle aprovados.
 - `npm run test:unit`: 100 testes aprovados.
-- Suíte completa Playwright: 173 testes aprovados, sem falhas, skips ou retries. Inclui edição, conflitos, seleção em múltiplas escalas, igualdade geométrica Live/leitura, imagens, temas, painéis e perfis de rolagem/efeitos.
+- Suíte completa Playwright: 175 testes aprovados na rodada final isolada, sem falhas, skips ou retries. Inclui edição, conflitos, seleção em múltiplas escalas, igualdade geométrica Live/leitura, imagens, temas, painéis e perfis de rolagem/efeitos.
+- Cada execução de interface usa agora um cofre temporário exclusivo, evitando colisões de nomes com notas deixadas por execuções anteriores.
 - A publicação executa novamente os unitários e o teste nativo de inicialização/leitura/gravação do executável Windows antes de disponibilizar os pacotes.

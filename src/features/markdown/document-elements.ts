@@ -18,6 +18,9 @@ export function decorateDocumentListMarkers(root: ParentNode) {
   for (const item of root.querySelectorAll<HTMLLIElement>(
     "ul:not(.contains-task-list) > li:not(.task-list-item)",
   )) {
+    // marked's task HTML has no task-list class. Its own checkbox is already
+    // the marker; a nested child's checkbox must not hide this item's bullet.
+    if (item.querySelector(':scope > input[type="checkbox"], :scope > p:first-child > input[type="checkbox"]')) continue;
     if (item.querySelector(`:scope > .${DOCUMENT_LIST_MARKER_CLASS}`)) continue;
     item.classList.add(DOCUMENT_LIST_ITEM_CLASS);
     item.prepend(createDocumentListMarker());

@@ -1,9 +1,11 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 const port = Number(process.env.PM_TEST_PORT || 3417);
-const data = join(tmpdir(), `pentamark-approved-ui-tests-${port}`);
+// A repeated run must not inherit notes, rename targets or configuration from
+// an earlier fixture using the same port. Never reuse a personal vault.
+const data = await mkdtemp(join(tmpdir(), `pentamark-approved-ui-tests-${port}-`));
 const vault = join(data, 'vault');
 await mkdir(join(vault, 'Planejamento'), { recursive: true });
 await mkdir(join(vault, 'Referencias'), { recursive: true });

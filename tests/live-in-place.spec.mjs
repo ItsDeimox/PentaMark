@@ -36,6 +36,42 @@ test('Live and reading share the same measured geometry for headings, callout, t
   await page.screenshot({path:info.outputPath('reading-matching.png')});
 });
 
+test('reading task checkboxes match Live without an extra custom bullet', async ({page}) => {
+  await open(page);
+  const liveCheckboxes = page.locator('.pm-live-task-checkbox');
+  await expect(liveCheckboxes).toHaveCount(2);
+  const liveBoxes = await liveCheckboxes.evaluateAll(nodes => nodes.map(node => {
+    const {x,y,width,height} = node.getBoundingClientRect(); return {x,y,width,height};
+  }));
+  await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
+  await page.getByRole('button',{name:'Somente leitura',exact:true}).click();await page.keyboard.press('Escape');
+  await expect(page.locator('.pm-workspace-panel')).toHaveCount(0);
+  const tasks = page.locator('.pm-preview-pane li').filter({has:page.locator('input[type="checkbox"]')});
+  await expect(tasks).toHaveCount(2);
+  await expect(tasks.locator(':scope > .pm-list-marker')).toHaveCount(0);
+  const readingBoxes = await tasks.locator('input[type="checkbox"]').evaluateAll(nodes => nodes.map(node => {
+    const {x,y,width,height} = node.getBoundingClientRect(); return {x,y,width,height};
+  }));
+  console.log('task-checkbox-parity', {liveBoxes,readingBoxes});
+  for(let i=0;i<liveBoxes.length;i++)for(const dimension of ['x','y','width','height'])
+    expect.soft(Math.abs(readingBoxes[i][dimension]-liveBoxes[i][dimension]),`checkbox ${i} ${dimension}`).toBeLessThanOrEqual(1);
+});
+
+test('task decoration keeps normal parent bullets and skips direct or loose task checkboxes', async ({page}) => {
+  await open(page);await useSource(page,'# Tasks\n\n- Parent\n  - [ ] Nested\n\n- [ ] Own\n\n  Paragraph\n\n- Sibling\n');
+  await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
+  await page.getByRole('button',{name:'Somente leitura',exact:true}).click();await page.keyboard.press('Escape');
+  const article=page.locator('.pm-preview-pane');
+  await expect(article.locator('input[type="checkbox"]')).toHaveCount(2);
+  const markers=await article.locator('li').evaluateAll(items=>items.map(item=>({
+    ownCheckbox:!!item.querySelector(':scope > input[type="checkbox"], :scope > p:first-child > input[type="checkbox"]'),
+    marker:!!item.querySelector(':scope > .pm-list-marker'),
+  })));
+  expect(markers.filter(item=>item.ownCheckbox)).toHaveLength(2);
+  expect(markers.filter(item=>!item.ownCheckbox)).toHaveLength(2);
+  for(const item of markers)expect(item.marker).toBe(!item.ownCheckbox);
+});
+
 test('callout edits rendered text in place without moving the next block, and saves undoably', async ({page}) => {
   await open(page);
   const before = await current(page);
