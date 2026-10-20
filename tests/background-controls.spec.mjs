@@ -114,6 +114,8 @@ test('background cannot restart from pointer events while window is blurred',asy
     window.dispatchEvent(new Event('blur'));
     document.dispatchEvent(new PointerEvent('pointermove',{clientX:1200,clientY:500,pointerType:'mouse'}));
   });
+  await expect.poll(()=>peak(page),{timeout:6000}).toBe(0);
+  await page.evaluate(()=>document.dispatchEvent(new PointerEvent('pointermove',{clientX:1200,clientY:500,pointerType:'mouse'})));
   await page.waitForTimeout(150);
   expect(await peak(page)).toBe(0);
   expect(await page.locator('.pm-signal-packet').first().evaluate(el=>el.getAnimations()[0].playState)).toBe('paused');

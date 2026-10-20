@@ -64,11 +64,16 @@ test('live theme changes recolor the energy instead of retaining the old accent'
   await page.getByRole('button',{name:'Pérola',exact:true}).click();
   await page.mouse.move(1200,200);
   await page.mouse.move(1300,400,{steps:12});
-  const color=await page.locator('.pm-energy-layer').first().evaluate(c=>{
+  const haloPixels=await page.locator('.pm-energy-layer').first().evaluate(c=>{
     const data=window.readEnergyPixels(c);
-    let best=3;for(let i=3;i<data.length;i+=4)if(data[i]>data[best])best=i;
-    return Array.from(data.slice(best-3,best+1));
+    // Pearl accent is #35788c. Bright cores are intentionally near-white;
+    // measure the colored halo instead of the most opaque pixel.
+    let matching=0;
+    for(let i=0;i<data.length;i+=4){
+      if(data[i+3]>12&&data[i+2]>5&&Math.abs(data[i]/data[i+2]-53/140)<.045
+        &&Math.abs(data[i+1]/data[i+2]-120/140)<.06)matching++;
+    }
+    return matching;
   });
-  expect(color[3]).toBeGreaterThan(20);
-  expect(color[0]).toBeLessThan(80);
+  expect(haloPixels).toBeGreaterThan(10);
 });

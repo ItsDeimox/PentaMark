@@ -2,7 +2,7 @@ import type {EnergyMesh} from './energy-mesh';
 
 /** Draw thin analytic wires on the GPU. Only edge energies are uploaded, never
  * a full-screen CPU bitmap. The backing scale remains constant during a trail. */
-export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,width:number,height:number,zoom:number,color:string){
+export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,width:number,height:number,zoom:number,color:string,acrylic=false){
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
   if(!gl||gl.isContextLost())return null;
   const density=Math.min(2,devicePixelRatio||1);
@@ -23,15 +23,24 @@ export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,wid
   }`;
   const fragment=`#version 300 es
   precision highp float;
-  in float across; in float value; uniform vec3 tint; out vec4 pixel;
+  in float across; in float value; uniform vec3 tint;
+  uniform float material; uniform float density; out vec4 pixel;
   void main(){
     float e=max(value-.02,0.);
     float radiance=pow(e,.92)*(1.+3.7*smoothstep(.18,1.1,value));
-    float d=abs(across),aa=max(fwidth(across),.35);
-    float wire=1.-smoothstep(.38,.38+aa,d);
-    float halo=exp(-d*.85)*.08;
-    float alpha=min(.8,radiance*(wire*.7+halo));
-    pixel=vec4(tint,alpha);
+    vec2 position=gl_FragCoord.xy/density;
+    // Stationary subpixel refraction: no time noise, jitter or extra blur pass.
+    float lens=material*.22*sin(position.x*.035+sin(position.y*.02));
+    float d=abs(across+lens),aa=max(fwidth(across),.35);
+    float wire=1.-smoothstep(.12,.12+aa,d);
+    float core=wire*.62;
+    float halo=(exp(-d*d/2.)*.055+exp(-d*.48)*.027+exp(-d*.22)*.009)
+      *(1.-smoothstep(5.5,7.,d));
+    float grain=fract(sin(dot(floor(position*density),vec2(12.9898,78.233)))*43758.5453);
+    float light=core+halo;
+    float alpha=min(.8,radiance*light)*(1.-material*.065*grain);
+    vec3 whiteCore=mix(tint,vec3(1.),.94*smoothstep(.08,.7,radiance));
+    pixel=vec4((whiteCore*core+tint*halo)/max(light,.0001),alpha);
   }`;
   const compile=(type:number,source:string)=>{
     const shader=gl.createShader(type);if(!shader)return null;
@@ -59,6 +68,8 @@ export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,wid
   const rgb=ctx.getImageData(0,0,1,1).data;
   gl.useProgram(program);gl.uniform2f(gl.getUniformLocation(program,'viewport'),width,height);
   gl.uniform3f(gl.getUniformLocation(program,'tint'),rgb[0]/255,rgb[1]/255,rgb[2]/255);
+  gl.uniform1f(gl.getUniformLocation(program,'material'),acrylic?1:0);
+  gl.uniform1f(gl.getUniformLocation(program,'density'),density);
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.enable(gl.BLEND);gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
   gl.enable(gl.SCISSOR_TEST);gl.clearColor(0,0,0,0);
