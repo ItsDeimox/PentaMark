@@ -60,6 +60,7 @@ test('acrylic tools panel shares the sidebar and settings surface', async ({ pag
   const sidebar = page.locator('.pm-sidebar').first();
   const tools = page.locator('.pm-workspace-panel').first();
   await expect(tools).toBeVisible();
+  await expect.poll(() => tools.evaluate(el => getComputedStyle(el).clipPath)).toBe('none');
   const surface = locator => locator.evaluate(el => {
     const style = getComputedStyle(el);
     return { background: style.backgroundColor, border: style.borderColor, shadow: style.boxShadow };
@@ -87,4 +88,3 @@ test('context actions and copy-path submenu retain their hover background', asyn
   await relative.hover();
   await hasBackground(relative);
 });
-
