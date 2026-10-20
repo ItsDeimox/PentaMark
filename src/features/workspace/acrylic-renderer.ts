@@ -38,8 +38,9 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    context.useProgram(program);buffer=context.createBuffer();if(!buffer)throw new Error('Buffer allocation');
    context.bindBuffer(context.ARRAY_BUFFER,buffer);context.bufferData(context.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),context.STATIC_DRAW);
    const position=context.getAttribLocation(program,'aPosition');context.enableVertexAttribArray(position);context.vertexAttribPointer(position,2,context.FLOAT,false,0,0);
-   for(const name of ['uSize','uCrop','uCropSize','uBuffer','uPointer','uAccent','uDensity','uRadius','uHover','uKind','uReveal'])uniforms.set(name,context.getUniformLocation(program,name));
+   for(const name of ['uSize','uCrop','uCropSize','uBuffer','uPointer','uAccent','uDensity','uRadius','uHover','uKind','uReveal','uLight'])uniforms.set(name,context.getUniformLocation(program,name));
    context.uniform3f(uniform('uAccent'),accent[0],accent[1],accent[2]);
+   context.uniform1f(uniform('uLight'),shell.dataset.theme==='pearl'?1:0);
    canvas.dataset.renderer='webgl';shell.dataset.gl='webgl';
   }finally{shaders.forEach(s=>context.deleteShader(s));}
  }

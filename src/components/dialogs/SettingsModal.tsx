@@ -10,6 +10,7 @@ const THEMES = [
   { id:'eclipse', name:'Eclipse', color:'#b5a1e7' },
   { id:'ember', name:'Ember', color:'#e8b087' },
   { id:'terminal', name:'Terminal', color:'#9dd0aa' },
+  { id:'pearl', name:'Pérola', color:'#35788c' },
 ] as const;
 const TABS = [
   { id:'appearance', label:'Aparência', icon:Palette },
@@ -51,6 +52,7 @@ export function SettingsModal(p: {
       {tab==='appearance' && <>
         <DialogSection title="Identidade visual">
           <div className="pm-theme-options">{THEMES.map(theme => <button type="button" key={theme.id} aria-pressed={p.appearance.theme===theme.id} onClick={() => appearance({theme:theme.id})} style={{'--pm-swatch':theme.color} as React.CSSProperties}><i/><span>{theme.name}</span>{p.appearance.theme===theme.id && <Check size={13}/>}</button>)}</div>
+          <label className="pm-background-toggle"><input type="checkbox" checked={p.appearance.backgroundMotion !== false} onChange={e => appearance({backgroundMotion:e.target.checked})}/>Pulsos de luz no fundo</label>
         </DialogSection>
         <DialogSection title="Gráficos">
           <div className="pm-material-options"><button type="button" aria-pressed={p.appearance.graphicsMode==='flat'} onClick={() => appearance({graphicsMode:'flat'})}><Square size={21}/><strong>Flat</strong></button><button type="button" aria-pressed={p.appearance.graphicsMode==='acrylic'} onClick={() => appearance({graphicsMode:'acrylic'})}><Layers size={21}/><strong>Acrílico</strong></button></div>
