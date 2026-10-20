@@ -7,12 +7,11 @@
   mask-image:radial-gradient(ellipse at 54% 48%,#0001 15%,#0008 64%,#000 100%);
 }
 .pm-signal-background path { fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
+.pm-signal-background > :is(svg,canvas) { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .pm-signal-track { stroke-width:.65; opacity:.14; }
-.pm-signal-halo { stroke-width:9; opacity:.13; stroke-dasharray:35 965; filter:blur(3px); }
-.pm-signal-packet { stroke-width:1.3; opacity:.45; stroke-dasharray:15 985; filter:blur(.6px); }
+.pm-signal-halo { stroke-width:4; opacity:.08; stroke-dasharray:35 965; }
+.pm-signal-packet { stroke-width:1.1; opacity:.35; stroke-dasharray:15 985; }
 .pm-mesh-track { stroke-width:.55; opacity:.055; }
-.pm-energy-bloom { stroke-width:10; filter:blur(5px); opacity:.38; }
-.pm-energy-wire { stroke-width:.9; opacity:.8; }
 .pm-shell[data-theme="pearl"] .pm-mesh-track { opacity:.085; }
 .pm-lens-defs { position:absolute; width:0; height:0; pointer-events:none; overflow:hidden; }
 .pm-signal-node { fill:var(--pm-bg-base); stroke:currentColor; stroke-width:.7; opacity:.28; }

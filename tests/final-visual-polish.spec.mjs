@@ -58,6 +58,8 @@ test('file context submenu is keyboard-accessible and flips inward at the right 
 
 test('Cortex character decode preserves the actual document and settles after navigating',async({page})=>{
   await ready(page);
+  // The editor shell is mounted before the asynchronous note arrives.
+  await expect(page.locator('.pm-live-codemirror .cm-content')).toContainText('Visão Geral do Projeto');
   const original=await page.locator('.pm-live-codemirror .cm-content').innerText();
   await page.keyboard.press('Control+f');
   await page.getByRole('combobox').fill('01 - Direcao');

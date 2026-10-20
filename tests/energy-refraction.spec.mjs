@@ -9,9 +9,14 @@ test('energy fragments follow the pointer and settle without moving content', as
   await page.waitForTimeout(800);
   await expect(page.locator('.pm-decode-glyphs')).toHaveCount(0);
   const before = await editor.boundingBox();
-  const cells = page.locator('.pm-energy-cell');
-  await expect(cells.first()).toBeAttached();
-  const energy = () => cells.evaluateAll(nodes => Math.max(...nodes.map(n => Number(n.style.opacity))));
+  const layer = page.locator('.pm-energy-layer');
+  await expect(layer).toBeVisible();
+  // Inspect actual drawn alpha, not a telemetry attribute or mocked solver.
+  const energy = () => layer.evaluate(c => {
+    const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let peak=0;for(let i=3;i<pixels.length;i+=4)peak=Math.max(peak,pixels[i]);
+    return peak/255;
+  });
   await page.mouse.move(1200,200);
   await page.mouse.move(1300,400,{steps:12});
   await expect.poll(energy).toBeGreaterThan(.2);
@@ -78,7 +83,7 @@ test('refraction changes backdrop pixels at the edge, not the center', async ({p
       return {width:image.width,height:image.height,data:ctx.getImageData(0,0,image.width,image.height).data};
     };
     const first=await decode(a),second=await decode(b);
-    let edge=0,center=0,chroma=0,ne=0,nc=0;
+    let edge=0,center=0,chroma=0,shoulder=0,ne=0,nc=0,ns=0;
     for(let y=40;y<first.height-40;y++)for(let x=2;x<first.width-2;x++){
       const i=(y*first.width+x)*4;
       const d=Math.abs(first.data[i]-second.data[i])+Math.abs(first.data[i+1]-second.data[i+1])+Math.abs(first.data[i+2]-second.data[i+2]);
@@ -88,13 +93,15 @@ test('refraction changes backdrop pixels at the edge, not the center', async ({p
         chroma+=Math.max(...a)-Math.min(...a)-Math.max(...b)+Math.min(...b);
       }
       if(x>60&&x<first.width-60){center+=d;nc+=3;}
+      if(x>=23&&x<=30){shoulder+=d;ns+=3;}
     }
-    return {edge:edge/ne,center:center/nc,chroma:chroma/(ne/3)};
+    return {edge:edge/ne,center:center/nc,chroma:chroma/(ne/3),shoulder:shoulder/ns};
   },[distorted.toString('base64'),undistorted.toString('base64')]);
   await info.attach('optical-pixel-difference',{body:JSON.stringify(difference),contentType:'application/json'});
   expect(difference.edge).toBeGreaterThan(4);
   expect(difference.center).toBeLessThan(1);
   expect(difference.chroma).toBeGreaterThan(2);
+  expect(difference.shoulder).toBeGreaterThan(2);
   const map=probe.locator('feImage'),initial=await map.getAttribute('href');
   await probe.evaluate(el=>el.style.width='480px');
   await expect(map).toHaveAttribute('width','480');

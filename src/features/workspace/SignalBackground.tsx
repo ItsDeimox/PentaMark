@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { createEnergyMesh } from './energy-mesh';
+import { createEnergyMesh, EnergyNetwork } from './energy-mesh';
 
 // Fixed routes keep the pattern stable during editing and theme changes.
 const routes = [
@@ -16,10 +16,11 @@ const routes = [
   'M-40 970 H150 L245 875 H410 L520 985 H720 L800 905 H1000 L1095 1000',
   'M1640 960 H1490 L1390 910 H1300 L1210 1000',
 ];
-const cells=createEnergyMesh();
+const mesh=createEnergyMesh();
 
-export function SignalBackground({ animated }: { animated: boolean }) {
-  const svg=useRef<SVGSVGElement>(null);
+export function SignalBackground({ animated,theme }: { animated: boolean;theme:string }) {
+  const host=useRef<HTMLDivElement>(null);
+  const canvas=useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(() => !document.hidden);
   useEffect(() => {
     const update = () => setVisible(!document.hidden);
@@ -27,67 +28,75 @@ export function SignalBackground({ animated }: { animated: boolean }) {
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
   useEffect(()=>{
-    const root=svg.current;
-    if(!root)return;
+    const root=host.current,layer=canvas.current,ctx=layer?.getContext('2d');
+    if(!root||!layer||!ctx)return;
     const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-    const nodes=Array.from(root.querySelectorAll<SVGGElement>('.pm-energy-cell'));
-    const energy=new Float32Array(cells.length),next=new Float32Array(cells.length);
-    let trails:Array<{x:number;y:number;time:number}>=[],frame=0,last=0;
-    let previous: {x:number;y:number}|null=null;
+    const energy=new EnergyNetwork(mesh);
+    let frame=0,last=0,pending:{x:number;y:number}|null=null,previous:{x:number;y:number}|null=null;
+    let bounds=root.getBoundingClientRect(),scale=1,offsetX=0,offsetY=0;
+    const color=getComputedStyle(root).color;
     const clear=()=>{
-      cancelAnimationFrame(frame);frame=0;trails=[];previous=null;energy.fill(0);
-      nodes.forEach(n=>{n.style.opacity='0';n.removeAttribute('transform');});
+      cancelAnimationFrame(frame);frame=0;pending=null;previous=null;energy.clear();
+      ctx.resetTransform();ctx.clearRect(0,0,layer.width,layer.height);
+    };
+    const resize=()=>{
+      clear();bounds=root.getBoundingClientRect();
+      const density=Math.min(1,1600/Math.max(1,bounds.width),1000/Math.max(1,bounds.height));
+      layer.width=Math.max(1,Math.round(bounds.width*density));layer.height=Math.max(1,Math.round(bounds.height*density));
+      scale=Math.max(bounds.width/1600,bounds.height/1000);
+      offsetX=(bounds.width-1600*scale)/2;offsetY=(bounds.height-1000*scale)/2;
     };
     const render=(now:number)=>{
       frame=0;
       if(!animated||document.hidden||reduced.matches){clear();return;}
-      const dt=Math.min(.05,(now-last)/1000);last=now;
-      trails=trails.filter(p=>now-p.time<1300);
-      let active=false;
-      cells.forEach((cell,i)=>{
-        let excitation=0,dx=0,dy=0;
-        for(const p of trails){
-          const age=(now-p.time)/1000,distance=Math.hypot(cell.x-p.x,cell.y-p.y);
-          const front=35+age*115;
-          const ring=Math.exp(-(((distance-front)/39)**2));
-          const core=Math.exp(-((distance/85)**2))*.24;
-          const light=(ring*.9+core)*Math.exp(-age*3.8);
-          if(light>excitation){excitation=light;dx=(cell.x-p.x)/Math.max(1,distance);dy=(cell.y-p.y)/Math.max(1,distance);}
+      // Coalesce input; never measure layout at pointer-event frequency.
+      if(pending){
+        if(!previous||Math.hypot(pending.x-previous.x,pending.y-previous.y)>6){
+          energy.inject(pending.x,pending.y);previous=pending;
         }
-        const transported=cell.neighbors.reduce((sum,j)=>sum+energy[j],0)/Math.max(1,cell.neighbors.length);
-        next[i]=Math.min(1,Math.max(excitation,energy[i]*Math.exp(-dt*5)+(transported-energy[i])*Math.min(.2,dt*2)));
-        const e=next[i];active ||= e>.003;
-        nodes[i].style.opacity=e>.003?e.toFixed(3):'0';
-        if(e>.003)nodes[i].setAttribute('transform',`translate(${(dx*e*5).toFixed(2)} ${(dy*e*5).toFixed(2)})`);
-        else nodes[i].removeAttribute('transform');
-      });
-      energy.set(next);
-      if(active||trails.length)frame=requestAnimationFrame(render);
+        pending=null;
+      }
+      energy.step((now-last)/1000);last=now;
+      ctx.resetTransform();ctx.clearRect(0,0,layer.width,layer.height);
+      const density=layer.width/Math.max(1,bounds.width);
+      ctx.setTransform(scale*density,0,0,scale*density,offsetX*density,offsetY*density);
+      const buckets=Array.from({length:16},()=>new Path2D());
+      for(const [a,b] of mesh.edges){
+        const va=energy.values[a],vb=energy.values[b];
+        if(Math.max(va,vb)<.008)continue;
+        const p=mesh.points[a],q=mesh.points[b];
+        for(let s=0;s<3;s++){
+          const t=(s+.5)/3,e=va*(1-t)+vb*t;
+          const level=Math.min(15,Math.floor(Math.sqrt(e)*15));
+          if(level<1)continue;
+          buckets[level].moveTo(p.x+(q.x-p.x)*s/3,p.y+(q.y-p.y)*s/3);
+          buckets[level].lineTo(p.x+(q.x-p.x)*(s+1)/3,p.y+(q.y-p.y)*(s+1)/3);
+        }
+      }
+      ctx.strokeStyle=color;ctx.lineCap='round';
+      // Batched layered strokes: no per-cell blur surfaces or DOM mutations.
+      for(let i=1;i<16;i++)for(const [width,alpha] of [[7,.035],[3,.10],[.85,.85]]){
+        ctx.lineWidth=width;ctx.globalAlpha=i/15*alpha;ctx.stroke(buckets[i]);
+      }
+      ctx.globalAlpha=1;
+      if(energy.active)frame=requestAnimationFrame(render);
     };
     const pointer=(e:PointerEvent)=>{
-      if(!animated||document.hidden||reduced.matches||e.pointerType==='touch')return;
-      const matrix=root.getScreenCTM();if(!matrix)return;
-      const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());
-      if(previous&&Math.hypot(p.x-previous.x,p.y-previous.y)<12)return;
-      previous=p;trails.push({x:p.x,y:p.y,time:performance.now()});
-      if(trails.length>36)trails.shift();
+      if(!animated||document.hidden||reduced.matches||e.pointerType==='touch'||e.buttons)return;
+      pending={x:(e.clientX-bounds.left-offsetX)/scale,y:(e.clientY-bounds.top-offsetY)/scale};
       if(!frame){last=performance.now();frame=requestAnimationFrame(render);}
     };
+    const observer=new ResizeObserver(resize);observer.observe(root);resize();
     document.addEventListener('pointermove',pointer,{passive:true});
     document.addEventListener('visibilitychange',clear);
     window.addEventListener('blur',clear);
     reduced.addEventListener('change',clear);
-    return()=>{clear();document.removeEventListener('pointermove',pointer);document.removeEventListener('visibilitychange',clear);window.removeEventListener('blur',clear);reduced.removeEventListener('change',clear);};
-  },[animated,visible]);
-  return <svg ref={svg} className="pm-signal-background" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"
-    aria-hidden="true" focusable="false" data-animated={animated && visible}>
-    {cells.map((cell,i)=><g key={i}>
-      <path className="pm-mesh-track" d={cell.path}/>
-      <g className="pm-energy-cell" style={{opacity:0}}>
-        <path className="pm-energy-bloom" d={cell.path}/>
-        <path className="pm-energy-wire" d={cell.path}/>
-      </g>
-    </g>)}
+    return()=>{clear();observer.disconnect();document.removeEventListener('pointermove',pointer);document.removeEventListener('visibilitychange',clear);window.removeEventListener('blur',clear);reduced.removeEventListener('change',clear);};
+  },[animated,visible,theme]);
+  return <div ref={host} className="pm-signal-background" aria-hidden="true" data-animated={animated && visible}>
+    <canvas ref={canvas} className="pm-energy-layer"/>
+    <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" focusable="false">
+    <path className="pm-mesh-track" d={mesh.path}/>
     {routes.map((d, i) => <g key={d} style={{ '--signal-duration': `${16 + i % 5 * 3}s`, '--signal-delay': `${-i * 3.7}s` } as CSSProperties}>
       <path className="pm-signal-track" d={d} />
       <path className="pm-signal-halo" d={d} pathLength={1000} />
@@ -95,5 +104,5 @@ export function SignalBackground({ animated }: { animated: boolean }) {
     </g>)}
     {[[180,175],[110,470],[210,840],[475,90],[860,130],[1430,235],[1510,525],[1410,840],[1290,135],[800,905]].map(([cx,cy]) =>
       <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="2.5" className="pm-signal-node" />)}
-  </svg>;
+  </svg></div>;
 }
