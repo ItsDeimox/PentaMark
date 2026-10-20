@@ -2,6 +2,14 @@
 .pm-shell[data-theme] { --pm-radius: 9px; }
 .pm-shell .pm-sidebar { transform: translateX(0); transform-origin: left center; transition:transform 190ms cubic-bezier(.2,.8,.2,1),opacity 150ms,visibility 0s; }
 .pm-shell .pm-sidebar--closed { transform:translateX(-18px); transition-delay:0s,0s,190ms; }
+/* Mirror the sidebar's band reveal at the right edge, including close/reversal. */
+.pm-shell[data-theme] .pm-workspace-panel:not(.pm-quick-open) {
+ opacity:1; transform:translateX(var(--pm-reveal-x,9px)); transform-origin:right center;
+ clip-path:inset(0 0 0 100%); transition:none;
+}
+.pm-shell .pm-workspace-panel[data-fragmenting="true"] { will-change:clip-path; }
+/* Band clipping owns the tools' content motion as well as the outer plate. */
+.pm-shell[data-theme] .pm-workspace-panel.pm-workspace-tools[data-entered="true"] :is(.pm-tool-section,.pm-tool-mcp,.pm-tool-footer) { animation:none; }
 .pm-shell[data-graphics="acrylic"] .pm-sidebar[data-fragmenting="true"] {
  visibility:visible; opacity:1; transform:translateX(var(--pm-reveal-x,0px)); transition:none; will-change:clip-path;
 }

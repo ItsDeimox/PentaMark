@@ -129,8 +129,14 @@
 .pm-image-help { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .pm-shell .pm-document-path { width:min(calc(100% - 48px),940px); margin-inline:auto; }
 .pm-shell .pm-live-codemirror .cm-content { width:min(calc(100% - 48px),940px); max-width:940px; margin-inline:auto; flex-shrink:0; }
-.pm-shell .pm-live-codemirror .cm-scroller { scrollbar-gutter:stable both-edges; }
-.pm-shell .pm-document--preview .pm-preview-pane { padding-inline:max(24px,calc((100% - 940px) / 2)); }
+/* CodeMirror positions its cursor/selection layers from the scroller's outer
+   left edge. A leading scrollbar gutter offsets both layers by one gutter. */
+.pm-shell .pm-live-codemirror .cm-scroller,
+.pm-shell .pm-preview-pane { scrollbar-gutter:stable; }
+.pm-shell .pm-document--preview .pm-preview-pane { container-type:inline-size;padding-inline:0; }
+.pm-shell .pm-document--preview .pm-preview-pane > .pm-markdown { width:min(calc(100% - 48px),940px);margin-inline:auto; }
+.pm-shell .pm-live-codemirror .cm-content,
+.pm-shell .pm-document--preview .pm-preview-pane > .pm-markdown { position:relative;left:var(--pm-scrollbar-half,0px); }
 /* The line-level decode never replaces source content or changes editor layout. */
 .pm-decode-layer { position:absolute; inset:0; z-index:5; pointer-events:none; contain:paint; overflow:hidden; }
 .pm-decode-glyphs { position:absolute; display:block; overflow:hidden; white-space:pre; pointer-events:none;

@@ -1,6 +1,5 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import mermaid from "mermaid";
 import { parse as parseYaml } from "yaml";
 import type { AssetMeta, NoteMeta, OpenNote } from "../../domain/types";
 import { request } from "../../api/client";
@@ -9,6 +8,7 @@ import { decodeSource, encodeSource, escapeAttribute, escapeCode } from "../../s
 import hljs, { CODE_LANGUAGES } from "./highlighting";
 import { renderKanban } from "./kanban";
 import { decorateDocumentListMarkers } from "./document-elements";
+import { renderMermaidDiagram } from "./diagram-renderer";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -30,7 +30,6 @@ marked.use({
     },
   },
 });
-mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark", fontFamily: "monospace" });
 export type MarkdownContext = { activePath: string; notes: NoteMeta[]; folders: string[]; assets: AssetMeta[] };
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
@@ -65,7 +64,8 @@ export function resolveNotePath(value: string, context: MarkdownContext) {
   if (!path) return context.activePath;
   const requested = normalizeLinkPath(path).replace(/\.md$/i, "");
   const parent = parentOf(context.activePath);
-  const candidates = [requested, normalizeLinkPath(joinPath(parent, requested))].filter(Boolean);
+  const relative = normalizeLinkPath(joinPath(parent, decodedLink(path))).replace(/\.md$/i, "");
+  const candidates = (/^\.{1,2}[\\/]/.test(decodedLink(path)) ? [relative] : [requested, relative]).filter(Boolean);
   for (const candidate of candidates) {
     const exact = context.notes.find((note) => note.path.replace(/\.md$/i, "").localeCompare(candidate, undefined, { sensitivity: "accent" }) === 0);
     if (exact) return exact.path;
@@ -75,17 +75,20 @@ export function resolveNotePath(value: string, context: MarkdownContext) {
 }
 
 export function resolveFolderPath(value: string, context: MarkdownContext) {
-  const requested = normalizeLinkPath(splitLinkTarget(value).path);
+  const raw = splitLinkTarget(value).path;
+  const requested = normalizeLinkPath(raw);
   const parent = parentOf(context.activePath);
-  return context.folders.find((folder) => folder.localeCompare(requested, undefined, { sensitivity: "accent" }) === 0)
-    || context.folders.find((folder) => folder.localeCompare(normalizeLinkPath(joinPath(parent, requested)), undefined, { sensitivity: "accent" }) === 0)
-    || "";
+  const relative = normalizeLinkPath(joinPath(parent, decodedLink(raw)));
+  const candidates = /^\.{1,2}[\\/]/.test(decodedLink(raw)) ? [relative] : [requested, relative];
+  return candidates.map(candidate => context.folders.find(folder => folder.localeCompare(candidate, undefined, { sensitivity: "accent" }) === 0)).find(Boolean) || "";
 }
 
 export function resolveAssetTarget(value: string, activePath: string, assets: AssetMeta[]) {
-  const requested = normalizeLinkPath(splitLinkTarget(value).path);
+  const raw = splitLinkTarget(value).path;
+  const requested = normalizeLinkPath(raw);
   const parent = parentOf(activePath);
-  const candidates = [requested, normalizeLinkPath(joinPath(parent, requested)), normalizeLinkPath(joinPath("assets", requested))];
+  const relative = normalizeLinkPath(joinPath(parent, decodedLink(raw)));
+  const candidates = /^\.{1,2}[\\/]/.test(decodedLink(raw)) ? [relative] : [requested, relative, normalizeLinkPath(joinPath("assets", requested))];
   for (const candidate of candidates) {
     const match = assets.find((asset) => asset.path.localeCompare(candidate, undefined, { sensitivity: "accent" }) === 0);
     if (match) return match;
@@ -256,33 +259,132 @@ export function sanitizeMarkdown(markdown: string, context: MarkdownContext) {
     .replace(/(<input\b[^>]*?)\sdisabled(?:="")?([^>]*>)/gi, "$1$2"));
 }
 
-let mermaidRenderId = 0;
-export async function renderDynamicMarkdown(root: HTMLElement, context: MarkdownContext, depth = 0) {
-  for (const diagram of root.querySelectorAll<HTMLElement>(".pm-mermaid:not([data-pm-rendered])")) {
-    diagram.dataset.pmRendered = "true";
-    const source = decodeSource(diagram.dataset.pmSource);
-    try {
-      const { svg } = await mermaid.render(`pm-mermaid-${++mermaidRenderId}`, source);
-      if (!diagram.isConnected) continue;
-      diagram.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
-    } catch (error) {
-      diagram.classList.add("pm-mermaid--error");
-      diagram.innerHTML = `<strong>Mermaid não conseguiu renderizar</strong><pre><code>${escapeCode(error instanceof Error ? error.message : String(error))}</code></pre>`;
-    }
+type PreviewNoteEntry = { note: OpenNote; expires: number };
+type PreviewNoteRequest = { controller: AbortController; consumers: Set<object>; promise: Promise<OpenNote> };
+const previewNotes = new Map<string, PreviewNoteEntry>();
+const previewRequests = new Map<string, PreviewNoteRequest>();
+let previewBytes = 0;
+
+/** Shared by hover cards and embeds; metadata and TTL invalidate saved content. */
+export function loadPreviewNote(path: string, context: MarkdownContext, signal: AbortSignal): Promise<OpenNote> {
+  if (signal.aborted) return Promise.reject(new DOMException("Cancelled", "AbortError"));
+  const metadata = context.notes.find(note => note.path === path);
+  const key = JSON.stringify([localStorage.getItem("pentamark:client-id"), path, metadata?.modified, metadata?.size]);
+  const cached = previewNotes.get(key);
+  if (cached && cached.expires > Date.now()) {
+    previewNotes.delete(key); previewNotes.set(key, cached);
+    return Promise.resolve(cached.note);
   }
-  if (depth >= 2) return;
-  for (const embed of root.querySelectorAll<HTMLElement>(".pm-note-embed:not([data-pm-rendered])")) {
-    embed.dataset.pmRendered = "true";
-    const notePath = embed.dataset.pmEmbedNote || "";
-    if (!notePath || notePath === context.activePath) { embed.innerHTML = "<span>Referência circular ignorada</span>"; continue; }
-    try {
-      const note = await request<OpenNote>(`/api/note?path=${encodeURIComponent(notePath)}`);
-      if (!embed.isConnected) continue;
-      const nestedContext = { ...context, activePath: notePath };
-      embed.innerHTML = `<header>${escapeCode(titleOf(notePath))}</header><div>${sanitizeMarkdown(note.content, nestedContext)}</div>`;
-      await renderDynamicMarkdown(embed, nestedContext, depth + 1);
-    } catch {
-      embed.innerHTML = `<span>Não deu para carregar ${escapeCode(titleOf(notePath))}</span>`;
-    }
+  if (cached) { previewBytes -= cached.note.content.length; previewNotes.delete(key); }
+  let entry = previewRequests.get(key);
+  if (entry?.controller.signal.aborted) { previewRequests.delete(key); entry = undefined; }
+  if (!entry) {
+    const controller = new AbortController();
+    const consumers = new Set<object>();
+    const promise = request<OpenNote>(`/api/note?path=${encodeURIComponent(path)}`, { signal: controller.signal }).then(note => {
+      if (!controller.signal.aborted && note.content.length <= 1_000_000) {
+        previewNotes.set(key, { note, expires: Date.now() + 15_000 });
+        previewBytes += note.content.length;
+        while (previewNotes.size > 32 || previewBytes > 2_000_000) {
+          const oldest = previewNotes.keys().next().value!;
+          previewBytes -= previewNotes.get(oldest)!.note.content.length;
+          previewNotes.delete(oldest);
+        }
+      }
+      return note;
+    });
+    entry = { controller, consumers, promise };
+    previewRequests.set(key, entry);
+    const current = entry;
+    void promise.finally(() => { if (previewRequests.get(key) === current) previewRequests.delete(key); }).catch(() => undefined);
   }
+  const shared = entry;
+  const consumer = {};
+  shared.consumers.add(consumer);
+  return new Promise<OpenNote>((resolve, reject) => {
+    const release = () => { signal.removeEventListener("abort", abort); shared.consumers.delete(consumer); };
+    const abort = () => {
+      release();
+      if (!shared.consumers.size) shared.controller.abort();
+      reject(new DOMException("Cancelled", "AbortError"));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    shared.promise.then(note => { release(); if (!signal.aborted) resolve(note); }, error => { release(); reject(error); });
+  });
+}
+
+export type DynamicMarkdownOptions = { signal?: AbortSignal; readOnly?: boolean };
+const dynamicRuns = new WeakMap<HTMLElement, { promise: Promise<void>; controller: AbortController }>();
+const activeRoots = new Map<HTMLElement, AbortController>();
+let detachObserver: MutationObserver | undefined;
+
+function observeDetach(root: HTMLElement, controller: AbortController) {
+  activeRoots.set(root, controller);
+  if (!detachObserver) {
+    detachObserver = new MutationObserver(() => {
+      for (const [element, active] of activeRoots) if (!element.isConnected) active.abort();
+    });
+    detachObserver.observe(document.body, { childList: true, subtree: true });
+  }
+}
+
+export function makeMarkdownReadOnly(root: HTMLElement) {
+  root.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement>("input,button,textarea,select").forEach(element => { element.disabled = true; });
+  root.querySelectorAll<HTMLElement>('[contenteditable="true"],[draggable="true"]').forEach(element => {
+    element.contentEditable = "false"; element.draggable = false;
+  });
+}
+
+export function renderDynamicMarkdown(root: HTMLElement, context: MarkdownContext, depth = 0, options: DynamicMarkdownOptions = {}): Promise<void> {
+  if (!root.isConnected || options.signal?.aborted) return Promise.resolve();
+  const running = dynamicRuns.get(root);
+  if (running && !running.controller.signal.aborted) return running.promise;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  observeDetach(root, controller);
+  const alive = () => root.isConnected && !controller.signal.aborted;
+  const render = async (container: HTMLElement, nested: MarkdownContext, level: number, ancestors: Set<string>) => {
+    if (!alive()) return;
+    if (options.readOnly) makeMarkdownReadOnly(container);
+    const owner = container.closest(".pm-note-embed");
+    // Each embed owns its descendants' resolution context. An outer pass must
+    // never claim grandchildren while their actual owner is still rendering.
+    const diagrams = [...container.querySelectorAll<HTMLElement>(".pm-mermaid")].filter(diagram => diagram.closest(".pm-note-embed") === owner);
+    for (const diagram of diagrams) {
+      if (!alive()) return;
+      await renderMermaidDiagram(diagram, controller.signal);
+    }
+    const embeds = [...container.querySelectorAll<HTMLElement>(".pm-note-embed:not([data-pm-rendered])")].filter(embed => embed.parentElement?.closest(".pm-note-embed") === owner);
+    for (const embed of embeds) {
+      if (!alive()) return;
+      const notePath = embed.dataset.pmEmbedNote || "";
+      const identity = notePath.toLocaleLowerCase();
+      if (!notePath || ancestors.has(identity) || level >= 3) {
+        embed.dataset.pmRendered = "true";
+        embed.innerHTML = `<span>${ancestors.has(identity) ? "Referência circular" : "Limite de notas incorporadas"} · ${escapeCode(titleOf(notePath))}</span>`;
+        continue;
+      }
+      try {
+        const note = await loadPreviewNote(notePath, nested, controller.signal);
+        if (!alive() || !embed.isConnected) return;
+        const nestedContext = { ...nested, activePath: notePath };
+        embed.dataset.pmRendered = "true";
+        embed.innerHTML = `<header>${escapeCode(titleOf(notePath))}</header><div>${sanitizeMarkdown(note.content, nestedContext)}</div>`;
+        await render(embed, nestedContext, level + 1, new Set([...ancestors, identity]));
+      } catch (error) {
+        if (!alive() || (error instanceof DOMException && error.name === "AbortError")) return;
+        embed.dataset.pmRendered = "true";
+        embed.innerHTML = `<span>Não deu para carregar ${escapeCode(titleOf(notePath))}</span>`;
+      }
+    }
+  };
+  const promise = render(root, context, depth, new Set([context.activePath.toLocaleLowerCase()])).finally(() => {
+    options.signal?.removeEventListener("abort", abort);
+    if (dynamicRuns.get(root)?.controller === controller) dynamicRuns.delete(root);
+    if (activeRoots.get(root) === controller) activeRoots.delete(root);
+    if (!activeRoots.size) { detachObserver?.disconnect(); detachObserver = undefined; }
+  });
+  dynamicRuns.set(root, { promise, controller });
+  return promise;
 }

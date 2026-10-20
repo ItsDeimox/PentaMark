@@ -304,6 +304,7 @@
   font-size: .88em;
 }
 .pm-markdown pre { margin: var(--pm-md-code-margin) 0; }
+.pm-markdown pre > code:empty { display:block;min-height:1lh; }
 .pm-markdown table { margin: var(--pm-md-table-margin) 0; }
 .pm-markdown hr { margin: var(--pm-md-separator-margin) 0; }
 .pm-markdown img,

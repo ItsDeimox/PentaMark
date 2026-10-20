@@ -1,0 +1,176 @@
+/* Keep real inputs and their existing geometry; only replace their native paint. */
+.pm-shell[data-theme] {
+  --pm-control-border: color-mix(in srgb, var(--pm-cyan) 55%, var(--pm-muted));
+  --pm-control-ink: var(--pm-bg-base);
+  --pm-control-track: color-mix(in srgb, var(--pm-cyan) 22%, var(--pm-panel-2));
+}
+
+.pm-shell[data-theme] input:is([type="checkbox"]:not([role="switch"]),[type="radio"]),
+.pm-shell[data-theme] .pm-dialog input:is([type="checkbox"]:not([role="switch"]),[type="radio"]) {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  border: 1px solid var(--pm-control-border);
+  border-radius: 3px;
+  background: var(--pm-panel-2);
+  color: var(--pm-control-ink);
+  cursor: pointer;
+  box-shadow: none;
+  transition: background-color 130ms, border-color 130ms, box-shadow 130ms;
+}
+
+/* Radios currently have no dedicated form layout. Do not inherit text-field sizing. */
+.pm-shell[data-theme] :is(.pm-dialog,.pm-workspace-panel) input[type="radio"]:not([role="switch"]),
+.pm-shell[data-theme] input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.pm-shell[data-theme] input:is([type="checkbox"]:not([role="switch"]),[type="radio"])::after {
+  content: "";
+  display: block;
+  position: static;
+  box-sizing: content-box;
+  width: 7px;
+  height: 4px;
+  border: solid currentColor;
+  border-width: 0 0 2px 2px;
+  border-radius: 0;
+  background: none;
+  opacity: 0;
+  transform: translateY(-1px) rotate(-45deg);
+  transition: none;
+}
+
+.pm-shell[data-theme] input:is([type="checkbox"]:not([role="switch"]),[type="radio"]):checked,
+.pm-shell[data-theme] input[type="checkbox"]:not([role="switch"]):indeterminate,
+.pm-shell[data-theme] .pm-dialog input:is([type="checkbox"]:not([role="switch"]),[type="radio"]):checked,
+.pm-shell[data-theme] .pm-dialog input[type="checkbox"]:not([role="switch"]):indeterminate {
+  background: var(--pm-cyan);
+  border-color: var(--pm-cyan);
+  box-shadow: none;
+}
+.pm-shell[data-theme] input:is([type="checkbox"]:not([role="switch"]),[type="radio"]):checked::after,
+.pm-shell[data-theme] input[type="checkbox"]:not([role="switch"]):indeterminate::after { opacity: 1; }
+.pm-shell[data-theme] input[type="checkbox"]:not([role="switch"]):indeterminate::after {
+  width: 8px;
+  height: 0;
+  border-width: 0 0 2px;
+  transform: none;
+}
+.pm-shell[data-theme] input[type="radio"]:not([role="switch"])::after {
+  width: 6px;
+  height: 6px;
+  border: 0;
+  border-radius: 50%;
+  background: currentColor;
+  transform: none;
+}
+.pm-shell[data-theme] input:is([type="checkbox"],[type="radio"]):hover:not(:disabled) {
+  border-color: var(--pm-cyan);
+  box-shadow: 0 0 0 2px var(--pm-cyan-soft);
+}
+
+/* The platform still owns the popup, options, typeahead and keyboard handling. */
+.pm-shell[data-theme] select:not([multiple]):is(:not([size]),[size="1"]),
+.pm-shell[data-theme] .pm-dialog select:not([multiple]):is(:not([size]),[size="1"]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-inline-end: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--pm-muted) 50%), linear-gradient(135deg, var(--pm-muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.pm-shell[data-theme] select option { background-color: var(--pm-panel-2); color: var(--pm-text); }
+
+.pm-shell[data-theme] input[type="range"],
+.pm-shell[data-theme] .pm-dialog input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pm-cyan);
+  cursor: pointer;
+}
+.pm-shell[data-theme] input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border: 1px solid var(--pm-control-border);
+  border-radius: 3px;
+  background: var(--pm-control-track);
+}
+.pm-shell[data-theme] input[type="range"]::-moz-range-track {
+  height: 4px;
+  box-sizing: border-box;
+  border: 1px solid var(--pm-control-border);
+  border-radius: 3px;
+  background: var(--pm-control-track);
+}
+.pm-shell[data-theme] input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border: 2px solid var(--pm-cyan);
+  border-radius: 50%;
+  background: var(--pm-panel);
+  box-shadow: 0 0 0 1px var(--pm-panel);
+}
+.pm-shell[data-theme] input[type="range"]::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--pm-cyan);
+  border-radius: 50%;
+  background: var(--pm-panel);
+  box-shadow: 0 0 0 1px var(--pm-panel);
+}
+.pm-shell[data-theme] input[type="range"]::-moz-range-progress { height: 4px; border-radius: 3px; background: var(--pm-cyan); }
+.pm-shell[data-theme] input[type="range"]:hover:not(:disabled)::-webkit-slider-thumb { background: var(--pm-cyan-soft); }
+.pm-shell[data-theme] input[type="range"]:hover:not(:disabled)::-moz-range-thumb { background: var(--pm-cyan-soft); }
+
+.pm-shell[data-theme] :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):focus-visible,
+.pm-shell[data-theme] .pm-dialog :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):focus-visible {
+  outline: 2px solid var(--pm-cyan);
+  outline-offset: 3px;
+}
+.pm-shell[data-theme] :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):disabled,
+.pm-shell[data-theme] .pm-dialog :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):disabled {
+  opacity: .42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-shell[data-theme] :is(input[type="checkbox"],input[type="radio"],input[type="range"],select),
+  .pm-shell[data-theme] input::after { transition: none; }
+}
+
+/* System colors preserve state contrast when the user's palette overrides ours. */
+@media (forced-colors: active) {
+  .pm-shell[data-theme] input:is([type="checkbox"]:not([role="switch"]),[type="radio"]),
+  .pm-shell[data-theme] .pm-dialog input:is([type="checkbox"]:not([role="switch"]),[type="radio"]) { border-color: ButtonText; background: Canvas; color: Canvas; forced-color-adjust: none; }
+  .pm-shell[data-theme] input:is([type="checkbox"]:not([role="switch"]),[type="radio"]):checked,
+  .pm-shell[data-theme] input[type="checkbox"]:not([role="switch"]):indeterminate,
+  .pm-shell[data-theme] .pm-dialog input:is([type="checkbox"]:not([role="switch"]),[type="radio"]):checked,
+  .pm-shell[data-theme] .pm-dialog input[type="checkbox"]:not([role="switch"]):indeterminate { background: Highlight; border-color: Highlight; color: HighlightText; }
+  .pm-shell[data-theme] input:is([type="checkbox"],[type="radio"]):disabled,
+  .pm-shell[data-theme] .pm-dialog input:is([type="checkbox"],[type="radio"]):disabled { border-color: GrayText; opacity: 1; }
+  .pm-shell[data-theme] :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):focus-visible,
+  .pm-shell[data-theme] .pm-dialog :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):focus-visible { outline-color: Highlight; }
+  .pm-shell[data-theme] select:not([multiple]):is(:not([size]),[size="1"]),
+  .pm-shell[data-theme] .pm-dialog select:not([multiple]):is(:not([size]),[size="1"]) { appearance: auto; background-image: none; }
+  .pm-shell[data-theme] input[type="range"],
+  .pm-shell[data-theme] .pm-dialog input[type="range"] { appearance: auto; accent-color: Highlight; }
+}

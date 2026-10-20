@@ -146,6 +146,16 @@
   line-height: 1.76;
 }
 .pm-live-link { cursor: text; }
+.pm-live-widget,.pm-live-codemirror { position: relative; }
+.pm-inline-editable { outline: none; caret-color: var(--pm-cyan); }
+.pm-inline-editable:focus-visible { outline: 1px solid color-mix(in srgb,var(--pm-cyan) 22%,transparent); outline-offset: 2px; }
+.pm-inline-editable::selection,.pm-inline-editable ::selection { background: color-mix(in srgb,var(--pm-cyan) 20%,transparent); text-shadow: none; }
+.pm-inline-source { position:absolute;z-index:3;display:flex;flex-direction:column;min-height:0;padding:5px;background:var(--pm-panel);border:1px solid var(--pm-border);border-radius:6px; }
+.pm-inline-source-actions { display:flex;align-items:center;gap:8px;flex:none;font-family:var(--pm-ui-font);font-size:11px;line-height:24px; }
+.pm-inline-source-actions span { flex:1;color:var(--pm-muted); }
+.pm-inline-source-actions button { cursor:pointer;background:var(--pm-panel-2);border-radius:4px;padding:0 8px; }
+.pm-inline-source textarea { flex:1;min-height:0;resize:none;width:100%;border:0;outline:0;background:transparent;color:var(--pm-text);font:13px/1.6 var(--font-geist-mono);padding:4px; }
+.pm-inline-source p[role="alert"] { margin:0;font-size:11px;color:var(--pm-danger);max-height:45%;overflow:auto; }
 .pm-live-syntax { color: color-mix(in srgb, var(--pm-muted) 68%, transparent); font-weight: 450; font-style: normal; }
 .pm-live-block-syntax { font-size: .66em; line-height: 0; vertical-align: .12em; letter-spacing: 0; }
 .pm-live-comment { color: var(--pm-faint); font-style: italic; }
@@ -183,11 +193,14 @@
 }
 .pm-live-widget {
   margin: 0 !important;
-  color: var(--pm-text);
+  color: var(--pm-md-color);
+  white-space: normal;
   cursor: text;
 }
 .pm-live-widget > :first-child { margin-top: 0; }
 .pm-live-widget > :last-child { margin-bottom: 0; }
+.pm-live-widget > :nth-last-child(2) { margin-bottom: 0; }
+.pm-live-widget pre > code[contenteditable="true"] { white-space:pre-wrap; }
 .pm-live-widget .pm-kanban,
 .pm-live-widget details,
 .pm-live-widget input,

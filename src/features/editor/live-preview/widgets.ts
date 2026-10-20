@@ -7,6 +7,7 @@ import { createDocumentListMarker } from "../../markdown/document-elements";
 import { renderDynamicMarkdown, sanitizeMarkdown } from "../../markdown/renderer";
 import type { LiveSourceBlock } from "./blocks";
 import type { LiveEditorProps } from "./types";
+import { attachInlineBlock, inlineBlock } from './inline-block';
 
 function blockGapDOM(height: number) {
   const gap = document.createElement("div");
@@ -108,6 +109,10 @@ export class MarkdownBlockWidget extends WidgetType {
       && this.version === other.version;
   }
 
+  updateDOM(dom: HTMLElement) {
+    return inlineBlock(dom)?.update(this.block) || false;
+  }
+
   toDOM(view: EditorView) {
     const shell = document.createElement("div");
     shell.className = "pm-live-widget-shell";
@@ -131,12 +136,13 @@ export class MarkdownBlockWidget extends WidgetType {
     root.addEventListener("loadedmetadata", refreshLayout, true);
     root.addEventListener("toggle", refreshLayout, true);
 
+    const control = attachInlineBlock(shell,root,this.block,view,this.propsRef);
     const editSource = () => {
-      if (!this.propsRef.current.readOnly) this.propsRef.current.onEditBlock?.(this.block.start, this.block.end);
+      if (!this.propsRef.current.readOnly) this.propsRef.current.onEditBlock?.(control.block.start, control.block.end, root);
     };
     root.tabIndex = 0;
     root.setAttribute("role", "group");
-    root.setAttribute("aria-label", "Bloco Markdown. Enter para editar a fonte.");
+    root.setAttribute("aria-label", "Bloco Markdown. Edite no lugar ou pressione F2 para editar a fonte.");
     const edit = document.createElement("button");
     edit.type = "button";
     edit.disabled = this.propsRef.current.readOnly;
@@ -155,8 +161,8 @@ export class MarkdownBlockWidget extends WidgetType {
       const target = event.target as HTMLElement;
       const modifiedLink = (event.ctrlKey || event.metaKey) && target.closest("a");
       if (modifiedLink || target.closest("button,input,summary,img,video,audio,.pm-kanban")) return;
-      event.preventDefault();
-      editSource();
+      // Native glyph hit-testing owns selections inside rendered editable text.
+      if (target.closest('.pm-inline-editable')) return;
     });
 
     root.addEventListener("click", (event) => {
@@ -169,9 +175,9 @@ export class MarkdownBlockWidget extends WidgetType {
 
       const commitKanban = (source: string) => view.dispatch({
         changes: {
-          from: this.block.start,
-          to: this.block.end,
-          insert: `${source}${this.block.raw.endsWith("\n") ? "\n" : ""}`,
+          from: control.block.start,
+          to: control.block.end,
+          insert: `${source}${control.block.raw.endsWith("\n") ? "\n" : ""}`,
         },
       });
       if (handleKanbanAction(event, commitKanban, this.propsRef.current.onKanbanDialog)) return;
@@ -195,12 +201,12 @@ export class MarkdownBlockWidget extends WidgetType {
         const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
         const wanted = boxes.indexOf(checkbox);
         let index = -1;
-        const nextRaw = this.block.raw.replace(/^(\s*[-+*]\s+\[)( |x|X)(\]\s+)/gm, (match, before: string, _mark: string, after: string) => {
+        const nextRaw = control.block.raw.replace(/^(\s*[-+*]\s+\[)( |x|X)(\]\s+)/gm, (match, before: string, _mark: string, after: string) => {
           index += 1;
           return index === wanted ? `${before}${checkbox.checked ? "x" : " "}${after}` : match;
         });
-        if (nextRaw !== this.block.raw) {
-          view.dispatch({ changes: { from: this.block.start, to: this.block.end, insert: nextRaw } });
+        if (nextRaw !== control.block.raw) {
+          view.dispatch({ changes: { from: control.block.start, to: control.block.end, insert: nextRaw } });
         }
       }
     });
@@ -225,9 +231,9 @@ export class MarkdownBlockWidget extends WidgetType {
       if (this.propsRef.current.readOnly) return;
       handleKanbanDrop(event, (source) => view.dispatch({
         changes: {
-          from: this.block.start,
-          to: this.block.end,
-          insert: `${source}${this.block.raw.endsWith("\n") ? "\n" : ""}`,
+          from: control.block.start,
+          to: control.block.end,
+          insert: `${source}${control.block.raw.endsWith("\n") ? "\n" : ""}`,
         },
       }));
     });
