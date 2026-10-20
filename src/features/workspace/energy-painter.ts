@@ -17,14 +17,14 @@ export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,wid
     vec2 corners[6]=vec2[6](vec2(0.,-1.),vec2(1.,-1.),vec2(0.,1.),vec2(0.,1.),vec2(1.,-1.),vec2(1.,1.));
     vec2 c=corners[gl_VertexID],delta=ends.zw-ends.xy;
     vec2 normal=normalize(vec2(-delta.y,delta.x));
-    vec2 p=mix(ends.xy,ends.zw,c.x)+normal*c.y*7.;
+    vec2 p=mix(ends.xy,ends.zw,c.x)+normal*c.y*12.;
     gl_Position=vec4(p.x/viewport.x*2.-1.,1.-p.y/viewport.y*2.,0.,1.);
-    across=c.y*7.; value=mix(energy.x,energy.y,c.x);
+    across=c.y*12.; value=mix(energy.x,energy.y,c.x);
   }`;
   const fragment=`#version 300 es
   precision highp float;
   in float across; in float value; uniform vec3 tint;
-  uniform float material; uniform float density; out vec4 pixel;
+  uniform float material; uniform float density; uniform vec2 viewport; out vec4 pixel;
   void main(){
     float e=max(value-.02,0.);
     float radiance=pow(e,.92)*(1.+3.7*smoothstep(.18,1.1,value));
@@ -33,13 +33,17 @@ export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,wid
     float lens=material*.22*sin(position.x*.035+sin(position.y*.02));
     float d=abs(across+lens),aa=max(fwidth(across),.35);
     float wire=1.-smoothstep(.12,.12+aa,d);
-    float core=wire*.62;
-    float halo=(exp(-d*d/2.)*.055+exp(-d*.48)*.027+exp(-d*.22)*.009)
-      *(1.-smoothstep(5.5,7.,d));
+    float core=wire*.14;
+    float halo=(exp(-d*d/2.4)*.07+exp(-d*d/28.)*.04+exp(-d*d/96.)*.018)
+      *(1.-smoothstep(9.,12.,d));
     float grain=fract(sin(dot(floor(position*density),vec2(12.9898,78.233)))*43758.5453);
     float light=core+halo;
-    float alpha=min(.8,radiance*light)*(1.-material*.065*grain);
-    vec3 whiteCore=mix(tint,vec3(1.),.94*smoothstep(.08,.7,radiance));
+    // Tone-map energy before drawing: overlapping impulses cannot bleach the mesh.
+    float strength=radiance/(radiance+1.2);
+    float x=position.x/viewport.x;
+    float readingBand=smoothstep(.12,.32,x)*(1.-smoothstep(.85,1.,x));
+    float alpha=strength*light*(1.-.4*readingBand)*(1.-material*.065*grain);
+    vec3 whiteCore=mix(tint,vec3(1.),.12*strength);
     pixel=vec4((whiteCore*core+tint*halo)/max(light,.0001),alpha);
   }`;
   const compile=(type:number,source:string)=>{
@@ -90,8 +94,8 @@ export function createEnergyPainter(canvas:HTMLCanvasElement,mesh:EnergyMesh,wid
         minX=Math.min(minX,p.x,q.x);minY=Math.min(minY,p.y,q.y);maxX=Math.max(maxX,p.x,q.x);maxY=Math.max(maxY,p.y,q.y);
       }
       if(!count)return;
-      const left=Math.max(0,Math.floor((minX-8)*density)),top=Math.max(0,Math.floor((minY-8)*density));
-      const right=Math.min(canvas.width,Math.ceil((maxX+8)*density)),bottom=Math.min(canvas.height,Math.ceil((maxY+8)*density));
+      const left=Math.max(0,Math.floor((minX-13)*density)),top=Math.max(0,Math.floor((minY-13)*density));
+      const right=Math.min(canvas.width,Math.ceil((maxX+13)*density)),bottom=Math.min(canvas.height,Math.ceil((maxY+13)*density));
       dirty=[left,canvas.height-bottom,Math.max(0,right-left),Math.max(0,bottom-top)];
       gl.scissor(dirty[0],dirty[1],dirty[2],dirty[3]);
       gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,data.subarray(0,count*6));

@@ -19,7 +19,7 @@ for(const boundary of ['pointerout','blur']){
     await page.keyboard.press('Escape');
     await page.mouse.move(900,400);
     await page.mouse.move(1200,600,{steps:8});
-    await expect.poll(()=>peak(page)).toBeGreaterThan(30);
+    await expect.poll(()=>peak(page)).toBeGreaterThan(10);
     await page.evaluate(boundary=>{
       if(boundary==='blur')window.dispatchEvent(new Event('blur'));
       else document.dispatchEvent(new PointerEvent('pointerout',{relatedTarget:null,pointerType:'mouse'}));
@@ -37,7 +37,7 @@ for(const boundary of ['pointerout','blur']){
   });
 }
 
-test('thin white core retains colored layered falloff and stable acrylic grain',async({page})=>{
+test('quiet theme-colored core has broad bloom and stable acrylic grain',async({page})=>{
   const bundle=await build({entryPoints:['src/features/workspace/energy-painter.ts'],
     bundle:true,write:false,format:'iife',globalName:'EnergyPainter'});
   await page.goto('/');
@@ -50,21 +50,28 @@ test('thin white core retains colored layered falloff and stable acrylic grain',
       painter.draw(new Float32Array([1,1]));
       const pixels=window.readEnergyPixels(canvas);
       const at=y=>Array.from(pixels.slice((y*200+100)*4,(y*200+100)*4+4));
+      const edge=Array.from(pixels.slice((40*200+30)*4,(40*200+30)*4+4));
       painter.draw(new Float32Array([1,1]));
       const stable=window.readEnergyPixels(canvas).every((v,i)=>v===pixels[i]);
+      painter.draw(new Float32Array([100,100]));
+      const overdrive=window.readEnergyPixels(canvas);
+      let maximum=0;for(let i=3;i<overdrive.length;i+=4)maximum=Math.max(maximum,overdrive[i]);
       painter.dispose();
-      return {pixels:Array.from(pixels),core:at(40),near:at(42),far:at(45),stable};
+      return {pixels:Array.from(pixels),core:at(40),near:at(42),far:at(45),outer:at(48),edge,maximum,stable};
     };
     const flat=draw(false),acrylic=draw(true);
-    return {core:flat.core,near:flat.near,far:flat.far,stable:acrylic.stable,
+    return {core:flat.core,near:flat.near,far:flat.far,outer:flat.outer,edge:flat.edge,maximum:flat.maximum,stable:acrylic.stable,
       materialDifference:flat.pixels.some((v,i)=>v!==acrylic.pixels[i])};
   });
-  // Premultiplied RGB: whitening raises red close to blue in the bright core,
-  // while the outer halo keeps the theme's blue tint.
-  expect(result.core[0]/result.core[2]).toBeGreaterThan(.75);
-  expect(result.near[3]).toBeLessThan(result.core[3]*.25);
+  // Real pixels must remain colored and dim, with visible falloff beyond the wire.
+  expect(result.core[0]/result.core[2]).toBeLessThan(.45);
+  expect(result.core[3]).toBeLessThan(65);
+  expect(result.core[3]).toBeLessThan(result.edge[3]*.75);
+  expect(result.maximum).toBeLessThan(80);
+  expect(result.near[3]).toBeGreaterThan(result.core[3]*.2);
   expect(result.far[3]).toBeGreaterThan(0);
   expect(result.far[3]).toBeLessThan(result.near[3]);
+  expect(result.outer[3]).toBeGreaterThan(0);
   expect(result.near[2]).toBeGreaterThan(result.near[0]*1.5);
   expect(result.stable).toBe(true);
   expect(result.materialDifference).toBe(true);

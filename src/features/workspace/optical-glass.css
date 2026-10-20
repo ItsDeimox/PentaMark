@@ -7,7 +7,7 @@
 }
 .pm-signal-background path { fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
 .pm-signal-background > svg { position:absolute; inset:0; width:100%; height:100%; mask-image:radial-gradient(ellipse at 54% 43%,#0002 15%,#0009 64%,#000 100%); }
-.pm-energy-layer { position:absolute; left:0; top:0; pointer-events:none; opacity:.6; }
+.pm-energy-layer { position:absolute; left:0; top:0; pointer-events:none; opacity:.42; }
 .pm-ambient-signals { position:absolute; left:0; top:0; transform-origin:0 0; }
 .pm-ambient-signals svg { display:block; mask-image:radial-gradient(ellipse at 54% 48%,#0001 15%,#0008 64%,#000 100%); }
 .pm-signal-track { stroke-width:.65; opacity:.14; }

@@ -100,8 +100,8 @@ export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh
     const tileSize=size;
     {
       for(const {ax,ay,bx,by,level} of segments){
-        for(let ty=Math.floor((Math.min(ay,by)-6)/tileSize);ty<=Math.floor((Math.max(ay,by)+6)/tileSize);ty++)
-          for(let tx=Math.floor((Math.min(ax,bx)-6)/tileSize);tx<=Math.floor((Math.max(ax,bx)+6)/tileSize);tx++){
+        for(let ty=Math.floor((Math.min(ay,by)-12)/tileSize);ty<=Math.floor((Math.max(ay,by)+12)/tileSize);ty++)
+          for(let tx=Math.floor((Math.min(ax,bx)-12)/tileSize);tx<=Math.floor((Math.max(ax,bx)+12)/tileSize);tx++){
             if(tx*tileSize>=bounds.width||ty*tileSize>=bounds.height||tx<0||ty<0)continue;
             const key=`${tx}:${ty}`;
             let tile=tiles.get(key);
@@ -132,8 +132,8 @@ export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh
       ctx.save();
       ctx.beginPath();ctx.rect(tile.x+left/renderDensity,tile.y+top/renderDensity,(right-left)/renderDensity,(bottom-top)/renderDensity);ctx.clip();
       ctx.strokeStyle=color;ctx.lineCap='round';
-      for(let i=1;i<12;i++)for(const [width,alpha] of [[10,.008],[6,.018],[2.5,.045],[.45,.7]]){
-        ctx.strokeStyle=width<1?`color-mix(in srgb, ${color} 8%, white)`:color;
+      for(let i=1;i<12;i++)for(const [width,alpha] of [[22,.008],[12,.02],[4,.045],[.4,.18]]){
+        ctx.strokeStyle=width<1?`color-mix(in srgb, ${color} 90%, white)`:color;
         ctx.lineWidth=width;ctx.globalAlpha=i/11*alpha;ctx.stroke(tile.buckets[i]);
       }
       ctx.restore();
