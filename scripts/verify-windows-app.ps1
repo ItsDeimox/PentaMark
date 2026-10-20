@@ -9,7 +9,7 @@ $env:PENTAMARK_DATA_DIR = $data
 $env:PENTAMARK_NO_BROWSER = '1'
 $app = $null
 try {
-    $app = Start-Process -FilePath $exe -PassThru
+    $app = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
     $deadline = (Get-Date).AddSeconds(60)
     $state = $null
     while ((Get-Date) -lt $deadline) {

@@ -1,5 +1,6 @@
 import { ACRYLIC_FRAGMENT, ACRYLIC_VERTEX } from './acrylic-shader';
 import { fragmentClip } from './fragment-reveal';
+import { attachGlassLens, type GlassLens } from './glass-lens';
 
 const CHROME='.pm-sidebar,.pm-workspace-panel,.pm-modal,.pm-context-menu,.pm-copy-path-submenu,.pm-link-hover-preview,.pm-asset-workspace>header,.pm-asset-workspace>footer,.pm-lock-banner,.pm-toast,.pm-mobile-dock';
 const INSET='.pm-identity-card,.pm-material-demo,.pm-vault-location,.pm-notice,.pm-connection-status,.pm-option-row,.pm-client-card,.pm-mobile-setup-card';
@@ -7,7 +8,7 @@ const DOCUMENT='.pm-callout,.pm-properties,.pm-kanban,.pm-markdown pre';
 const SURFACES=`${CHROME},${INSET},${DOCUMENT}`;
 const MAX_TARGETS=20, BACKING_BUDGET=8_000_000, SCRATCH_BUDGET=2_000_000;
 type Geometry={x:number;y:number;scale:number;width:number;height:number;left:number;top:number;cropWidth:number;cropHeight:number;radius:number};
-type Target={pane:HTMLCanvasElement;ctx:CanvasRenderingContext2D;g:Geometry;density:number;dirty:boolean;hover:number;pointer:[number,number];paints:number;kind:number};
+type Target={pane:HTMLCanvasElement;ctx:CanvasRenderingContext2D;g:Geometry;density:number;dirty:boolean;hover:number;pointer:[number,number];paints:number;kind:number;lens?:GlassLens|null};
 
 export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement):()=>void {
  let gl:WebGLRenderingContext|null=null;
@@ -49,6 +50,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const intersecting=new Set<Element>();
  const intersections=new IntersectionObserver(entries=>{entries.forEach(e=>e.isIntersecting?intersecting.add(e.target):intersecting.delete(e.target));layoutDirty=true;invalidate();});
  function release(panel:HTMLElement,target:Target){
+  target.lens?.dispose();
   target.pane.remove();target.pane.width=target.pane.height=1;panel.classList.remove('pm-material-host','pm-material-control','pm-material-relative');delete panel.dataset.surface;targets.delete(panel);
  }
  function collect(){
@@ -90,6 +92,10 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
     target.g=g;target.density=density;
    }
    target.pane.style.cssText=`left:${g.left}px;top:${panel.scrollTop+g.top}px;width:${g.cropWidth}px;height:${g.cropHeight}px;`;
+   if(target.kind===0){
+    target.lens ??= attachGlassLens(panel);
+    target.lens?.update(panel.offsetWidth,panel.offsetHeight,g.radius);
+   }
   }
   canvas.dataset.surfaces=String(targets.size);
  }
@@ -171,7 +177,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const layout=()=>{layoutDirty=true;invalidate();};
  const moving=(e:Event)=>{if(e.target instanceof Element&&e.target.matches(`${SURFACES},.pm-dialog-layer`)){movingUntil=performance.now()+(reduced.matches?0:240);layout();}};
  const visibility=()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0;active.clear();control=null;finishReveal();}else{targets.forEach(t=>t.dirty=true);layout();}};
- const onLost=(e:Event)=>{e.preventDefault();lost=true;cancelAnimationFrame(frame);frame=0;finishReveal();fallback();};
+ const onLost=(e:Event)=>{e.preventDefault();lost=true;cancelAnimationFrame(frame);frame=0;targets.forEach(t=>{t.lens?.dispose();t.lens=undefined;});finishReveal();fallback();};
  const restored=()=>{lost=false;program=null;buffer=null;uniforms.clear();try{initialize();targets.forEach(t=>{t.dirty=true;});registryDirty=true;layout();}catch{lost=true;fallback();}};
  try{initialize();}catch(error){if(buffer)context.deleteBuffer(buffer);if(program)context.deleteProgram(program);fallback();console.warn('Material indisponível.',error);return()=>{resized.disconnect();intersections.disconnect();delete shell.dataset.gl;};}
  changed.observe(shell,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','open','data-entered','data-visible','data-navigation']});

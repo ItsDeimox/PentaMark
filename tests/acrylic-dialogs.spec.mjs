@@ -38,14 +38,21 @@ test('account focus stays inside the dialog and closing plays an exit transition
   await expect(dialog.getByLabel('Apelido',{exact:true})).toBeFocused();
   await expect(dialog.getByRole('button',{name:'Alterar foto',exact:true})).toBeVisible();
   for(let i=0;i<12;i++){await page.keyboard.press('Tab');expect(await dialog.evaluate(el=>el.contains(document.activeElement))).toBe(true);}
+  await dialog.evaluate(el=>{
+    window.__observedDialogExit=false;
+    const observer=new MutationObserver(()=>{
+      if(el.getAttribute('data-entered')==='false'){window.__observedDialogExit=true;observer.disconnect();}
+    });
+    observer.observe(el,{attributes:true,attributeFilter:['data-entered']});
+  });
   await dialog.getByRole('button',{name:'Cancelar',exact:true}).click();
-  await expect(page.locator('.pm-dialog-layer[data-entered="false"]')).toHaveCount(1);
+  await expect.poll(()=>page.evaluate(()=>window.__observedDialogExit)).toBe(true);
   await expect(dialog).not.toBeVisible();
 });
-test('cursor circuit illumination changes real pixels only on its active backing and settles to idle',async({page})=>{
+test('cursor illumination changes real pixels only on its active backing and settles to idle',async({page})=>{
   await tools(page);await page.getByRole('button',{name:'Configurações',exact:true}).click();
   const panel=page.locator('.pm-dialog');await expect(panel).toBeVisible();await page.mouse.move(1,1);await page.waitForTimeout(600);
-  const pane=panel.locator(':scope > .pm-acrylic-pane');await expect(pane).toHaveAttribute('data-circuit','true');
+  const pane=panel.locator(':scope > .pm-acrylic-pane');await expect(pane).toBeVisible();
   const pixels=()=>pane.evaluate(c=>{const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let hash=2166136261;for(let i=0;i<data.length;i++)hash=Math.imul(hash^data[i],16777619);return hash>>>0;});
   const before=await pixels();const b=await panel.boundingBox();const sidebar=await page.locator('.pm-sidebar > .pm-acrylic-pane').getAttribute('data-paints');
   await page.mouse.move(b.x+b.width*.65,b.y+b.height*.5);await page.waitForTimeout(450);

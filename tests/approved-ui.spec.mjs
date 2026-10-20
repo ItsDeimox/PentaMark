@@ -18,11 +18,19 @@ test('new installations open the document-first live view', async ({ page }) => 
 test('refined theme has restrained corners and a matte graphite base', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.pm-note-item').first()).toBeVisible();
-  const style = await page.locator('.pm-shell').evaluate(el => ({
-    bg: getComputedStyle(el).backgroundColor,
-    corners: Array.from(el.querySelectorAll('.pm-note-item, .pm-search, .pm-view-switch')).map(e => getComputedStyle(e).borderRadius),
-  }));
-  expect(style.bg).toBe('rgb(24, 26, 27)');
+  const style = await page.locator('.pm-shell').evaluate(el => {
+    // Flat now uses the selected theme's tint rather than one fixed RGB value.
+    const swatch=document.createElement('span');swatch.style.backgroundColor='var(--pm-bg-base)';el.append(swatch);
+    const palette=getComputedStyle(swatch).backgroundColor,bg=getComputedStyle(el).backgroundColor;
+    swatch.remove();
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+    const ctx=canvas.getContext('2d');ctx.fillStyle=bg;ctx.fillRect(0,0,1,1);
+    return {bg,palette,pixel:Array.from(ctx.getImageData(0,0,1,1).data),
+      corners:Array.from(el.querySelectorAll('.pm-note-item, .pm-search, .pm-view-switch')).map(e=>getComputedStyle(e).borderRadius)};
+  });
+  expect(style.bg).toBe(style.palette);
+  expect(style.pixel[3]).toBe(255);
+  expect(Math.max(...style.pixel.slice(0,3))).toBeLessThan(64);
   expect(style.corners.every(v => parseFloat(v) <= 5)).toBe(true);
 });
 
@@ -33,13 +41,15 @@ test('collapsing the tree recenters without rewrapping the document', async ({ p
   await expect(editor).toBeVisible();
   const before = await editor.boundingBox();
   await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
-  await page.waitForTimeout(260);
+  await expect.poll(async()=>{
+    const box=await editor.boundingBox();
+    return Math.abs(box.x+box.width/2-page.viewportSize().width/2);
+  }).toBeLessThanOrEqual(1);
   const after = await editor.boundingBox();
   expect(Math.abs(after.x + after.width / 2 - page.viewportSize().width / 2)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
   await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
-  await page.waitForTimeout(260);
-  expect(Math.abs((await editor.boundingBox()).x - before.x)).toBeLessThanOrEqual(1);
+  await expect.poll(async()=>Math.abs((await editor.boundingBox()).x-before.x)).toBeLessThanOrEqual(1);
 });
 
 test('clicking bold near wrapping boundaries preserves the rendered block height', async ({ page }) => {
