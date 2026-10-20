@@ -24,6 +24,8 @@ jobs:
         run: npm ci
       - name: TypeScript e bundle do app
         run: npm run check
+      - name: Regressões de edição e mapeamento Markdown
+        run: npm run test:unit
       - name: Compilar aplicativo Windows portatil
         run: npm run desktop:build -- --publish never
         env:

@@ -70,7 +70,8 @@
 .pm-note-embed > div > :last-child { margin-bottom: 0; }
 
 .pm-mermaid { border: 1px solid var(--pm-border); background: color-mix(in srgb, var(--pm-panel-2) 80%, transparent); border-radius: 11px; justify-content: center; min-height: 110px; margin: var(--pm-md-code-margin) 0; padding: 20px; display: flex; overflow: auto; }
-.pm-mermaid svg { width: 100%; max-width: 100%; height: auto; min-width: 420px; }
+.pm-mermaid > svg { display: block; flex: 0 1 auto; width: 100%; max-width: 100%; height: auto; min-width: 0; overflow: visible; }
+.pm-mermaid svg text { font-family: monospace; }
 .pm-mermaid--error { color: var(--pm-danger); flex-direction: column; align-items: flex-start; gap: 10px; }
 .pm-mermaid--error pre { width: 100%; margin: 0; }
 

@@ -8,6 +8,8 @@ import { formatSelectionValue } from "./formatting";
 import { buildLivePreviewDecorations } from "./live-preview/decorations";
 import { liveSourceRevealEffect, type LiveSourceReveal } from "./live-preview/state";
 import type { LiveEditorApi, LiveEditorProps } from "./live-preview/types";
+import { inlineSelection, rememberInlineFocus, trackInlineChanges } from './live-preview/inline-block';
+import { alignDocumentScrollbar } from '../markdown/scrollbar-alignment';
 
 export type { LiveEditorApi } from "./live-preview/types";
 
@@ -23,18 +25,21 @@ export function LivePreviewEditor(props: LiveEditorProps) {
   const focusedRef = useRef(false);
   const [mountError, setMountError] = useState("");
   const [editingBlock, setEditingBlock] = useState<BlockEditRequest | null>(null);
-  propsRef.current = { ...props, onEditBlock: (from, to) => {
+  propsRef.current = { ...props, onEditBlock: (from, to, target) => {
     const view = viewRef.current;
-    if (!view || props.readOnly || from < 0 || to > view.state.doc.length) return;
-    setEditingBlock({ from, to, source: view.state.doc.sliceString(from, to), document: view.state.doc.toString(), path: props.context.activePath });
+    if (!view || !hostRef.current || props.readOnly || from < 0 || to > view.state.doc.length) return;
+    setEditingBlock({ from, to, source: view.state.doc.sliceString(from, to), document: view.state.doc.toString(), path: props.context.activePath, target, host:hostRef.current });
   } };
   const presenceKey = props.remoteClients.map(c => [c.id,c.cursor,c.selectionEnd,c.name,c.color].join(":")).join("|");
   const contextKey = props.context.activePath + "|" + props.context.notes.map(n => n.path).join("|")
     + "|" + props.context.assets.map(a => a.path + ":" + a.modified).join("|");
 
+  useEffect(()=>setEditingBlock(null),[props.context.activePath]);
+
   useEffect(() => {
     if (!hostRef.current) return;
     let view: EditorView | null = null;
+    let releaseAlignment:(()=>void)|undefined;
 
     try {
       // This direct StateField is intentional: only directly-provided
@@ -126,6 +131,7 @@ export function LivePreviewEditor(props: LiveEditorProps) {
             },
           }),
           EditorView.updateListener.of((update) => {
+            trackInlineChanges(update);
             if (update.docChanged
               && !update.transactions.some((transaction) => transaction.annotation(liveExternalUpdate))) {
               propsRef.current.onChange(update.state.doc.toString());
@@ -139,10 +145,14 @@ export function LivePreviewEditor(props: LiveEditorProps) {
       });
 
       view = new EditorView({ state, parent: hostRef.current });
+      releaseAlignment=alignDocumentScrollbar(view.scrollDOM);
       viewRef.current = view;
       props.apiRef.current = {
         applyFormat(kind) {
           if (propsRef.current.readOnly || view!.state.readOnly) return;
+          const selected=inlineSelection(view!);
+          const restore=rememberInlineFocus(view!);
+          if(selected)view!.dispatch({selection:EditorSelection.range(selected.from,selected.to)});
           const transaction = view!.state.changeByRange((range) => {
             const source = view!.state.doc.toString();
             const formatted = formatSelectionValue(source, range.from, range.to, kind);
@@ -156,10 +166,10 @@ export function LivePreviewEditor(props: LiveEditorProps) {
             };
           });
           view!.dispatch(transaction);
-          view!.focus();
+          if(!restore?.())view!.focus();
         },
         focus: () => view!.focus(),
-        selection: () => ({
+        selection: () => inlineSelection(view!) || ({
           from: view!.state.selection.main.from,
           to: view!.state.selection.main.to,
         }),
@@ -170,6 +180,7 @@ export function LivePreviewEditor(props: LiveEditorProps) {
       props.apiRef.current = null;
       viewRef.current = null;
       view?.destroy();
+      releaseAlignment?.();
       return;
     }
 
@@ -177,6 +188,7 @@ export function LivePreviewEditor(props: LiveEditorProps) {
       props.apiRef.current = null;
       viewRef.current = null;
       view?.destroy();
+      releaseAlignment?.();
     };
   }, []);
 
@@ -199,7 +211,13 @@ export function LivePreviewEditor(props: LiveEditorProps) {
     if (!view) return;
     renderVersion.current += 1;
     view.dispatch({ effects: liveRefreshEffect.of(renderVersion.current) });
-  }, [contextKey, presenceKey, props.readOnly]);
+  }, [contextKey, props.readOnly]);
+
+  useEffect(()=>{
+    // Cursor movement must only refresh presence decorations, never invalidate
+    // the DOM/IME session of an unchanged editable Markdown widget.
+    viewRef.current?.dispatch({effects:liveRefreshEffect.of(renderVersion.current)});
+  },[presenceKey]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
