@@ -33,7 +33,7 @@ export const SignalBackground = memo(function SignalBackground({animated,reactiv
   },[geometry,reactive,theme]);
   useEffect(()=>{
     if(!ambient.current||!geometry)return;
-    return attachAmbientSignals(ambient.current,geometry.mesh,animated);
+    return attachAmbientSignals(ambient.current,geometry.width,geometry.height,animated);
   },[geometry,animated]);
   return <div ref={host} className="pm-signal-background" aria-hidden="true" data-animated={animated}>
     {geometry&&<svg viewBox={`0 0 ${geometry.width} ${geometry.height}`} preserveAspectRatio="none" focusable="false">

@@ -10,11 +10,14 @@ test('energy fragments follow the pointer and settle without moving content', as
   await expect(page.locator('.pm-decode-glyphs')).toHaveCount(0);
   const before = await editor.boundingBox();
   const layer = page.locator('.pm-energy-layer');
-  await expect(layer).toBeVisible();
+  await expect(layer.first()).toBeVisible();
   // Inspect actual drawn alpha, not a telemetry attribute or mocked solver.
-  const energy = () => layer.evaluate(c => {
-    const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-    let peak=0;for(let i=3;i<pixels.length;i+=4)peak=Math.max(peak,pixels[i]);
+  const energy = () => layer.evaluateAll(layers => {
+    let peak=0;
+    for(const c of layers){
+      const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+      for(let i=3;i<pixels.length;i+=4)peak=Math.max(peak,pixels[i]);
+    }
     return peak/255;
   });
   await page.mouse.move(1200,200);

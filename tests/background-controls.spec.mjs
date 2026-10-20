@@ -5,9 +5,12 @@ async function settings(page) {
   await page.getByRole('button',{name:'Configurações',exact:true}).click();
   return page.locator('.pm-settings-dialog');
 }
-const peak = page => page.locator('.pm-energy-layer').evaluate(c=>{
-  const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-  let max=0;for(let i=3;i<pixels.length;i+=4)max=Math.max(max,pixels[i]);
+const peak = page => page.locator('.pm-energy-layer').evaluateAll(layers=>{
+  let max=0;
+  for(const c of layers){
+    const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    for(let i=3;i<pixels.length;i+=4)max=Math.max(max,pixels[i]);
+  }
   return max;
 });
 const pulsePosition = page => page.locator('.pm-signal-packet').first().evaluate(el=>{
@@ -25,6 +28,9 @@ test('background controls independently persist all four combinations in both ma
       await dialog.getByLabel('Animações de fundo',{exact:true}).setChecked(ambient);
       await dialog.getByLabel('Reação ao mouse',{exact:true}).setChecked(hover);
       await dialog.getByRole('button',{name:'Salvar configurações',exact:true}).click();
+      // Saving refreshes host state before persisting appearance. Reload only
+      // after the UI confirms completion, not while that request is in flight.
+      await expect(dialog).toBeHidden();
       await page.reload();
       await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
       const position=await pulsePosition(page);
@@ -50,6 +56,7 @@ test('writing column stays centered with either sidebar state and UI zoom',async
     await slider.focus();await page.keyboard.press('Home');
     for(let i=0;i<Math.round((scale-.8)/.05);i++)await page.keyboard.press('ArrowRight');
     await dialog.getByRole('button',{name:'Salvar configurações',exact:true}).click();
+    await expect(dialog).toBeHidden();
     for(let state=0;state<2;state++){
       await page.getByRole('button',{name:'Mostrar ou ocultar arquivos',exact:true}).click();
       await page.waitForTimeout(400);
@@ -91,6 +98,7 @@ test('restoring defaults does not recouple hover to ambient after saving',async(
   await dialog.getByLabel('Animações de fundo',{exact:true}).uncheck();
   await expect(dialog.getByLabel('Reação ao mouse',{exact:true})).toBeChecked();
   await dialog.getByRole('button',{name:'Salvar configurações',exact:true}).click();
+  await expect(dialog).toBeHidden();
   await page.reload();
   const reopened=await settings(page);
   await expect(reopened.getByLabel('Animações de fundo',{exact:true})).not.toBeChecked();
@@ -99,7 +107,7 @@ test('restoring defaults does not recouple hover to ambient after saving',async(
 
 test('background cannot restart from pointer events while window is blurred',async({page})=>{
   await page.goto('/');
-  await expect(page.locator('.pm-signal-packet')).toHaveCount(8);
+  await expect(page.locator('.pm-signal-packet')).toHaveCount(12);
   await page.mouse.move(1300,400);
   await expect.poll(()=>peak(page)).toBeGreaterThan(20);
   await page.evaluate(()=>{
@@ -121,7 +129,7 @@ test('an initially inactive window keeps effects paused after resize',async({pag
   // Model the browser focus boundary, not the renderer's event handlers.
   await page.addInitScript(()=>Object.defineProperty(document,'hasFocus',{value:()=>false}));
   await page.goto('/');
-  await expect(page.locator('.pm-signal-packet')).toHaveCount(8);
+  await expect(page.locator('.pm-signal-packet')).toHaveCount(12);
   await page.setViewportSize({width:1500,height:900});
   await page.waitForTimeout(200);
   await page.mouse.move(1200,500);
@@ -146,13 +154,17 @@ test('hover raster stays local and sharp at 4K/2x; idle and reduced motion stop 
   await page.mouse.move(1900,800);
   await page.mouse.move(2100,1000,{steps:8});
   await expect.poll(()=>peak(page)).toBeGreaterThan(20);
-  const size=await page.locator('.pm-energy-layer').evaluate(c=>{
+  const sizes=await page.locator('.pm-energy-layer').evaluateAll(layers=>layers.map(c=>{
     const r=c.getBoundingClientRect();return {w:c.width,h:c.height,cssW:r.width,cssH:r.height};
-  });
+  }));
+  expect(sizes.length).toBeLessThanOrEqual(4);
+  expect(sizes.reduce((sum,s)=>sum+s.w*s.h,0)).toBeLessThanOrEqual(4*1024*1024);
+  for(const size of sizes){
   expect(size.cssW).toBeLessThanOrEqual(512);
   expect(size.cssH).toBeLessThanOrEqual(512);
   expect(size.w/size.cssW).toBeGreaterThanOrEqual(1.9);
   expect(size.w*size.h).toBeLessThanOrEqual(1024*1024);
+  }
   await expect.poll(()=>peak(page),{timeout:5000}).toBe(0);
   const clears=await page.evaluate(()=>window.energyClears);
   await page.waitForTimeout(250);
