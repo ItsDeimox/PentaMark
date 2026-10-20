@@ -56,3 +56,34 @@ test('Android resumes a draft left before autosave without requiring the network
   await expect(page.locator('.cm-content')).toContainText('Rascunho recuperado');
   await expect.poll(async()=> (await (await request.get('/api/note',{params:{path}})).json()).content).toBe('Rascunho recuperado');
 });
+
+test('late conflict response from A cannot inject B content into its resolution dialog', async ({page,request}) => {
+  const a=`race-A-${Date.now()}.md`, b=`race-B-${Date.now()}.md`;
+  await request.post('/api/note',{data:{path:a,content:'Conteudo A'}});
+  await request.post('/api/note',{data:{path:b,content:'Conteudo B'}});
+  await nativeBridge(page,a);
+  await page.goto('/');
+  await expect(page.locator('.cm-content')).toContainText('Conteudo A');
+  let conflicting=false, entered=false, release;
+  const gate=new Promise(resolve=>release=resolve);
+  await page.route('**/api/note?**', async route=>{
+    const r=route.request();
+    if(new URL(r.url()).searchParams.get('path')!==a) return route.continue();
+    if(r.method()==='PUT') {conflicting=true;return route.fulfill({status:409,json:{error:'changed'}});}
+    if(conflicting) {entered=true; await gate;}
+    return route.continue();
+  });
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' editado');
+  await expect.poll(()=>entered).toBe(true);
+  const item=page.locator('.pm-note-item').filter({hasText:b.replace('.md','')});
+  if(!await item.isVisible()) await page.getByRole('button',{name:'Mostrar ou ocultar arquivos',exact:true}).click();
+  await item.click();
+  await expect(page.locator('.cm-content')).toContainText('Conteudo B');
+  release();
+  await expect.poll(async()=>page.locator('dialog[open]').count()).toBe(0);
+  await page.waitForTimeout(300);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.locator('.cm-content')).toContainText('Conteudo B');
+});

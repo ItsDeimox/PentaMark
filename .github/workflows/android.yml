@@ -40,7 +40,7 @@ jobs:
           npx cap sync android
       - name: Build APKs and run vault JVM tests
         working-directory: android
-        run: bash gradlew --no-daemon testDebugUnitTest assembleRelease assembleDebug assembleDebugAndroidTest
+        run: bash gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Collect unsigned APK and signing tool for local signing
         run: |
           mkdir -p android-artifacts
@@ -76,7 +76,7 @@ jobs:
             adb shell svc wifi disable
             adb shell svc data disable
             mkdir -p android-evidence
-            result=0; (cd android && bash gradlew --no-daemon connectedDebugAndroidTest) || result=$?; adb logcat -d > android-evidence/logcat.txt; adb exec-out screencap -p > android-evidence/screen.png; adb exec-out run-as com.pentagory.pentamark cat files/instrumentation.png > android-evidence/webview.png || true; exit "$result"
+            result=0; (cd android && bash gradlew --no-daemon :app:connectedDebugAndroidTest) || result=$?; adb logcat -d > android-evidence/logcat.txt; adb exec-out screencap -p > android-evidence/screen.png; adb exec-out run-as com.pentagory.pentamark cat files/instrumentation.png > android-evidence/webview.png || true; exit "$result"
       - name: Upload test reports and emulator evidence
         if: always()
         uses: actions/upload-artifact@v4

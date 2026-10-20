@@ -66,6 +66,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from 'react-dom';
 import { androidDrafts, isAndroidLocal, vaultEvents } from '../platform/android';
 import type {
   Appearance,
@@ -199,6 +200,8 @@ export default function PentaMarkApp() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [saveCompletion, setSaveCompletion] = useState(0);
   const [desktopVault, setDesktopVault] = useState<DesktopVaultInfo | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [installedApp, setInstalledApp] = useState(() => window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
@@ -477,9 +480,11 @@ export default function PentaMarkApp() {
       if (activePathRef.current !== savedPath) { notify(`Não foi possível salvar ${savedPath}; o rascunho foi preservado.`); return; }
       if (error instanceof RequestError && error.status === 409) {
         setSaveState("conflict");
+        const localConflictContent = contentRef.current;
         try {
-          const remote = await request<OpenNote>(`/api/note?path=${encodeURIComponent(activePathRef.current)}`);
-          setConflict({ path: remote.path, localContent: contentRef.current, remoteContent: remote.content, remoteRevision: remote.revision });
+          const remote = await request<OpenNote>(`/api/note?path=${encodeURIComponent(savedPath)}`);
+          if (activePathRef.current !== savedPath || loadingPath.current !== savedPath) return;
+          setConflict({ path: remote.path, localContent: localConflictContent, remoteContent: remote.content, remoteRevision: remote.revision });
           setConflictOpen(true);
           notify("Conflito detectado — suas alterações foram preservadas");
         } catch {
@@ -490,12 +495,13 @@ export default function PentaMarkApp() {
       setSaveState("dirty");
       if (error instanceof RequestError && error.status === 423) void refreshState();
       notify(error instanceof Error ? error.message : "Não deu para salvar");
-    } finally { savingRef.current = false; }
+    } finally { savingRef.current = false; setSaveCompletion(value => value + 1); }
   }, [clientId, notify, refreshState]);
 
   useEffect(() => {
     if (!isAndroidLocal) return;
     const flush = () => { void saveNow(); };
+    const busy = (event: Event) => flushSync(() => setStorageBusy(Boolean((event as CustomEvent).detail)));
     const draftSaved = (event: Event) => {
       const detail = (event as CustomEvent<{path: string; content: string; revision: string}>).detail;
       if (activePathRef.current !== detail.path) return;
@@ -505,9 +511,10 @@ export default function PentaMarkApp() {
     };
     const hidden = () => { if (document.hidden) flush(); };
     document.addEventListener('pentamark:pause', flush);
+    document.addEventListener('pentamark:storage-busy', busy);
     document.addEventListener('pentamark:draft-saved', draftSaved);
     document.addEventListener('visibilitychange', hidden);
-    return () => { document.removeEventListener('pentamark:pause', flush); document.removeEventListener('pentamark:draft-saved', draftSaved); document.removeEventListener('visibilitychange', hidden); };
+    return () => { document.removeEventListener('pentamark:pause', flush); document.removeEventListener('pentamark:storage-busy', busy); document.removeEventListener('pentamark:draft-saved', draftSaved); document.removeEventListener('visibilitychange', hidden); };
   }, [saveNow]);
 
   useEffect(() => {
@@ -593,7 +600,7 @@ export default function PentaMarkApp() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => void saveNow(), 700);
     return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
-  }, [activePath, content, saveNow, saveState]);
+  }, [activePath, content, saveNow, saveState, saveCompletion]);
 
   useEffect(() => {
     localStorage.setItem("pentamark:view", viewMode);
@@ -644,7 +651,7 @@ export default function PentaMarkApp() {
   const activeFileUsers = useMemo(() => vault.connections.filter((client) => client.activePath === activePath), [vault.connections, activePath]);
   const remoteLiveUsers = useMemo(() => activeFileUsers.filter(client => client.id !== clientId && client.editing), [activeFileUsers, clientId]);
   const clientPermission = vault.connections.find((client) => client.id === clientId)?.permission || (hostConfig.isHost ? "admin" : "editor");
-  const canEditActive = clientPermission !== "viewer" && (!hostConfig.lockEditedNotes || !activeLock);
+  const canEditActive = !storageBusy && clientPermission !== "viewer" && (!hostConfig.lockEditedNotes || !activeLock);
 
   const syncPaneScroll = useCallback((source: "editor" | "preview") => {
     if (!syncScroll || viewModeRef.current !== "split" || scrollSyncGuard.current) return;
@@ -1228,7 +1235,7 @@ export default function PentaMarkApp() {
   };
 
   return (
-    <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
+    <main className="pm-shell" inert={storageBusy} aria-busy={storageBusy} data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
       <SignalBackground animated={appearance.backgroundMotion !== false} reactive={appearance.backgroundHover !== false} theme={appearance.theme} acrylic={appearance.graphicsMode === "acrylic"} />
       <AcrylicLayer enabled={appearance.graphicsMode === "acrylic"} theme={appearance.theme} />
       <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}

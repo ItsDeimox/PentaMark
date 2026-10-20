@@ -24,7 +24,7 @@ test('missing, ambiguous, system and escaping paths cannot expose other app file
 });
 function memoryStorage() {
   const map = new Map();
-  return { getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k) };
+  return { getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k), get length() { return map.size; }, key: i => [...map.keys()][i] ?? null };
 }
 test('drafts survive reconstructing the store and include their base revision', () => {
   const storage = memoryStorage();
@@ -43,4 +43,13 @@ test('malformed draft data is ignored, never substituted for a note', () => {
   const storage = memoryStorage();
   storage.setItem('pentamark:android:draft:A.md', '{bad');
   assert.equal(new DraftStore(storage).get('A.md'), null);
+});
+test('folder rename migrates late drafts so they recover at the new path', () => {
+  const store = new DraftStore(memoryStorage());
+  store.put('Old/A.md','late typing','r2');
+  store.put('Other.md','unrelated','r1');
+  store.move('Old','New');
+  assert.equal(store.get('Old/A.md'),null);
+  assert.deepEqual(store.get('New/A.md'),{content:'late typing',revision:'r2'});
+  assert.deepEqual(store.get('Other.md'),{content:'unrelated',revision:'r1'});
 });

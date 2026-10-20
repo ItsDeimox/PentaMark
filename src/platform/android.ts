@@ -36,6 +36,13 @@ export function nativeFileUrl(value: string, note: string, fragment = '') {
 
 export async function nativeRequest(url: string, init?: RequestInit): Promise<NativeResponse> {
   const method = (init?.method || 'GET').toUpperCase();
+  const exclusive = method === 'PATCH' || method === 'DELETE';
+  if (exclusive) document.dispatchEvent(new CustomEvent('pentamark:storage-busy', {detail: true}));
+  try { return await performNativeRequest(url, method, init); }
+  finally { if (exclusive) document.dispatchEvent(new CustomEvent('pentamark:storage-busy', {detail: false})); }
+}
+
+async function performNativeRequest(url: string, method: string, init?: RequestInit): Promise<NativeResponse> {
   if (method === 'PATCH' || method === 'DELETE') {
     const path = new URL(url, 'https://localhost').searchParams.get('path');
     if (path) await flushAndroidDrafts(path);
@@ -51,6 +58,10 @@ export async function nativeRequest(url: string, init?: RequestInit): Promise<Na
     });
   } else if (typeof init?.body === 'string') options.body = init.body;
   const result = await plugin.request(options);
+  if (method === 'PATCH' && result.status < 400 && typeof result.data.path === 'string') {
+    const source = new URL(url, 'https://localhost').searchParams.get('path');
+    if (source) androidDrafts.move(source, result.data.path);
+  }
   if (url === '/api/state' && result.status === 200) files = result.data.assetPaths as string[] || [];
   if (result.status < 400 && method !== 'GET' && !url.startsWith('/api/presence')) {
     // The writer already owns its current editor state; never reload its note
@@ -93,6 +104,7 @@ export async function flushAndroidDrafts(onlyPath?: string) {
   }
 }
 export async function exportAndroidVault() {
-  await flushAndroidDrafts();
-  return plugin.exportVault();
+  document.dispatchEvent(new CustomEvent('pentamark:storage-busy', {detail: true}));
+  try { await flushAndroidDrafts(); return await plugin.exportVault(); }
+  finally { document.dispatchEvent(new CustomEvent('pentamark:storage-busy', {detail: false})); }
 }

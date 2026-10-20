@@ -25,7 +25,7 @@ export function resolveLocalFile(value: string, note: string, files: readonly st
 }
 
 type Draft = { content: string; revision: string };
-type StoragePort = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+type StoragePort = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'length' | 'key'>;
 export class DraftStore {
   constructor(private storage: StoragePort) {}
   private key(path: string) { return `pentamark:android:draft:${path}`; }
@@ -39,6 +39,18 @@ export class DraftStore {
     this.storage.setItem(this.key(path), JSON.stringify({ content, revision }));
   }
   remove(path: string) { this.storage.removeItem(this.key(path)); }
+  move(source: string, destination: string) {
+    const prefix = this.key('');
+    const paths = Array.from({length: this.storage.length}, (_, i) => this.storage.key(i))
+      .filter((key): key is string => Boolean(key?.startsWith(prefix))).map(key => key.slice(prefix.length));
+    for (const path of paths) {
+      if (path !== source && !path.startsWith(source + '/')) continue;
+      const draft = this.get(path);
+      if (!draft) continue;
+      this.put(destination + path.slice(source.length), draft.content, draft.revision);
+      this.remove(path);
+    }
+  }
   saved(path: string, content: string, revision: string) {
     const draft = this.get(path);
     if (!draft || draft.content === content) this.remove(path);
