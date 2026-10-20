@@ -6,8 +6,11 @@ export const EMPTY_STATE: VaultState = { notes: [], assets: [], folders: [], cli
 export const DEFAULT_APPEARANCE: Appearance = {
   theme: "pentagory",
   graphicsMode: "flat",
-  backgroundMotion: true,
-  backgroundHover: true,
+  backgroundMotion: false,
+  backgroundHover: false,
+  graphicsPreset: "economical",
+  interfaceMotion: false,
+  refraction: false,
   uiFont: "technical",
   editorFont: "technical",
   customUiFont: "",

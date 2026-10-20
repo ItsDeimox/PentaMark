@@ -2,9 +2,9 @@
 
 ## Android local: APK
 
-Para usar arquivos no próprio celular, instale **PentaMark-2.13.17-Android.apk** da release. Ele funciona offline, sem PC, servidor ou Termux, com o mesmo editor e visual. Veja [instalação, importação, exportação e cuidados com os arquivos](ANDROID.md). Exporte uma cópia antes de desinstalar ou limpar os dados.
+Para usar arquivos no próprio celular, instale **PentaMark-2.13.18-Android.apk** da release. Ele funciona offline, sem PC, servidor ou Termux, com o mesmo editor e visual. Veja [instalação, conexão ao PC, importação, exportação e cuidados com os arquivos](ANDROID.md). Exporte uma cópia antes de desinstalar ou limpar os dados.
 
-Conectar este APK a outros dispositivos via Tailscale fica para a próxima etapa. As opções abaixo descrevem o acesso remoto pelo navegador/PWA e o host legado, não requisitos do APK local.
+O APK também conecta ao PC: abra **Ferramentas → Conectar ao PC · Tailscale** e informe `100.x.x.x:3417`, com o PentaMark aberto no PC e o cliente oficial Tailscale conectado nos dois aparelhos. O botão Local volta ao cofre do celular, que continua offline. Não há sincronização automática entre os cofres. As opções abaixo são alternativas de navegador/PWA e host legado, não requisitos do APK.
 
 ## Acesso aos arquivos do PC pelo navegador/PWA
 

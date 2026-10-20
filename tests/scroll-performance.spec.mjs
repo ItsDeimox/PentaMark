@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 test('document scrolling uses lightweight glass and restores refraction after settling',async({page})=>{
-  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false})));
+  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsPreset:'custom',graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false,interfaceMotion:true,refraction:true})));
   await page.goto('/');
   await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
   const sidebar=page.locator('.pm-sidebar');
@@ -20,7 +20,7 @@ test('document scrolling uses lightweight glass and restores refraction after se
 });
 
 test('isolate sidebar refraction cost during document scroll',async({page},info)=>{
-  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false})));
+  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsPreset:'custom',graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false,interfaceMotion:true,refraction:true})));
   await page.goto('/');
   await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
   const cdp=await page.context().newCDPSession(page);

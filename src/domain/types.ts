@@ -34,12 +34,16 @@ export type ContextMenu =
   | { type: "editor"; x: number; y: number };
 
 export type GraphicsMode = "flat" | "acrylic";
+export type GraphicsPreset = "economical" | "balanced" | "quality" | "custom";
 
 export type Appearance = {
   graphicsMode: GraphicsMode;
   theme: "pentagory" | "eclipse" | "ember" | "terminal" | "pearl";
   backgroundMotion?: boolean;
   backgroundHover?: boolean;
+  graphicsPreset?: GraphicsPreset;
+  interfaceMotion?: boolean;
+  refraction?: boolean;
   uiFont: string;
   editorFont: string;
   customUiFont: string;

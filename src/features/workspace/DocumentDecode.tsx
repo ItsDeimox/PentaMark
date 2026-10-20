@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useInterfaceMotion } from './graphics-motion';
 
 /** Adapted from Cortex Idle's panel-animation decode: immutable source glyphs,
  * a disposable visual-only layer and a bounded left-to-right character lock-in.
@@ -13,8 +14,9 @@ export function decodedFrame(text: string, progress: number, tick = 0): string {
 }
 
 export function DocumentDecode({ path, enabled, mode }: { path: string; enabled: boolean; mode: string }) {
+  const interfaceMotion = useInterfaceMotion();
   useEffect(() => {
-    if (!path || !enabled || document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!path || !enabled || !interfaceMotion || document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const workspace = document.querySelector<HTMLElement>('.pm-workspace');
     if (!workspace) return;
     let frame = 0;
@@ -85,6 +87,6 @@ export function DocumentDecode({ path, enabled, mode }: { path: string; enabled:
     // Wait for CodeMirror's view transaction and the final note content to paint.
     frame = requestAnimationFrame(() => { frame = requestAnimationFrame(mount); });
     return () => { cancel(); workspace.removeEventListener('pointerdown', cancel); workspace.removeEventListener('keydown', cancel); workspace.removeEventListener('wheel', cancel); };
-  }, [path, enabled, mode]);
+  }, [path, enabled, mode, interfaceMotion]);
   return null;
 }

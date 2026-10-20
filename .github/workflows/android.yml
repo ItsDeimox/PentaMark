@@ -2,7 +2,7 @@ name: Android offline APK
 
 on:
   push:
-    branches: [feat/android-offline]
+    branches: [feat/android-offline, feat/android-tailscale-graphics]
   workflow_dispatch:
 
 permissions:
@@ -44,19 +44,19 @@ jobs:
       - name: Collect unsigned APK and signing tool for local signing
         run: |
           mkdir -p android-artifacts
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk android-artifacts/PentaMark-2.13.17-unsigned.apk
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk android-artifacts/PentaMark-2.13.18-unsigned.apk
           signer=$(find "$ANDROID_HOME/build-tools" -path '*/lib/apksigner.jar' | sort -V | tail -n 1)
           test -n "$signer"
           cp "$signer" android-artifacts/apksigner.jar
           (cd android-artifacts && sha256sum *.apk *.jar > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: PentaMark-2.13.17-unsigned-and-local-signing-tool
+          name: PentaMark-2.13.18-unsigned-and-local-signing-tool
           path: android-artifacts/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: PentaMark-2.13.17-debug
+          name: PentaMark-2.13.18-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Enable emulator acceleration

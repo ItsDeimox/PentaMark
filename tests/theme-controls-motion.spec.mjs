@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 async function ready(page, theme = 'pentagory', graphicsMode = 'flat') {
   await page.addInitScript(({ theme, graphicsMode }) => {
-    localStorage.setItem('pentamark:appearance', JSON.stringify({ theme, graphicsMode, backgroundMotion: false }));
+    localStorage.setItem('pentamark:appearance', JSON.stringify({ theme, graphicsMode, graphicsPreset:'custom', backgroundMotion:false, backgroundHover:false, interfaceMotion:true, refraction:graphicsMode==='acrylic' }));
   }, { theme, graphicsMode });
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Editor Markdown em Live Preview' })).toBeVisible();
@@ -25,6 +25,7 @@ for (const graphics of ['flat', 'acrylic']) {
     test(`${theme}/${graphics}: settings checkbox keeps its size, themed check and keyboard focus`, async ({ page }) => {
       await ready(page, theme, graphics);
       const dialog = await settings(page);
+      await dialog.getByRole('tab', { name:'Gráficos', exact:true }).click();
       const box = dialog.getByRole('checkbox', { name: 'Animações de fundo', exact: true });
       const geometry = await box.boundingBox();
       await expect(box).not.toBeChecked();
