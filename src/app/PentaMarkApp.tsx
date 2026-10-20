@@ -204,6 +204,8 @@ export default function PentaMarkApp() {
   const [appearance, setAppearance] = useState<Appearance>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("pentamark:appearance") || "{}") as Partial<Appearance>;
+      // Preserve the old combined switch on upgrade, then keep the two independent.
+      stored.backgroundHover = stored.backgroundHover ?? stored.backgroundMotion ?? true;
       const migrated = localStorage.getItem("pentamark:2k-scale-migrated") === "1";
       if (!migrated && window.screen.width >= 1900) {
         localStorage.setItem("pentamark:2k-scale-migrated", "1");
@@ -1159,7 +1161,7 @@ export default function PentaMarkApp() {
 
   return (
     <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
-      <SignalBackground animated={appearance.backgroundMotion !== false} theme={appearance.theme} />
+      <SignalBackground animated={appearance.backgroundMotion !== false} reactive={appearance.backgroundHover !== false} theme={appearance.theme} />
       <AcrylicLayer enabled={appearance.graphicsMode === "acrylic"} theme={appearance.theme} />
       <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}
         onClick={() => navigation.setVisible(!navigation.visible)} aria-expanded={navigation.visible}

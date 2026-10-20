@@ -1,25 +1,50 @@
 type Point = {x:number;y:number};
-export type EnergyMesh = {points:Point[];edges:[number,number][];path:string};
+export type EnergyMesh = {points:Point[];edges:[number,number][];path:string;cells?:number[][]};
 
-/** Stable small cells; adjoining faces share one edge, never doubled strokes. */
-export function createEnergyMesh():EnergyMesh {
+/** Seeded Voronoi cells, calculated only on resize. Coordinates are screen pixels. */
+export function createEnergyMesh(width=1600,height=1000):EnergyMesh {
   let seed=7419;
   const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-  const columns=35,rows=23,pitch=48;
-  const points=Array.from({length:(columns+1)*(rows+1)},(_,i)=>({
-    x:(i%(columns+1))*pitch-40+(random()-.5)*22,
-    y:Math.floor(i/(columns+1))*pitch-40+(random()-.5)*22,
+  const pitch=60,columns=Math.ceil(width/pitch)+4,rows=Math.ceil(height/pitch)+4;
+  const sites=Array.from({length:columns*rows},(_,i)=>({
+    x:(i%columns-1.5)*pitch+(random()-.5)*pitch*.85,
+    y:(Math.floor(i/columns)-1.5)*pitch+(random()-.5)*pitch*.85,
   }));
-  const edges:[number,number][]=[];
-  for(let y=0;y<=rows;y++)for(let x=0;x<=columns;x++){
-    const a=y*(columns+1)+x;
-    if(x<columns)edges.push([a,a+1]);
-    if(y<rows)edges.push([a,a+columns+1]);
-    if(x<columns&&y<rows&&random()<.72)
-      edges.push(random()<.5?[a,a+columns+2]:[a+1,a+columns+1]);
+  const points:Point[]=[],edges:[number,number][]=[],cells:number[][]=[];
+  const vertices=new Map<string,number>(),connections=new Set<string>();
+  for(let row=1;row<rows-1;row++)for(let col=1;col<columns-1;col++){
+    const p=sites[row*columns+col];
+    let polygon:Point[]=[{x:-80,y:-80},{x:width+80,y:-80},{x:width+80,y:height+80},{x:-80,y:height+80}];
+    // Two rings suffice: jitter is less than half the lattice pitch.
+    for(let y=Math.max(0,row-2);y<=Math.min(rows-1,row+2);y++)for(let x=Math.max(0,col-2);x<=Math.min(columns-1,col+2);x++){
+      const q=sites[y*columns+x];if(q===p)continue;
+      const nx=q.x-p.x,ny=q.y-p.y,limit=(q.x*q.x+q.y*q.y-p.x*p.x-p.y*p.y)/2;
+      const clipped:Point[]=[];
+      for(let i=0;i<polygon.length;i++){
+        const a=polygon[i],b=polygon[(i+1)%polygon.length];
+        const da=a.x*nx+a.y*ny-limit,db=b.x*nx+b.y*ny-limit;
+        if(da<=0)clipped.push(a);
+        if((da<=0)!==(db<=0)){
+          const t=da/(da-db);clipped.push({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t});
+        }
+      }
+      polygon=clipped;
+    }
+    if(polygon.length<3)continue;
+    const cell=polygon.map(p=>{
+      const key=`${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+      let index=vertices.get(key);
+      if(index===undefined){index=points.length;vertices.set(key,index);points.push(p);}
+      return index;
+    });
+    cells.push(cell);
+    for(let i=0;i<cell.length;i++){
+      const a=cell[i],b=cell[(i+1)%cell.length],key=a<b?`${a}:${b}`:`${b}:${a}`;
+      if(a!==b&&!connections.has(key)){connections.add(key);edges.push([a,b]);}
+    }
   }
   const path=edges.map(([a,b])=>`M${points[a].x.toFixed(1)} ${points[a].y.toFixed(1)}L${points[b].x.toFixed(1)} ${points[b].y.toFixed(1)}`).join('');
-  return {points,edges,path};
+  return {points,edges,path,cells};
 }
 
 /** Diffusion along actual connections; no moving vertices or per-frame DOM work. */
