@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('closing a folder at 160 percent scale never stretches it before collapse',async({page})=>{
  await page.setViewportSize({width:1920,height:1080});
- await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({appScale:1.6})));
+ await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({appScale:1.6,graphicsPreset:'custom',graphicsMode:'flat',interfaceMotion:true,backgroundMotion:false,backgroundHover:false,refraction:false})));
  await page.goto('/');await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
  const folder=page.locator('.pm-folder').filter({has:page.locator(':scope > .pm-folder-title').filter({hasText:'Planejamento'})}).first();
  await folder.locator(':scope > .pm-folder-title').click();await page.waitForTimeout(300);

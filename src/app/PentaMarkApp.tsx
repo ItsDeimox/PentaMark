@@ -1,4 +1,6 @@
 import { version as APP_VERSION } from "../../package.json";
+import { loadAppearance, detectGraphicsCapabilities, resolveGraphics, applyGraphicsPreset } from '../features/workspace/graphics-policy';
+import { GraphicsMotionProvider } from '../features/workspace/graphics-motion';
 import { DialogPresence } from "../components/dialogs/DialogFrame";
 import { ShareModal } from "../components/dialogs/ShareModal";
 import { McpModal } from "../components/dialogs/McpSettings";
@@ -67,7 +69,7 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from 'react-dom';
-import { androidDrafts, isAndroidLocal, vaultEvents } from '../platform/android';
+import { androidDrafts, androidLastNoteKey, isAndroidLocal, isRemoteVault, remoteOrigin, returnToAndroidLocal, vaultEvents } from '../platform/android';
 import type {
   Appearance,
   AssetMeta,
@@ -196,30 +198,25 @@ export default function PentaMarkApp() {
     return created;
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('appearance');
   const [moreOpen, setMoreOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [uploading, setUploading] = useState(false);
   const [storageBusy, setStorageBusy] = useState(false);
+  const [remoteOnline, setRemoteOnline] = useState(isRemoteVault);
+  useEffect(() => {
+    const update = (event:Event) => setRemoteOnline(Boolean((event as CustomEvent).detail));
+    document.addEventListener('pentamark:remote-status',update);
+    return () => document.removeEventListener('pentamark:remote-status',update);
+  }, []);
   const [saveCompletion, setSaveCompletion] = useState(0);
   const [desktopVault, setDesktopVault] = useState<DesktopVaultInfo | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [installedApp, setInstalledApp] = useState(() => window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
-  const [appearance, setAppearance] = useState<Appearance>(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem("pentamark:appearance") || "{}") as Partial<Appearance>;
-      // Preserve the old combined switch on upgrade, then keep the two independent.
-      stored.backgroundHover = stored.backgroundHover ?? stored.backgroundMotion ?? true;
-      const migrated = localStorage.getItem("pentamark:2k-scale-migrated") === "1";
-      if (!migrated && window.screen.width >= 1900) {
-        localStorage.setItem("pentamark:2k-scale-migrated", "1");
-        return { ...DEFAULT_APPEARANCE, ...stored, uiSize: stored.uiSize ?? DEFAULT_APPEARANCE.uiSize, editorSize: stored.editorSize ?? DEFAULT_APPEARANCE.editorSize };
-      }
-      return { ...DEFAULT_APPEARANCE, ...stored };
-    }
-    catch { return DEFAULT_APPEARANCE; }
-  });
+  const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance(localStorage,{...detectGraphicsCapabilities(),android:isAndroidLocal}));
+  const graphics = resolveGraphics(appearance);
   const [hostConfig, setHostConfig] = useState<HostConfig>({ vaultName: "PentaMark", port: 3417, openBrowser: true, maxUploadMB: 2048, lockEditedNotes: false, cleanupUnusedAssets: false, aiBridgeEnabled: false, aiBridgeToken: "", isHost: false });
 
   const navigation = useWorkspaceNavigation(appearance.appScale, sidebarOpen, mobileSidebar, setSidebarOpen, setMobileSidebar);
@@ -267,6 +264,17 @@ export default function PentaMarkApp() {
     catch { notify('Sem espaço para proteger o rascunho. Salve ou exporte suas notas antes de sair.'); }
   }, [activePath, content, revision, saveState, notify]);
 
+  useEffect(() => {
+    if (!isAndroidLocal) return;
+    const protect = (event:Event) => {
+      if (!activePath || saveState === 'saved') return;
+      try {androidDrafts.put(activePath,content,revision);}
+      catch {event.preventDefault();notify('Não foi possível proteger o rascunho. Salve o texto antes de trocar de cofre.');}
+    };
+    document.addEventListener('pentamark:before-vault-switch',protect);
+    return () => document.removeEventListener('pentamark:before-vault-switch',protect);
+  }, [activePath,content,revision,saveState,notify]);
+
   const copyValue = useCallback(async (value: string, message = "Endereço copiado") => {
     try {
       await copyText(value);
@@ -297,7 +305,7 @@ export default function PentaMarkApp() {
       setVaultReady(true);
       setHostConfig((current) => ({ ...current, vaultName: next.vaultName }));
       if (!activePathRef.current && next.notes[0]) {
-        const last = isAndroidLocal ? localStorage.getItem('pentamark:android:last-note') : '';
+        const last = isAndroidLocal ? localStorage.getItem(androidLastNoteKey) : '';
         setActivePath(next.notes.find(note => note.path === last)?.path || next.notes[0].path);
       }
     } catch (error) {
@@ -324,7 +332,7 @@ export default function PentaMarkApp() {
       setConflict(hasConflict ? { path: note.path, localContent: recovered.content, remoteContent: note.content, remoteRevision: note.revision } : null);
       setConflictOpen(Boolean(hasConflict));
       if (isAndroidLocal) {
-        localStorage.setItem('pentamark:android:last-note', note.path);
+        localStorage.setItem(androidLastNoteKey, note.path);
         if (recovered && !hasDraft) androidDrafts.remove(note.path);
         if (hasDraft) notify('Rascunho recuperado do aparelho');
       }
@@ -577,7 +585,7 @@ export default function PentaMarkApp() {
   }, [clientId, conflict, notify, refreshState]);
 
   const connectToVault = useCallback(() => {
-    if (isAndroidLocal) { notify('Este APK usa arquivos locais. A conexão via Tailscale será adicionada na próxima etapa.'); return; }
+    if (isAndroidLocal) { setSettingsTab('connection'); setSettingsOpen(true); return; }
     try {
       const target = normalizeConnectionAddress(connectionAddress);
       const cleanName = deviceName.trim().slice(0, 60) || defaultDeviceName();
@@ -598,11 +606,11 @@ export default function PentaMarkApp() {
   }, [notify]);
 
   useEffect(() => {
-    if (saveState !== "dirty" || !activePath) return;
+    if (saveState !== "dirty" || !activePath || (isRemoteVault && !remoteOnline)) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => void saveNow(), 700);
     return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
-  }, [activePath, content, saveNow, saveState, saveCompletion]);
+  }, [activePath, content, saveNow, saveState, saveCompletion, remoteOnline]);
 
   useEffect(() => {
     localStorage.setItem("pentamark:view", viewMode);
@@ -1231,21 +1239,23 @@ export default function PentaMarkApp() {
     await refreshState();
   };
   const saveSettings = async (draft: HostConfig, baseline: HostConfig) => {
-    await commitHostConfig(draft, baseline);
+    // Local visual preferences must remain editable when the PC is unreachable.
+    if (!isRemoteVault) await commitHostConfig(draft, baseline);
     localStorage.setItem("pentamark:appearance", JSON.stringify(appearance));
     notify(isAndroidLocal ? 'Configurações salvas neste aparelho.' : 'Configurações salvas. Alterações de rede podem exigir reiniciar o host.');
   };
 
   return (
-    <main className="pm-shell" inert={storageBusy} aria-busy={storageBusy} data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
-      <SignalBackground animated={appearance.backgroundMotion !== false} reactive={appearance.backgroundHover !== false} theme={appearance.theme} acrylic={appearance.graphicsMode === "acrylic"} />
-      <AcrylicLayer enabled={appearance.graphicsMode === "acrylic"} theme={appearance.theme} />
+    <GraphicsMotionProvider enabled={graphics.interfaceMotion}><main className="pm-shell" inert={storageBusy} aria-busy={storageBusy} data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} data-refraction={graphics.refraction} data-interface-motion={graphics.interfaceMotion} data-reactive={graphics.reactive} style={shellStyle}>
+      <SignalBackground animated={graphics.animated} reactive={graphics.reactive} theme={appearance.theme} acrylic={graphics.acrylic} />
+      <AcrylicLayer enabled={graphics.acrylic} theme={appearance.theme} refraction={graphics.refraction} interfaceMotion={graphics.interfaceMotion} reactive={graphics.reactive} />
       <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}
         onClick={() => navigation.setVisible(!navigation.visible)} aria-expanded={navigation.visible}
         aria-label="Mostrar ou ocultar arquivos" title={navigation.visible ? "Recolher arquivos" : "Abrir arquivos"}>
         <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 12 24 28H8L3 12Z" /><path d="M16 9 23 14 20 22H12L9 14Z" /></svg><span>PentaMark</span>
       </button>
       <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
+        {isRemoteVault && <button type="button" aria-label="Usar arquivos locais" title={`${remoteOnline ? 'PC conectado' : 'PC desconectado'} · ${remoteOrigin}. Voltar ao cofre deste aparelho.`} onClick={returnToAndroidLocal}><ArrowLeft size={16}/><span>Local</span></button>}
         {saveState === "conflict" && <button className="pm-conflict-button" onClick={() => setConflictOpen(true)}>Conflito · Ver diff</button>}
         {saveState !== "saved" && saveState !== "conflict" && <span role="status">{saveState === "saving" ? "Salvando..." : "Alterado"}</span>}
         <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo" data-tooltip="Buscar arquivos" data-shortcut="Ctrl F"><Search size={18} /><span>Abrir</span><kbd>Ctrl F</kbd></button>
@@ -1282,6 +1292,7 @@ export default function PentaMarkApp() {
       {!navigation.compact && navigation.visible && <div className="pm-sidebar-resizer" onPointerDown={resizeSidebar} />}
 
       <section className={`pm-workspace${assetPreview?.kind === "image" ? " pm-workspace--image" : ""}`}>
+        {isRemoteVault && !remoteOnline && <div className="pm-lock-banner" role="status"><Wifi size={14}/><span>PC desconectado. Alterações ficam protegidas neste aparelho até reconectar.</span></div>}
         {assetPreview?.kind !== "image" && <div className="pm-document-path" title={activePath}><span>{vault.vaultName || "Cofre"}</span><ChevronRight size={15} /><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong></div>}
         <DocumentWorkspace
           mode={viewMode}
@@ -1340,14 +1351,14 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />{isAndroidLocal ? (saveState === 'saved' ? 'Salvo no aparelho' : 'Alterações locais') : 'Sincronizado'}</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />{isRemoteVault ? (remoteOnline ? (saveState === 'saved' ? 'Salvo no PC' : 'Rascunho para o PC') : 'PC desconectado · rascunho protegido') : isAndroidLocal ? (saveState === 'saved' ? 'Salvo no aparelho' : 'Alterações locais') : 'Sincronizado'}</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} loading={!vaultReady} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
         onClose={() => { setQuickOpen(false); setQuery(""); }} onOpen={entry => { if (entry.kind === "note") void openNote(entry.path, true); else { const asset = vault.assets.find(item => item.path === entry.path); if (asset) setAssetPreview(asset); } }} />
       <ToolsPanel open={toolsOpen} onClose={() => setToolsOpen(false)} mode={viewMode} onMode={setViewMode}
         graphics={appearance.graphicsMode || "flat"} onGraphics={mode => setAppearance(current => {
-          const next = { ...current, graphicsMode: mode }; localStorage.setItem("pentamark:appearance", JSON.stringify(next)); return next;
+          const next = applyGraphicsPreset(current,mode === 'flat' ? 'economical' : 'quality'); localStorage.setItem("pentamark:appearance", JSON.stringify(next)); return next;
         })}
         canEdit={canEditActive && !assetPreview && viewMode !== "preview"} onFormat={applyFormat} onUpload={files => void uploadFiles(files)}
         editorSize={appearance.editorSize} onZoom={direction => setAppearance(current => ({ ...current, editorSize: Math.max(11, Math.min(32, current.editorSize + direction)) }))}
@@ -1358,8 +1369,8 @@ export default function PentaMarkApp() {
         onDuplicate={() => void duplicateNote(activePath)} onDelete={() => void deleteItem("note", activePath)}
         onReveal={() => void openInFolder(assetPreview ? "asset" : "note", assetPreview?.path || activePath)}
         onVault={() => isAndroidLocal ? setSettingsOpen(true) : void chooseVault()} onShare={() => isAndroidLocal ? setSettingsOpen(true) : setShareOpen(true)} onClients={() => isAndroidLocal ? notify('Cofre local deste aparelho; conexão remota será adicionada depois.') : setClientsOpen(true)}
-        onConnect={() => isAndroidLocal ? notify('A conexão via Tailscale será adicionada na próxima etapa.') : setConnectOpen(true)} onMobile={() => isAndroidLocal ? setSettingsOpen(true) : setMobileSetupOpen(true)} onProfile={() => setProfileOpen(true)}
-        onMcp={() => isAndroidLocal ? notify('A ponte MCP é um recurso do host Desktop.') : setMcpOpen(true)} mcpEnabled={hostConfig.aiBridgeEnabled} onSettings={() => setSettingsOpen(true)} clients={vault.clients} saved={saveState === "saved"} />
+        onConnect={() => {if (isAndroidLocal) {setSettingsTab('connection');setSettingsOpen(true);} else setConnectOpen(true);}} onMobile={() => isAndroidLocal ? setSettingsOpen(true) : setMobileSetupOpen(true)} onProfile={() => setProfileOpen(true)}
+        onMcp={() => isAndroidLocal ? notify('A ponte MCP é um recurso do host Desktop.') : setMcpOpen(true)} mcpEnabled={hostConfig.aiBridgeEnabled} onSettings={() => {setSettingsTab('appearance');setSettingsOpen(true);}} clients={vault.clients} saved={saveState === "saved"} />
       <SelectionTools enabled={viewMode === "live" && canEditActive && !toolsOpen && !quickOpen} scale={appearance.appScale} onFormat={applyFormat} onMore={() => setToolsOpen(true)} />
       <LinkPreviewStack ref={previewsRef} context={markdownContext} scale={appearance.appScale} onOpen={path => void openNote(path, true)} />
 
@@ -1375,9 +1386,9 @@ export default function PentaMarkApp() {
       <DialogPresence open={conflictOpen && !!conflict}>{conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}</DialogPresence>
       <DialogPresence open={!!kanbanDialog}>{kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}</DialogPresence>
       <DialogPresence open={mobileSetupOpen}><MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} /></DialogPresence>
-      <DialogPresence open={settingsOpen}><SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} /></DialogPresence>
+      <DialogPresence open={settingsOpen}><SettingsModal initialTab={settingsTab} appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} /></DialogPresence>
       <TooltipLayer />
       {toast && <div className="pm-toast">{toast}</div>}
-    </main>
+    </main></GraphicsMotionProvider>
   );
 }

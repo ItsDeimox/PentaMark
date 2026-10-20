@@ -12,7 +12,7 @@ test('settings respect 160 percent scale and reduced motion without losing their
   await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({appScale:1.6})));
   await open(page,'Configurações');
   const panel=page.locator('.pm-settings-dialog');
-  for(const name of ['Aparência','Tipografia','Cofre e host','MCP']){
+  for(const name of ['Aparência','Gráficos','Tipografia','Cofre e host','MCP']){
     await page.getByRole('tab',{name,exact:true}).click();
     const b=await panel.boundingBox();
     expect(b.x).toBeGreaterThanOrEqual(0);expect(b.y).toBeGreaterThanOrEqual(0);

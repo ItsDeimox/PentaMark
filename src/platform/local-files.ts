@@ -27,8 +27,8 @@ export function resolveLocalFile(value: string, note: string, files: readonly st
 type Draft = { content: string; revision: string };
 type StoragePort = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'length' | 'key'>;
 export class DraftStore {
-  constructor(private storage: StoragePort) {}
-  private key(path: string) { return `pentamark:android:draft:${path}`; }
+  constructor(private storage: StoragePort, readonly prefix = 'pentamark:android:draft:') {}
+  private key(path: string) { return this.prefix + path; }
   get(path: string): Draft | null {
     try {
       const value = JSON.parse(this.storage.getItem(this.key(path)) || 'null');

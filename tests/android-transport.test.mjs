@@ -26,6 +26,17 @@ function memoryStorage() {
   const map = new Map();
   return { getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k), get length() { return map.size; }, key: i => [...map.keys()][i] ?? null };
 }
+
+test('local and two PC vaults with the same note name never share drafts or rename operations',()=>{
+  const storage=memoryStorage();
+  const local=new DraftStore(storage), a=new DraftStore(storage,'pc-a:'), b=new DraftStore(storage,'pc-b:');
+  local.put('A.md','local','l1');a.put('A.md','pc A','a1');b.put('A.md','pc B','b1');
+  a.move('A.md','Renamed.md');
+  assert.deepEqual(local.get('A.md'),{content:'local',revision:'l1'});
+  assert.deepEqual(b.get('A.md'),{content:'pc B',revision:'b1'});
+  assert.equal(a.get('A.md'),null);
+  assert.deepEqual(a.get('Renamed.md'),{content:'pc A',revision:'a1'});
+});
 test('drafts survive reconstructing the store and include their base revision', () => {
   const storage = memoryStorage();
   new DraftStore(storage).put('A.md', 'escrita não salva', 'r1');

@@ -1,12 +1,14 @@
 import React, { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { fragmentClip } from "./fragment-reveal";
+import { useInterfaceMotion } from "./graphics-motion";
 
 /** An overlay, never a child of the document's measured layout. */
 export function WorkspacePanel({ open, title, onClose, children, className = "", modal = false }: {
   open: boolean; title: string; onClose: () => void; children: ReactNode;
   className?: string; modal?: boolean;
 }) {
+  const interfaceMotion = useInterfaceMotion();
   const [mounted, setMounted] = useState(open);
   const [entered, setEntered] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -23,6 +25,22 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
     }
     const panel = ref.current;
     if (!panel) return;
+    if (!interfaceMotion) {
+      if (open) {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && !panel.contains(active)) restore.current = active;
+      }
+      reveal.current = open ? 1 : 0;
+      panel.dataset.reveal = String(reveal.current);
+      delete panel.dataset.fragmenting;
+      // The stylesheet's initial reveal is fully clipped and offset by 9px.
+      // Settling without motion must override it, not restore that hidden state.
+      panel.style.clipPath = 'none';
+      panel.style.setProperty('--pm-reveal-x', '0px');
+      setEntered(open);
+      if (!open) setMounted(false);
+      return;
+    }
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     const target = open ? 1 : 0;
     const from = reveal.current;
@@ -67,7 +85,7 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
       reduced.removeEventListener("change", settle);
       document.removeEventListener("visibilitychange", settle);
     };
-  }, [open, mounted]);
+  }, [open, mounted, interfaceMotion]);
 
   useEffect(() => {
     if (!mounted || !open) return;

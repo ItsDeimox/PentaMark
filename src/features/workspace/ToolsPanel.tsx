@@ -69,6 +69,7 @@ export function ToolsPanel(p: {
         {label:'Celular e acesso remoto',icon:Smartphone,run:leave(p.onMobile)},
       ].map(action)}
     </section>}
+    {isAndroidLocal && <section className="pm-tool-section pm-tool-collaboration"><div className="pm-section-label">CONEXÃO COM O PC</div>{action({label:'Conectar ao PC · Tailscale',icon:LogIn,run:leave(p.onConnect)})}</section>}
     <footer className="pm-tool-footer">{action({label:'Conta',icon:UserCircle,run:leave(p.onProfile)})}{action({label:'Configurações',icon:Settings,run:leave(p.onSettings)})}</footer>
   </WorkspacePanel>;
 }

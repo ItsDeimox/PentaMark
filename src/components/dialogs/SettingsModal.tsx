@@ -4,7 +4,9 @@ import { DEFAULT_APPEARANCE } from '../../app/constants';
 import type { Appearance, DesktopVaultInfo, HostConfig } from '../../domain/types';
 import { DialogFrame, DialogSection } from './DialogFrame';
 import { McpSettings } from './McpSettings';
-import { exportAndroidVault, importAndroidDocuments, isAndroidLocal } from '../../platform/android';
+import { exportAndroidVault, importAndroidDocuments, isAndroidLocal, isRemoteVault } from '../../platform/android';
+import { RemoteConnectionPanel } from './RemoteConnectionPanel';
+import { GraphicsSettings } from '../../features/workspace/GraphicsSettings';
 
 const THEMES = [
   { id:'pentagory', name:'PentaMark', color:'#79d2dc' },
@@ -15,22 +17,25 @@ const THEMES = [
 ] as const;
 const TABS = [
   { id:'appearance', label:'Aparência', icon:Palette },
+  { id:'graphics', label:'Gráficos', icon:Layers },
   { id:'type', label:'Tipografia', icon:Type },
   { id:'vault', label:'Cofre e host', icon:FolderOpen },
+  { id:'connection', label:'Conectar ao PC', icon:ExternalLink },
   { id:'mcp', label:'MCP', icon:Bot },
 ] as const;
 const FONT_OPTIONS = [['technical','Técnica · PentaMark'],['modern','Moderna'],['rounded','Arredondada'],['mono','Monoespaçada'],['serif','Serifada'],['custom','Personalizada']];
 export function SettingsModal(p: {
+  initialTab?: string;
   appearance: Appearance; setAppearance: Dispatch<SetStateAction<Appearance>>;
   config: HostConfig; urls: string[]; desktopVault: DesktopVaultInfo | null;
   onChooseVault: () => void; onShowVault: () => void; onClose: () => void;
   onSave: (draft: HostConfig, baseline: HostConfig) => Promise<void>; onNotify: (message: string) => void;
 }) {
   const [initialAppearance] = useState(p.appearance), [baseline] = useState(p.config), [draft, setDraft] = useState(p.config);
-  const [tab, setTab] = useState<string>('appearance');
+  const [tab, setTab] = useState<string>(p.initialTab || 'appearance');
   const [saving, setSaving] = useState(false), [error, setError] = useState('');
   const [transferring, setTransferring] = useState(false);
-  const tabs = isAndroidLocal ? TABS.filter(item => item.id !== 'mcp') : TABS;
+  const tabs = TABS.filter(item => isAndroidLocal ? item.id !== 'mcp' : item.id !== 'connection');
   const transfer = async (mode: 'import' | 'export') => {
     if (transferring) return;
     setTransferring(true); setError('');
@@ -64,16 +69,9 @@ export function SettingsModal(p: {
       {tab==='appearance' && <>
         <DialogSection title="Identidade visual">
           <div className="pm-theme-options">{THEMES.map(theme => <button type="button" key={theme.id} aria-pressed={p.appearance.theme===theme.id} onClick={() => appearance({theme:theme.id})} style={{'--pm-swatch':theme.color} as React.CSSProperties}><i/><span>{theme.name}</span>{p.appearance.theme===theme.id && <Check size={13}/>}</button>)}</div>
-          <label className="pm-background-toggle"><input type="checkbox" checked={p.appearance.backgroundMotion !== false} onChange={e => appearance({backgroundMotion:e.target.checked})}/>Animações de fundo</label>
-          <small className="pm-background-hint">Luzes percorrendo as linhas, mesmo sem mover o mouse.</small>
-          <label className="pm-background-toggle"><input type="checkbox" checked={p.appearance.backgroundHover !== false} onChange={e => appearance({backgroundHover:e.target.checked})}/>Reação ao mouse</label>
-          <small className="pm-background-hint">Energia nas arestas próximas ao cursor. Independente das animações e do modo gráfico.</small>
-        </DialogSection>
-        <DialogSection title="Gráficos">
-          <div className="pm-material-options"><button type="button" aria-pressed={p.appearance.graphicsMode==='flat'} onClick={() => appearance({graphicsMode:'flat'})}><Square size={21}/><strong>Flat</strong></button><button type="button" aria-pressed={p.appearance.graphicsMode==='acrylic'} onClick={() => appearance({graphicsMode:'acrylic'})}><Layers size={21}/><strong>Acrílico</strong></button></div>
-
         </DialogSection>
       </>}
+      {tab==='graphics' && <GraphicsSettings appearance={p.appearance} setAppearance={p.setAppearance}/>}
       {tab==='type' && <>
         <DialogSection title="Fontes"><div className="pm-field-grid">
           <label className="pm-field">Fonte da interface<select aria-label="Fonte da interface" value={p.appearance.uiFont} onChange={e => appearance({uiFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
@@ -88,10 +86,10 @@ export function SettingsModal(p: {
         </DialogSection>
       </>}
       {tab==='vault' && <>
-        {isAndroidLocal ? <DialogSection title="Cofre neste aparelho" hint="Notas Markdown e anexos ficam salvos no armazenamento privado do PentaMark, sem internet e sem computador.">
+        {isAndroidLocal && isRemoteVault ? <RemoteConnectionPanel/> : isAndroidLocal ? <DialogSection title="Cofre neste aparelho" hint="Notas Markdown e anexos ficam salvos no armazenamento privado do PentaMark, sem internet e sem computador.">
           <div className="pm-inline-actions"><button type="button" disabled={transferring} onClick={() => void transfer('import')}>Importar arquivos</button><button type="button" disabled={transferring} onClick={() => void transfer('export')}>Exportar cofre (ZIP)</button></div>
           <p className="pm-notice">Exporte uma cópia antes de desinstalar ou limpar os dados do aplicativo. Importar copia os arquivos, sem alterar os originais. Anexos: até 32 MB por arquivo.</p>
-          <p className="pm-notice">A conexão com outros dispositivos via Tailscale será adicionada depois. Este APK trabalha somente com arquivos locais.</p>
+          <p className="pm-notice">Para acessar outro cofre sem misturar seus arquivos, use a aba Conectar ao PC.</p>
         </DialogSection> : <>
         <DialogSection title="Diretório do cofre">
           {p.desktopVault ? <div className="pm-vault-location"><FolderOpen size={21}/><div><strong>{p.desktopVault.name}</strong><code>{p.desktopVault.path}</code></div><div className="pm-inline-actions"><button type="button" onClick={p.onShowVault}><ExternalLink size={14}/>Mostrar diretório</button><button type="button" onClick={p.onChooseVault}>Abrir outro cofre</button></div></div>
@@ -107,6 +105,7 @@ export function SettingsModal(p: {
         </DialogSection>
         </>}
       </>}
+      {tab==='connection' && isAndroidLocal && <RemoteConnectionPanel/>}
       {tab==='mcp' && !isAndroidLocal && <McpSettings draft={draft} saved={p.config} onChange={config} urls={p.urls} onNotify={p.onNotify}/>}
     </div>
     {error && <p role="alert" className="pm-form-error">{error}</p>}

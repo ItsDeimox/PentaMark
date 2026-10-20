@@ -1,19 +1,22 @@
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
 import { X, type LucideIcon } from 'lucide-react';
+import {useInterfaceMotion} from '../../features/workspace/graphics-motion';
 
 const Presence = createContext(true);
 const EXIT_MS = 180;
 
 /** Retain only the outgoing dialog, so save, cancel and navigation all animate. */
 export function DialogPresence({ open, children }: { open: boolean; children: ReactNode }) {
+  const motion = useInterfaceMotion();
   const last = useRef(children);
   const [retained, setRetained] = useState(open);
   if (open) last.current = children;
   useLayoutEffect(() => {
     if (open) { setRetained(true); return; }
+    if (!motion) {setRetained(false);return;}
     const timer = window.setTimeout(() => setRetained(false), matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : EXIT_MS);
     return () => clearTimeout(timer);
-  }, [open]);
+  }, [open,motion]);
   return open || retained ? <Presence.Provider value={open}>{open ? children : last.current}</Presence.Provider> : null;
 }
 

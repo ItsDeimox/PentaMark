@@ -1,14 +1,28 @@
 import {test,expect} from '@playwright/test';
 
 test('document scrolling uses lightweight glass and restores refraction after settling',async({page})=>{
-  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false})));
+  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsPreset:'custom',graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false,interfaceMotion:true,refraction:true})));
   await page.goto('/');
   await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toContainText('Visão Geral do Projeto');
+  await page.evaluate(()=>document.fonts.ready);
+  await expect.poll(()=>page.locator('.cm-scroller').evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(1000);
   const sidebar=page.locator('.pm-sidebar');
   await expect.poll(()=>sidebar.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
-  const during=await page.evaluate(()=>new Promise(resolve=>{
-    const scroller=document.querySelector('.cm-scroller');scroller.scrollTop=1000;
-    scroller.addEventListener('scroll',()=>requestAnimationFrame(()=>resolve(getComputedStyle(document.querySelector('.pm-sidebar')).backdropFilter)),{once:true});
+  const during=await page.evaluate(()=>new Promise((resolve,reject)=>{
+    const scroller=document.querySelector('.cm-scroller');
+    const from=scroller.scrollTop;
+    const target=from>500?0:Math.min(1000,scroller.scrollHeight-scroller.clientHeight);
+    const timer=setTimeout(()=>{
+      scroller.removeEventListener('scroll',onScroll);
+      reject(new Error(JSON.stringify({from,target,actual:scroller.scrollTop,height:scroller.scrollHeight,client:scroller.clientHeight})));
+    },3000);
+    const onScroll=()=>{
+      clearTimeout(timer);
+      requestAnimationFrame(()=>resolve(getComputedStyle(document.querySelector('.pm-sidebar')).backdropFilter));
+    };
+    scroller.addEventListener('scroll',onScroll,{once:true});
+    scroller.scrollTop=target;
   }));
   expect(during).toBe('blur(9px)');
   await expect.poll(()=>sidebar.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
@@ -20,7 +34,7 @@ test('document scrolling uses lightweight glass and restores refraction after se
 });
 
 test('isolate sidebar refraction cost during document scroll',async({page},info)=>{
-  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false})));
+  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsPreset:'custom',graphicsMode:'acrylic',backgroundMotion:false,backgroundHover:false,interfaceMotion:true,refraction:true})));
   await page.goto('/');
   await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
   const cdp=await page.context().newCDPSession(page);

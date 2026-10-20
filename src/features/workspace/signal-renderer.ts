@@ -4,7 +4,7 @@ import { createEnergyPainter } from './energy-painter';
 
 /** Accelerated analytic wires, with fixed-density Canvas tiles as fallback. */
 export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh:EnergyMesh,zoom:number,enabled:boolean,acrylic=false) {
-  if(!enabled){canvas.width=canvas.height=1;return()=>{};}
+  if(!enabled)return()=>{};
   const size=512,density=Math.min(2,devicePixelRatio||1);
   const bounds=root.getBoundingClientRect(),color=getComputedStyle(root).color;
   let gpu=createEnergyPainter(canvas,mesh,bounds.width,bounds.height,zoom,color,acrylic);
@@ -171,6 +171,7 @@ export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh
 
 /** Original SVG dash travel: the luminous stroke bends with the circuit itself. */
 export function attachAmbientSignals(host:HTMLElement,width:number,height:number,enabled:boolean) {
+  if(!enabled)return()=>{};
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const routes=circuitRoutes(width,height);
   const animations:Animation[]=[];

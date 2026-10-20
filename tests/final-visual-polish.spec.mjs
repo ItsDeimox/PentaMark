@@ -57,6 +57,7 @@ test('file context submenu is keyboard-accessible and flips inward at the right 
 });
 
 test('Cortex character decode preserves the actual document and settles after navigating',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsPreset:'custom',graphicsMode:'flat',interfaceMotion:true,backgroundMotion:false,backgroundHover:false,refraction:false})));
   await ready(page);
   // The editor shell is mounted before the asynchronous note arrives.
   await expect(page.locator('.pm-live-codemirror .cm-content')).toContainText('Visão Geral do Projeto');

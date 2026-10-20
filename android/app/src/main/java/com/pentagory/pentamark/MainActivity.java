@@ -5,7 +5,10 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
+import java.io.ByteArrayInputStream;
+import java.util.Collections;
 import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
@@ -14,10 +17,38 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(LocalVaultPlugin.class);
+        registerPlugin(RemoteVaultPlugin.class);
         super.onCreate(savedInstanceState);
         if (bridge == null) return;
+        // Native transport is the only network path; bundled assets still use Capacitor interception.
+        bridge.getWebView().getSettings().setBlockNetworkLoads(true);
         // Keep Capacitor's local server and built-in SystemBars/IME inset handling.
         bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                Uri url = request.getUrl();
+                Uri local = Uri.parse(bridge.getLocalUrl());
+                if (!local.getScheme().equals(url.getScheme()) || !local.getAuthority().equals(url.getAuthority())) {
+                    return denied();
+                }
+                if (url.getPath() != null && url.getPath().startsWith("/_pm_remote")) {
+                    try {
+                        String destination = null;
+                        String range = null;
+                        for (java.util.Map.Entry<String,String> header : request.getRequestHeaders().entrySet()) {
+                            if (header.getKey().equalsIgnoreCase("Sec-Fetch-Dest")) destination = header.getValue();
+                            if (header.getKey().equalsIgnoreCase("Range")) range = header.getValue();
+                        }
+                        String path = RemoteConnection.mediaPath(bridge.getLocalUrl(), url.toString(), request.getMethod(), request.isForMainFrame(), destination);
+                        RemoteVaultPlugin plugin = (RemoteVaultPlugin)bridge.getPlugin("RemoteVault").getInstance();
+                        RemoteConnection.Media media = plugin.openMedia(path, range);
+                        return new WebResourceResponse(media.mime, null, media.status,
+                            media.status == 206 ? "Partial Content" : "OK", media.headers, media.stream);
+                    } catch (Exception ignored) { return denied(); }
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return handleNavigation(request.getUrl(), request.isForMainFrame());
@@ -50,7 +81,8 @@ public class MainActivity extends BridgeActivity {
         if (local.getScheme().equals(url.getScheme()) && local.getAuthority().equals(url.getAuthority())) {
             // Attachments may be embedded as media, but must not become privileged documents.
             String path = url.getPath();
-            if (path != null && (path.startsWith("/_capacitor_file_") || path.startsWith("/_capacitor_content_"))) {
+            if (path != null && (path.startsWith("/_capacitor_file_") || path.startsWith("/_capacitor_content_")
+                    || path.startsWith("/_pm_remote"))) {
                 return true;
             }
             return false;
@@ -69,6 +101,11 @@ public class MainActivity extends BridgeActivity {
             }
         }
         return true;
+    }
+
+    private static WebResourceResponse denied() {
+        return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
+            Collections.singletonMap("Cache-Control", "no-store"), new ByteArrayInputStream(new byte[0]));
     }
 
     @Override

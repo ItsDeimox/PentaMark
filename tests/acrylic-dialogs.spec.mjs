@@ -24,6 +24,9 @@ test('settings categories have keyboard navigation, one consistent shell and saf
   const dialog=page.getByRole('dialog',{name:'Configurações',exact:true});await expect(dialog).toBeVisible();
   const tabs=dialog.getByRole('tablist');await expect(tabs).toBeVisible();
   await dialog.getByRole('tab',{name:'Aparência',exact:true}).focus();await page.keyboard.press('ArrowRight');
+  await expect(dialog.getByRole('tab',{name:'Gráficos',exact:true})).toBeFocused();
+  await expect(dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true})).toBeVisible();
+  await page.keyboard.press('ArrowRight');
   await expect(dialog.getByRole('tab',{name:'Tipografia',exact:true})).toBeFocused();
   await expect(dialog.getByLabel('Fonte da interface',{exact:true})).toBeVisible();
   await dialog.getByRole('tab',{name:'Cofre e host',exact:true}).click();

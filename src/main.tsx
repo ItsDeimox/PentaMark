@@ -1,6 +1,6 @@
 import { ConfirmationProvider } from "./components/dialogs/Confirmation";
 import React from "react";
-import { initializeAndroid, isAndroidLocal } from './platform/android';
+import { initializeAndroid, isAndroidLocal, isRemoteVault, returnToAndroidLocal } from './platform/android';
 import { createRoot } from "react-dom/client";
 import PentaMarkApp from "./PentaMarkApp";
 import "./base.css";
@@ -32,11 +32,17 @@ createRoot(document.getElementById("root")!).render(
 void start().catch(error => {
   const root = document.getElementById('root')!;
   const message = document.createElement('p');
-  message.textContent = `Não foi possível abrir o cofre local: ${error instanceof Error ? error.message : String(error)}. Seus arquivos não foram apagados.`;
+  message.textContent = `Não foi possível abrir ${isRemoteVault ? 'o PC conectado' : 'o cofre local'}: ${error instanceof Error ? error.message : String(error)}. Seus arquivos e rascunhos não foram apagados.`;
   const retry = document.createElement('button');
   retry.textContent = 'Tentar novamente';
   retry.onclick = () => location.reload();
   root.replaceChildren(message, retry);
+  if (isRemoteVault) {
+    const local = document.createElement('button');
+    local.textContent = 'Usar arquivos locais';
+    local.onclick = returnToAndroidLocal;
+    root.append(local);
+  }
 });
 
 if (!isAndroidLocal && "serviceWorker" in navigator) {

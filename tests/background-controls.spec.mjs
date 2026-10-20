@@ -3,6 +3,7 @@ import {test,expect} from './energy-fixture.mjs';
 async function settings(page) {
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
   await page.getByRole('button',{name:'Configurações',exact:true}).click();
+  await page.getByRole('tab',{name:'Gráficos',exact:true}).click();
   return page.locator('.pm-settings-dialog');
 }
 const peak = page => page.locator('.pm-energy-layer').evaluateAll(layers=>{
@@ -24,7 +25,7 @@ test('background controls independently persist all four combinations in both ma
   for(const graphics of ['Flat','Acrílico']){
     for(const [ambient,hover] of [[true,false],[false,true],[false,false],[true,true]]){
       const dialog=await settings(page);
-      await dialog.getByRole('button',{name:graphics,exact:true}).click();
+      await dialog.getByRole('radio',{name:graphics,exact:true}).check();
       await dialog.getByLabel('Animações de fundo',{exact:true}).setChecked(ambient);
       await dialog.getByLabel('Reação ao mouse',{exact:true}).setChecked(hover);
       await dialog.getByRole('button',{name:'Salvar configurações',exact:true}).click();
@@ -33,13 +34,16 @@ test('background controls independently persist all four combinations in both ma
       await expect(dialog).toBeHidden();
       await page.reload();
       await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
-      const position=await pulsePosition(page);
-      if(ambient)await expect.poll(()=>pulsePosition(page)).not.toEqual(position);
-      else {await page.waitForTimeout(150);expect(await pulsePosition(page)).toEqual(position);}
+      if(ambient){
+        await expect(page.locator('.pm-signal-packet')).toHaveCount(12);
+        const position=await pulsePosition(page);
+        await expect.poll(()=>pulsePosition(page)).not.toEqual(position);
+      } else await expect(page.locator('.pm-ambient-signals,.pm-signal-packet')).toHaveCount(0);
       await page.mouse.move(1100,350);
       await page.mouse.move(1350,580,{steps:10});
       if(hover)await expect.poll(()=>peak(page)).toBeGreaterThan(20);
-      else expect(await peak(page)).toBe(0);
+      else await expect(page.locator('.pm-energy-layer')).toHaveCount(0);
+      if(!ambient&&!hover)await expect(page.locator('.pm-signal-background')).toHaveCount(0);
     }
   }
 });
@@ -95,7 +99,9 @@ test('restoring defaults does not recouple hover to ambient after saving',async(
   await page.goto('/');
   const dialog=await settings(page);
   await dialog.getByRole('button',{name:'Restaurar visual',exact:true}).click();
-  await dialog.getByLabel('Animações de fundo',{exact:true}).uncheck();
+  await expect(dialog.getByLabel('Animações de fundo',{exact:true})).not.toBeChecked();
+  await expect(dialog.getByLabel('Reação ao mouse',{exact:true})).not.toBeChecked();
+  await dialog.getByLabel('Reação ao mouse',{exact:true}).check();
   await expect(dialog.getByLabel('Reação ao mouse',{exact:true})).toBeChecked();
   await dialog.getByRole('button',{name:'Salvar configurações',exact:true}).click();
   await expect(dialog).toBeHidden();

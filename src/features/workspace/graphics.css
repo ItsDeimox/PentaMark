@@ -1,0 +1,25 @@
+.pm-graphics-settings { display:grid; gap:16px; }
+.pm-graphics-settings h3,.pm-graphics-settings p { margin:0; }
+.pm-graphics-settings p,.pm-graphics-settings small { color:var(--pm-muted); line-height:1.5; }
+.pm-graphics-preset { display:grid; gap:8px; }
+.pm-graphics-settings fieldset { display:flex; flex-wrap:wrap; gap:20px; border:1px solid var(--pm-border); padding:14px; border-radius:8px; }
+.pm-graphics-settings label { cursor:pointer; }
+.pm-graphics-settings fieldset label,.pm-graphics-toggles label { display:flex; align-items:center; gap:10px; }
+.pm-graphics-toggles { display:grid; gap:18px; }
+.pm-graphics-toggles small { display:block; margin:4px 0 0 26px; }
+/* Flat has no implicit filters. Explicit custom refraction can opt back in. */
+.pm-shell[data-graphics="flat"]:not([data-refraction="true"]) *,
+.pm-shell[data-graphics="flat"]:not([data-refraction="true"]) *::before,
+.pm-shell[data-graphics="flat"]:not([data-refraction="true"]) *::after,
+.pm-shell[data-graphics="flat"]:not([data-refraction="true"]) dialog::backdrop {
+  backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+}
+/* Ambient animation is independent of interface motion. JS effects use the
+   matching provider to avoid allocating animations/geometry in the first place. */
+.pm-shell[data-interface-motion="false"],
+.pm-shell[data-interface-motion="false"] *:not(.pm-signal-background *),
+.pm-shell[data-interface-motion="false"] *:not(.pm-signal-background *)::before,
+.pm-shell[data-interface-motion="false"] *:not(.pm-signal-background *)::after,
+.pm-shell[data-interface-motion="false"] dialog::backdrop {
+  transition:none !important; animation:none !important; scroll-behavior:auto !important;
+}

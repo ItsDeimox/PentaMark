@@ -1,11 +1,14 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useInterfaceMotion } from './graphics-motion';
 
 /** Pixel-height animation survives reversals; exit unmounts on finish, not a timer. */
 export function AnimatedDisclosure({open,children}:{open:boolean;children:()=>ReactNode}) {
+ const interfaceMotion=useInterfaceMotion();
  const ref=useRef<HTMLDivElement>(null),running=useRef<Animation|null>(null);
  const [mounted,setMounted]=useState(open);
  useLayoutEffect(()=>{
   const el=ref.current;if(!el)return;
+  if(!interfaceMotion){running.current?.cancel();running.current=null;el.style.height=open?'auto':'0px';setMounted(open);return;}
   if(open&&!mounted){setMounted(true);return;}
   const start=parseFloat(getComputedStyle(el).height)||0;
   running.current?.cancel();running.current=null;el.style.height=`${start}px`;
@@ -22,7 +25,7 @@ export function AnimatedDisclosure({open,children}:{open:boolean;children:()=>Re
    el.style.height=`${parseFloat(getComputedStyle(el).height)||0}px`;
    running.current=null;animation.cancel();
   };
- },[open,mounted]);
+ },[open,mounted,interfaceMotion]);
  return <div ref={ref} className="pm-tree-disclosure" data-expanded={open} inert={!open}>
   <div className="pm-folder-children">{mounted?children():null}</div>
  </div>;

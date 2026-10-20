@@ -161,4 +161,60 @@ public class OfflineWebViewTest {
         scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
         awaitTrue("window.__pauseSeen === true");
     }
+
+    @Test public void disconnectStopsSseAndRejectsRequestsWithoutRecreatingActivity() throws Exception {
+        launchOffline();
+        promise("Capacitor.nativePromise('RemoteVault','configure',{origin:'http://100.64.0.1:3030'}).then(()=>({ok:true}))");
+        byte[] reply = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n: ready\n\n".getBytes(StandardCharsets.UTF_8);
+        try (RemoteTransportTest.Fixture fixture = new RemoteTransportTest.Fixture(reply, true)) {
+            promise("Capacitor.nativePromise('RemoteVault','startEvents',{url:'/api/events?clientId=webview_disconnect'}).then(()=>({ok:true}))");
+            assertTrue(fixture.request.get(5, TimeUnit.SECONDS).contains("clientId=webview_disconnect"));
+            promise("Capacitor.nativePromise('RemoteVault','disconnect',{}).then(()=>({ok:true}))");
+            assertTrue("Disconnect left the SSE socket open", fixture.disconnected.get(2, TimeUnit.SECONDS));
+        }
+        JSONObject rejected = promise("Capacitor.nativePromise('RemoteVault','request',{url:'/api/state',method:'GET'})"
+            + ".then(()=>({rejected:false}),error=>({rejected:true,message:String(error)}))");
+        assertTrue(rejected.getBoolean("rejected"));
+        assertTrue(rejected.getString("message").contains("Configure a Tailscale vault first"));
+        assertEquals(403, promise("fetch('/_pm_remote/file?path=assets%2Fpixel.png').then(r=>({status:r.status}))").getInt("status"));
+        // Idempotent cleanup and a subsequent explicit configure both work on this same bridge.
+        promise("Capacitor.nativePromise('RemoteVault','disconnect',{}).then(()=>({ok:true}))");
+        promise("Capacitor.nativePromise('RemoteVault','configure',{origin:'http://100.64.0.1:3030'}).then(()=>({ok:true}))");
+        try (RemoteTransportTest.Fixture fixture = new RemoteTransportTest.Fixture(
+                RemoteTransportTest.response(200, "application/json", "{\"app\":\"PentaMark\"}"))) {
+            assertEquals(200, promise("Capacitor.nativePromise('RemoteVault','request',{url:'/api/state',method:'GET'})").getInt("status"));
+        }
+    }
+
+    @Test public void remoteBridgeAndSameOriginMediaUseNativeHttpWhileWebViewNetworkIsBlocked() throws Exception {
+        launchOffline();
+        promise("Capacitor.nativePromise('RemoteVault','configure',{origin:'http://100.64.0.1:3030'}).then(()=>({ok:true}))");
+        try (RemoteTransportTest.Fixture fixture = new RemoteTransportTest.Fixture(
+                RemoteTransportTest.response(409, "application/json", "{\"error\":\"conflict\"}"))) {
+            JSONObject result = promise("Capacitor.nativePromise('RemoteVault','request',{url:'/api/note?path=a.md',method:'PUT',body:'{}',clientId:'webview_test'})");
+            assertEquals(409, result.getInt("status"));
+            assertEquals("conflict", result.getJSONObject("data").getString("error"));
+            assertTrue(fixture.request.get(5, TimeUnit.SECONDS).contains("webview_test"));
+        }
+        byte[] png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=");
+        java.io.ByteArrayOutputStream reply = new java.io.ByteArrayOutputStream();
+        reply.write(("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: " + png.length + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        reply.write(png);
+        try (RemoteTransportTest.Fixture fixture = new RemoteTransportTest.Fixture(reply.toByteArray())) {
+            JSONObject result = promise("new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve({width:image.naturalWidth});"
+                + "image.onerror=()=>reject('remote image failed');image.src='/_pm_remote/file?path=assets%2Fpixel.png';document.body.appendChild(image)})");
+            assertEquals(1, result.getInt("width"));
+            assertTrue(fixture.request.get(5, TimeUnit.SECONDS).contains("/api/file?path=assets%2Fpixel.png"));
+        }
+        JSONObject svg = promise("fetch('/_pm_remote/file?path=assets%2Factive.svg').then(r=>({status:r.status}))");
+        assertEquals(403, svg.getInt("status"));
+        JSONObject external = promise("Capacitor.nativePromise('RemoteVault','configure',{origin:'http://127.0.0.1'})"
+            + ".then(()=>({rejected:false}),()=>({rejected:true}))");
+        assertTrue(external.getBoolean("rejected"));
+        scenario.close(); scenario = null;
+        launchOffline();
+        JSONObject reset = promise("Capacitor.nativePromise('RemoteVault','request',{url:'/api/state',method:'GET'})"
+            + ".then(()=>({rejected:false}),()=>({rejected:true}))");
+        assertTrue("Remote origin survived a new activity/bridge", reset.getBoolean("rejected"));
+    }
 }
