@@ -112,6 +112,21 @@
 .pm-shell .pm-note-item { contain: paint; }
 /* The writing column is centered on its own available surface in every mode. */
 .pm-shell .pm-workspace { min-width:0; }
+.pm-shell .pm-document--asset { display:block; padding:0; }
+.pm-shell .pm-workspace--image { padding-top:78px; }
+.pm-asset-workspace--image { position:relative; padding:0; gap:0; overflow:hidden; }
+.pm-asset-workspace--image .pm-asset-stage--image { position:relative; width:100%; height:100%; border:0; border-radius:0; background:transparent; overflow:hidden; cursor:grab; }
+.pm-asset-workspace--image .pm-asset-stage--image[data-dragging="true"] { cursor:grabbing; }
+.pm-asset-workspace--image .pm-asset-stage--image:focus-visible { outline:1px solid var(--pm-border-bright); outline-offset:-2px; }
+.pm-asset-workspace--image .pm-asset-stage img { position:absolute; left:50%; top:50%; display:block; max-width:none; max-height:none; transform-origin:center; transition:none; user-select:none; }
+.pm-image-controls { position:absolute; z-index:2; left:50%; bottom:16px; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:3px; width:max-content; max-width:calc(100% - 12px); padding:5px; border:1px solid var(--pm-border); border-radius:10px; background:color-mix(in srgb,var(--pm-panel) 94%,transparent); box-shadow:0 5px 18px #0003; }
+.pm-image-controls button { display:grid; place-items:center; flex:0 0 32px; width:32px; height:32px; padding:0; border:0; border-radius:6px; color:var(--pm-muted); background:transparent; cursor:pointer; }
+.pm-image-controls button:hover:not(:disabled),.pm-image-controls button:focus-visible { color:var(--pm-cyan); background:var(--pm-cyan-soft); }
+.pm-image-controls button:disabled { opacity:.3; cursor:default; }
+.pm-image-controls output { min-width:42px; text-align:center; color:var(--pm-muted); font-size:11px; font-variant-numeric:tabular-nums; }
+.pm-image-controls-divider { width:1px; height:18px; margin:0 3px; background:var(--pm-border); }
+.pm-image-status { max-width:80%; margin:auto; color:var(--pm-muted); text-align:center; }
+.pm-image-help { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .pm-shell .pm-document-path { width:min(calc(100% - 48px),940px); margin-inline:auto; }
 .pm-shell .pm-live-codemirror .cm-content { width:min(calc(100% - 48px),940px); max-width:940px; margin-inline:auto; flex-shrink:0; }
 .pm-shell .pm-live-codemirror .cm-scroller { scrollbar-gutter:stable both-edges; }

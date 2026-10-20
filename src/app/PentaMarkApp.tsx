@@ -1204,10 +1204,11 @@ export default function PentaMarkApp() {
       {navigation.compact && navigation.visible && <button type="button" className="pm-mobile-scrim" aria-label="Fechar arquivos" onClick={() => navigation.setVisible(false)} />}
       {!navigation.compact && navigation.visible && <div className="pm-sidebar-resizer" onPointerDown={resizeSidebar} />}
 
-      <section className="pm-workspace">
-        <div className="pm-document-path" title={activePath}><span>{vault.vaultName || "Cofre"}</span><ChevronRight size={15} /><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong></div>
+      <section className={`pm-workspace${assetPreview?.kind === "image" ? " pm-workspace--image" : ""}`}>
+        {assetPreview?.kind !== "image" && <div className="pm-document-path" title={activePath}><span>{vault.vaultName || "Cofre"}</span><ChevronRight size={15} /><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong></div>}
         <DocumentWorkspace
           mode={viewMode}
+          className={assetPreview ? "pm-document--asset" : undefined}
           onDragOver={(event) => { if (!dragging && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
           onDrop={(event) => { if (!dragging && event.dataTransfer.files.length) { event.preventDefault(); void uploadFiles(event.dataTransfer.files); } }}
         >
