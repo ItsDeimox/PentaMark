@@ -16,7 +16,7 @@ test('Pearl persists, renders both materials and unmounts its disabled backgroun
   await expect(page.locator('.pm-shell')).toHaveAttribute('data-theme','pearl');
   for (const name of ['Flat','Acrílico']) {
     await dialog.getByRole('tab', {name:'Gráficos',exact:true}).click();
-    await dialog.getByLabel('Perfil gráfico',{exact:true}).selectOption(name==='Flat'?'economical':'quality');
+    await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption(name==='Flat'?'economical':'quality');
     await expect(dialog.getByRole('radio', {name,exact:true})).toBeChecked();
     await dialog.getByRole('tab', {name:'Aparência',exact:true}).click();
     if (name==='Acrílico') await expect(page.locator('canvas[data-material="acrylic"]')).toHaveAttribute('data-renderer','webgl');
@@ -54,7 +54,7 @@ test('dark glass and compact Pearl retain readable actions', async ({page}, info
   await page.goto('/');
   const dialog = await settings(page);
   await dialog.getByRole('tab', {name:'Gráficos',exact:true}).click();
-  await dialog.getByLabel('Perfil gráfico',{exact:true}).selectOption('quality');
+  await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('quality');
   await expect(page.locator('canvas[data-material="acrylic"]')).toHaveAttribute('data-renderer','webgl');
   const b=await dialog.boundingBox();
   await page.mouse.move(b.x+b.width-3,b.y+b.height-25);

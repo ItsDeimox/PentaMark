@@ -4,6 +4,18 @@ test('reference wave keeps text stable and reduced motion clears its light',asyn
   await page.goto('/');
   const editor=page.getByRole('textbox',{name:'Editor Markdown em Live Preview'});
   await expect(editor).toBeVisible();
+  // The contenteditable exists before the first note response arrives.
+  await expect(editor).toContainText('Visão Geral do Projeto');
+  await page.evaluate(()=>document.fonts.ready);
+  await expect(page.locator('.pm-decode-glyphs')).toHaveCount(0);
+  let previousBox;
+  let stableMeasurements=0;
+  await expect.poll(async()=>{
+    const box=await editor.boundingBox();
+    stableMeasurements=previousBox&&JSON.stringify(box)===JSON.stringify(previousBox)?stableMeasurements+1:0;
+    previousBox=box;
+    return stableMeasurements;
+  }).toBeGreaterThanOrEqual(2);
   const before=await editor.boundingBox();
   await page.mouse.move(1150,350);
   await page.mouse.move(1350,500,{steps:12});

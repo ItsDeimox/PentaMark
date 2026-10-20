@@ -141,7 +141,7 @@ test('graphics controls independently edit effects, select presets and preserve 
       assert.equal((await state()).graphicsPreset, 'custom');
       await page.getByLabel(label,{exact:true}).uncheck();
     }
-    await page.getByLabel('Perfil gráfico').selectOption('quality');
+    await page.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('quality');
     assert.equal((await state()).refraction, true);
     await page.getByRole('button',{name:'Aplicar recomendação'}).click();
     assert.equal((await state()).graphicsPreset, 'economical');

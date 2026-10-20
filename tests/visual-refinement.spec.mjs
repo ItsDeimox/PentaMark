@@ -130,15 +130,21 @@ test('WebGL unavailable retains a usable native acrylic fallback', async ({ page
 });
 
 test('folders animate through intermediate heights and document edges fade', async ({ page }) => {
+  await page.addInitScript(()=>localStorage.setItem('pentamark:appearance',JSON.stringify({graphicsPreset:'custom',graphicsMode:'flat',interfaceMotion:true,backgroundMotion:false,backgroundHover:false,refraction:false})));
   await page.goto('/');await expect(page.locator('.pm-note-item').first()).toBeVisible();
   const folder=page.locator('.pm-folder').filter({has:page.locator(':scope > .pm-folder-title').filter({hasText:'Planejamento'})}).first();
   const title=folder.locator(':scope > .pm-folder-title');
-  await title.click();
   const disclosure=folder.locator(':scope > .pm-tree-disclosure');
-  await expect(disclosure).toHaveAttribute('data-expanded','true');
-  const samples=await disclosure.evaluate(el=>new Promise(resolve=>{
-    const values=[];const sample=()=>{values.push(el.getBoundingClientRect().height);if(values.length<12)requestAnimationFrame(sample);else resolve(values);};sample();
+  await expect(disclosure).toHaveAttribute('data-expanded','false');
+  // Sample in the same page task as the click; assertion round trips can
+  // otherwise consume the entire short opening transition before observation.
+  const samples=await folder.evaluate(el=>new Promise(resolve=>{
+    const disclosure=el.querySelector(':scope > .pm-tree-disclosure');
+    const values=[disclosure.getBoundingClientRect().height],start=performance.now();
+    el.querySelector(':scope > .pm-folder-title').click();
+    const sample=()=>{values.push(disclosure.getBoundingClientRect().height);if(performance.now()-start<300)requestAnimationFrame(sample);else resolve(values);};requestAnimationFrame(sample);
   }));
+  await expect(disclosure).toHaveAttribute('data-expanded','true');
   expect(new Set(samples.map(n=>Math.round(n))).size).toBeGreaterThan(2);
   const fade=await page.locator('.pm-live-pane').evaluate(el=>getComputedStyle(el).maskImage);
   expect(fade).toContain('linear-gradient');

@@ -43,7 +43,7 @@ test('glass uses backdrop lensing and removes it in Flat mode', async ({page}, i
   await page.getByRole('button',{name:'Configurações',exact:true}).click();
   const dialog=page.locator('.pm-settings-dialog');
   await dialog.getByRole('tab',{name:'Gráficos',exact:true}).click();
-  await dialog.getByLabel('Perfil gráfico',{exact:true}).selectOption('quality');
+  await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('quality');
   await expect(dialog.getByRole('radio',{name:'Acrílico',exact:true})).toBeChecked();
   await expect.poll(()=>dialog.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
   await page.screenshot({path:info.outputPath('refractive-dark.png')});
@@ -52,7 +52,7 @@ test('glass uses backdrop lensing and removes it in Flat mode', async ({page}, i
   await expect.poll(()=>dialog.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
   await page.screenshot({path:info.outputPath('refractive-pearl.png')});
   await dialog.getByRole('tab',{name:'Gráficos',exact:true}).click();
-  await dialog.getByLabel('Perfil gráfico',{exact:true}).selectOption('economical');
+  await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('economical');
   await expect(dialog.getByRole('radio',{name:'Flat',exact:true})).toBeChecked();
   await expect.poll(()=>dialog.evaluate(el=>getComputedStyle(el).backdropFilter)).not.toContain('url(');
   await expect(page.locator('.pm-lens-defs')).toHaveCount(0);

@@ -8,7 +8,7 @@ export const test=base.extend({
       if (localStorage.getItem('pentamark:appearance') === null) {
         localStorage.setItem('pentamark:appearance', JSON.stringify({
           graphicsPreset:'custom', graphicsMode:'flat', backgroundMotion:true,
-          backgroundHover:true, interfaceMotion:true, refraction:true,
+          backgroundHover:true, interfaceMotion:true, refraction:false,
         }));
       }
       window.readEnergyPixels=(canvas,left=0,top=0,width=canvas.width,height=canvas.height)=>{

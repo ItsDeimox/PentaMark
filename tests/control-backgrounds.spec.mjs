@@ -52,7 +52,7 @@ test('themes, centered writing column and reversible tools motion', async ({ pag
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
   const dialog = page.locator('.pm-settings-dialog');
   await dialog.getByRole('tab', { name:'Gráficos', exact:true }).click();
-  await dialog.getByLabel('Perfil gráfico', { exact:true }).selectOption('economical');
+  await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('economical');
   await expect(dialog.getByRole('radio', { name:'Flat', exact:true })).toBeChecked();
   await dialog.getByRole('tab', { name:'Aparência', exact:true }).click();
   const surfaces = [];
@@ -65,7 +65,7 @@ test('themes, centered writing column and reversible tools motion', async ({ pag
   }
   expect(new Set(surfaces).size).toBe(4);
   await dialog.getByRole('tab', { name:'Gráficos', exact:true }).click();
-  await dialog.getByLabel('Perfil gráfico', { exact:true }).selectOption('quality');
+  await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('quality');
   await expect(dialog.getByRole('radio', { name:'Acrílico', exact:true })).toBeChecked();
   await dialog.getByRole('tab', { name:'Aparência', exact:true }).click();
   await dialog.getByRole('button', { name: 'PentaMark', exact: true }).click();

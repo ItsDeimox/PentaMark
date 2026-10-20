@@ -32,7 +32,7 @@ test.describe('first entry on a touch device',()=>{
     await economical(page);
     expect((await stored(page)).graphicsPreset).toBe('economical');
     const dialog=await settings(page);
-    await expect(dialog.getByLabel('Perfil gráfico',{exact:true})).toHaveValue('economical');
+    await expect(dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true})).toHaveValue('economical');
     for(const name of ['Animações de fundo','Reação ao mouse','Movimento de interface','Refração']) {
       await expect(dialog.getByLabel(name,{exact:true})).not.toBeChecked();
     }
@@ -43,7 +43,7 @@ test.describe('first entry on a touch device',()=>{
   test('manual custom choices survive reload on the same constrained device',async({page})=>{
     await ready(page);
     const dialog=await settings(page);
-    await dialog.getByLabel('Perfil gráfico',{exact:true}).selectOption('quality');
+    await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('quality');
     await dialog.getByLabel('Animações de fundo',{exact:true}).uncheck();
     await dialog.getByLabel('Movimento de interface',{exact:true}).uncheck();
     await save(dialog);
@@ -52,7 +52,7 @@ test.describe('first entry on a touch device',()=>{
     await page.reload();
     await expect(page.locator('.pm-shell')).toHaveAttribute('data-graphics','acrylic');
     const reopened=await settings(page);
-    await expect(reopened.getByLabel('Perfil gráfico',{exact:true})).toHaveValue('custom');
+    await expect(reopened.getByRole('combobox',{name:'Perfil gráfico',exact:true})).toHaveValue('custom');
     await expect(reopened.getByLabel('Animações de fundo',{exact:true})).not.toBeChecked();
     await expect(reopened.getByLabel('Reação ao mouse',{exact:true})).toBeChecked();
     await expect(reopened.getByLabel('Movimento de interface',{exact:true})).not.toBeChecked();
@@ -82,7 +82,7 @@ test('quick Flat after quality removes canvases, ambient animations and refracti
 test('four independent controls mount only requested effects, including custom Flat refraction',async({page})=>{
   await ready(page);
   const dialog=await settings(page);
-  await dialog.getByLabel('Perfil gráfico',{exact:true}).selectOption('economical');
+  await dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true}).selectOption('economical');
   const ambient=dialog.getByLabel('Animações de fundo',{exact:true});
   const reactive=dialog.getByLabel('Reação ao mouse',{exact:true});
   const motion=dialog.getByLabel('Movimento de interface',{exact:true});
@@ -112,7 +112,7 @@ test('four independent controls mount only requested effects, including custom F
   await expect(motion).not.toBeChecked();
   await refraction.uncheck();
   await expect(page.locator(effects)).toHaveCount(0);
-  await expect(dialog.getByLabel('Perfil gráfico',{exact:true})).toHaveValue('custom');
+  await expect(dialog.getByRole('combobox',{name:'Perfil gráfico',exact:true})).toHaveValue('custom');
   await save(dialog);
   await page.reload();
   await economical(page);
