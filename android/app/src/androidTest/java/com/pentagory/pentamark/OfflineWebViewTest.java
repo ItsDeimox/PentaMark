@@ -111,9 +111,11 @@ public class OfflineWebViewTest {
         JSONObject loaded = request(query, "GET", null);
         assertEquals(200, loaded.getInt("status"));
         assertEquals(content, loaded.getJSONObject("data").getString("content"));
-        String paths = request("/api/state", "GET", null).getJSONObject("data").getJSONArray("assetPaths").toString();
-        assertTrue(paths, paths.contains(path));
-        assertTrue(paths, paths.contains(assetPath));
+        org.json.JSONArray pathArray = request("/api/state", "GET", null).getJSONObject("data").getJSONArray("assetPaths");
+        java.util.Set<String> paths = new java.util.HashSet<>();
+        for (int i = 0; i < pathArray.length(); i++) paths.add(pathArray.getString(i));
+        assertTrue(paths.toString(), paths.contains(path));
+        assertTrue(paths.toString(), paths.contains(assetPath));
 
         String noteSelector = "Array.from(document.querySelectorAll('.pm-note-item')).find(e=>e.title.startsWith("
             + JSONObject.quote(path + " —") + "))";
@@ -121,6 +123,21 @@ public class OfflineWebViewTest {
         evaluate("(" + noteSelector + ").click(); true");
         awaitTrue("Array.from(document.querySelectorAll('.cm-editor')).some(e=>e.getBoundingClientRect().height>0"
             + " && e.textContent.includes('Olá, ação, 日本語 e 🚀.'))");
+
+        // Type through the actual contenteditable/CodeMirror mutation path, then
+        // observe its autosave through the native bridge (not a direct PUT).
+        evaluate("(()=>{const el=document.querySelector('.cm-content');el.focus();"
+            + "const range=document.createRange();range.selectNodeContents(el);range.collapse(false);"
+            + "const sel=getSelection();sel.removeAllRanges();sel.addRange(range);"
+            + "return document.execCommand('insertText',false,' Edição pelo editor Android.');})()");
+        long saveDeadline = SystemClock.elapsedRealtime() + 15000;
+        String edited = "";
+        while (SystemClock.elapsedRealtime() < saveDeadline) {
+            edited = request(query, "GET", null).getJSONObject("data").getString("content");
+            if (edited.contains("Edição pelo editor Android.")) break;
+            SystemClock.sleep(100);
+        }
+        assertTrue("Editor did not persist its input: " + edited, edited.contains("Edição pelo editor Android."));
 
         JSONObject info = promise("Capacitor.nativePromise('LocalVault','info',{})");
         String file = "file://" + info.getString("root") + "/" + assetPath;
