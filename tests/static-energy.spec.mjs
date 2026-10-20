@@ -64,7 +64,7 @@ test('live theme changes recolor the energy instead of retaining the old accent'
   await page.getByRole('button',{name:'Pérola',exact:true}).click();
   await page.mouse.move(1200,200);
   await page.mouse.move(1300,400,{steps:12});
-  const color=await page.locator('.pm-energy-layer').evaluate(c=>{
+  const color=await page.locator('.pm-energy-layer').first().evaluate(c=>{
     const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
     let best=3;for(let i=3;i<data.length;i+=4)if(data[i]>data[best])best=i;
     return Array.from(data.slice(best-3,best+1));

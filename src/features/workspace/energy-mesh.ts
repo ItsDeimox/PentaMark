@@ -1,36 +1,12 @@
 type Point = {x:number;y:number};
 export type EnergyMesh = {points:Point[];edges:[number,number][];path:string;cells?:number[][]};
 
-/** Seeded Voronoi cells, calculated only on resize. Coordinates are screen pixels. */
+/** Congruent symmetric pentagons in alternating rows, in screen pixels. */
 export function createEnergyMesh(width=1600,height=1000):EnergyMesh {
-  let seed=7419;
-  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-  const pitch=60,columns=Math.ceil(width/pitch)+4,rows=Math.ceil(height/pitch)+4;
-  const sites=Array.from({length:columns*rows},(_,i)=>({
-    x:(i%columns-1.5)*pitch+(random()-.5)*pitch*.85,
-    y:(Math.floor(i/columns)-1.5)*pitch+(random()-.5)*pitch*.85,
-  }));
+  const pitch=48,wall=28,roof=14,band=2*wall+roof;
   const points:Point[]=[],edges:[number,number][]=[],cells:number[][]=[];
   const vertices=new Map<string,number>(),connections=new Set<string>();
-  for(let row=1;row<rows-1;row++)for(let col=1;col<columns-1;col++){
-    const p=sites[row*columns+col];
-    let polygon:Point[]=[{x:-80,y:-80},{x:width+80,y:-80},{x:width+80,y:height+80},{x:-80,y:height+80}];
-    // Two rings suffice: jitter is less than half the lattice pitch.
-    for(let y=Math.max(0,row-2);y<=Math.min(rows-1,row+2);y++)for(let x=Math.max(0,col-2);x<=Math.min(columns-1,col+2);x++){
-      const q=sites[y*columns+x];if(q===p)continue;
-      const nx=q.x-p.x,ny=q.y-p.y,limit=(q.x*q.x+q.y*q.y-p.x*p.x-p.y*p.y)/2;
-      const clipped:Point[]=[];
-      for(let i=0;i<polygon.length;i++){
-        const a=polygon[i],b=polygon[(i+1)%polygon.length];
-        const da=a.x*nx+a.y*ny-limit,db=b.x*nx+b.y*ny-limit;
-        if(da<=0)clipped.push(a);
-        if((da<=0)!==(db<=0)){
-          const t=da/(da-db);clipped.push({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t});
-        }
-      }
-      polygon=clipped;
-    }
-    if(polygon.length<3)continue;
+  const addCell=(polygon:Point[])=>{
     const cell=polygon.map(p=>{
       const key=`${p.x.toFixed(3)},${p.y.toFixed(3)}`;
       let index=vertices.get(key);
@@ -42,6 +18,19 @@ export function createEnergyMesh(width=1600,height=1000):EnergyMesh {
       const a=cell[i],b=cell[(i+1)%cell.length],key=a<b?`${a}:${b}`:`${b}:${a}`;
       if(a!==b&&!connections.has(key)){connections.add(key);edges.push([a,b]);}
     }
+  };
+  // A row and its half-pitch shifted reflection share the entire zigzag.
+  // Consecutive bands share flat bases, without T-junctions or random vertices.
+  for(let row=-1;row<=Math.ceil(height/band);row++){
+    const y=row*band,shift=((row%2)+2)%2*pitch/2;
+    for(let col=-2;col<=Math.ceil(width/pitch)+1;col++){
+      const x=col*pitch+shift;
+      addCell([{x,y},{x:x+pitch,y},{x:x+pitch,y:y+wall},
+        {x:x+pitch/2,y:y+wall+roof},{x,y:y+wall}]);
+      const dx=x+pitch/2,base=y+band;
+      addCell([{x:dx,y:base},{x:dx+pitch,y:base},{x:dx+pitch,y:base-wall},
+        {x:dx+pitch/2,y:base-wall-roof},{x:dx,y:base-wall}]);
+    }
   }
   const path=edges.map(([a,b])=>`M${points[a].x.toFixed(1)} ${points[a].y.toFixed(1)}L${points[b].x.toFixed(1)} ${points[b].y.toFixed(1)}`).join('');
   return {points,edges,path,cells};
@@ -51,10 +40,16 @@ export function createEnergyMesh(width=1600,height=1000):EnergyMesh {
 export class EnergyNetwork {
   readonly values:Float32Array;
   private readonly delta:Float32Array;
+  private readonly decayRates:Float32Array;
+  private readonly attenuation:Float32Array;
+  private readonly positions:Point[];
   active=false;
   constructor(readonly mesh:EnergyMesh){
     this.values=new Float32Array(mesh.points.length);
     this.delta=new Float32Array(mesh.points.length);
+    this.decayRates=Float32Array.from(mesh.points,(_,i)=>3.3+((Math.imul(i+1,2654435761)>>>0)%1024)/1024*1.1);
+    this.attenuation=new Float32Array(mesh.points.length);
+    this.positions=mesh.points.map(p=>({...p}));
   }
   inject(x:number,y:number){
     if(!Number.isFinite(x)||!Number.isFinite(y))return;
@@ -63,26 +58,37 @@ export class EnergyNetwork {
       const d=(p.x-x)**2+(p.y-y)**2;
       if(d<distance){distance=d;nearest=i;}
     });
-    this.values[nearest]=Math.min(2,this.values[nearest]+1.4);
+    this.values[nearest]=Math.min(2,this.values[nearest]+2);
     this.active=true;
   }
   step(dt:number){
     if(!this.active||!Number.isFinite(dt)||dt<=0)return;
-    const steps=Math.ceil(Math.min(dt,.1)/(1/60)),h=Math.min(dt,.1)/steps;
+    const steps=Math.ceil(Math.min(dt,.1)/(1/120)),h=Math.min(dt,.1)/steps;
+    for(let i=0;i<this.attenuation.length;i++)this.attenuation[i]=Math.exp(-h*this.decayRates[i]);
     for(let s=0;s<steps;s++){
       this.delta.fill(0);
       for(const [a,b] of this.mesh.edges){
-        const flow=(this.values[b]-this.values[a])*h*5;
+        const flow=(this.values[b]-this.values[a])*h*24;
         this.delta[a]+=flow;this.delta[b]-=flow;
       }
       let peak=0;
-      const decay=Math.exp(-h*2.8);
       for(let i=0;i<this.values.length;i++){
-        this.values[i]=Math.max(0,(this.values[i]+this.delta[i])*decay);
+        this.values[i]=Math.max(0,(this.values[i]+this.delta[i])*this.attenuation[i]);
         peak=Math.max(peak,this.values[i]);
       }
       if(peak<.002){this.clear();break;}
     }
+  }
+  /** Shared vertices deform once, so neighboring faces never separate. */
+  samplePositions(seconds:number){
+    for(let i=0;i<this.positions.length;i++){
+      const p=this.mesh.points[i],target=this.positions[i];
+      const strength=Math.min(1,Math.sqrt(this.values[i]));
+      const phase=seconds*28+i*2.399963;
+      target.x=p.x+Math.sin(phase)*1.65*strength;
+      target.y=p.y+Math.cos(phase*.83)*1.35*strength;
+    }
+    return this.positions;
   }
   clear(){this.values.fill(0);this.active=false;}
 }

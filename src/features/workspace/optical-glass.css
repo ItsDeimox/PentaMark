@@ -16,8 +16,7 @@
     radial-gradient(ellipse 13px .7px at 55% 50%,currentColor,transparent),
     radial-gradient(ellipse 18px 5px at 50% 50%,color-mix(in srgb,currentColor 24%,transparent),transparent);
 }
-.pm-mesh-track { stroke-width:.55; opacity:.17; }
-.pm-shell[data-theme="pearl"] .pm-mesh-track { opacity:.19; }
+.pm-mesh-track { stroke-width:.55; opacity:0; }
 .pm-lens-defs { position:absolute; width:0; height:0; pointer-events:none; overflow:hidden; }
 .pm-theme-options { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .pm-background-toggle { display:flex; align-items:center; gap:9px; margin-top:18px; color:var(--pm-muted); font-size:.8em; cursor:pointer; }
