@@ -17,7 +17,7 @@ export function attachGlassLens(panel:HTMLElement):GlassLens|null {
   const filter=element('filter',{id,x:'0',y:'0',filterUnits:'userSpaceOnUse','color-interpolation-filters':'sRGB'});
   const map=element('feImage',{result:'map',x:'0',y:'0',width:'100%',height:'100%',preserveAspectRatio:'none'});
   filter.append(map,element('feGaussianBlur',{in:'SourceGraphic',stdDeviation:'.65',result:'source'}));
-  for(const [channel,scale] of [['r','26'],['g','23'],['b','20']] as const){
+  for(const [channel,scale] of [['r','29'],['g','23'],['b','17']] as const){
     filter.append(element('feDisplacementMap',{in:'source',in2:'map',scale,xChannelSelector:'R',yChannelSelector:'G',result:`shift-${channel}`}));
     const mask=channel==='r'?'1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0':
       channel==='g'?'0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0':
@@ -54,8 +54,9 @@ export function attachGlassLens(panel:HTMLElement):GlassLens|null {
         const depth=Math.max(0,-(length+Math.min(Math.max(qx,qy),0)-r));
         const nx=(length?ax/length:qx>qy?1:0)*Math.sign(px);
         const ny=(length?ay/length:qy>=qx?1:0)*Math.sign(py);
-        const slope=Math.exp(-(((depth-5)/7)**2))*.43;
-        const edge=Math.exp(-((depth/18)**4));
+        const slope=Math.exp(-(((depth-5)/12)**2))*.43;
+        // A soft optical shoulder, not a flat rim with an abrupt inner cutoff.
+        const edge=Math.exp(-((depth/22)**2));
         const i=(y*canvas.width+x)*4;
         pixels.data[i]=Math.round((.5-nx*slope)*255);
         pixels.data[i+1]=Math.round((.5-ny*slope)*255);

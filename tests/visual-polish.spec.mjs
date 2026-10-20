@@ -27,7 +27,7 @@ test('the selection bar exposes eight direct actions with accessible custom shor
   await expect(hint).toContainText(/Ctrl|⌘/);
 });
 
-test('selected text glows without reflow; reduced motion makes the energy static', async ({page}) => {
+test('selected text stays readable without a moving floodlight or reflow', async ({page}) => {
   await editorReady(page);
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
   await page.getByRole('button',{name:'Acrílico',exact:true}).click();
@@ -44,8 +44,8 @@ test('selected text glows without reflow; reduced motion makes the energy static
   await expect(drawn).toBeVisible();
   const before = await page.locator('.pm-live-codemirror .cm-content').boundingBox();
   const style = await drawn.evaluate(el => ({ background: getComputedStyle(el).backgroundImage, animation: getComputedStyle(el).animationName }));
-  expect(style.background).toContain('gradient');
-  expect(style.animation).not.toBe('none');
+  expect(style.background).toBe('none');
+  expect(style.animation).toBe('none');
   const after = await page.locator('.pm-live-codemirror .cm-content').boundingBox();
   expect(after).toEqual(before);
   await page.emulateMedia({reducedMotion:'reduce'});

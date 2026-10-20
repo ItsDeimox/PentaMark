@@ -75,13 +75,11 @@
 .pm-shell[data-graphics="acrylic"] .pm-live-codemirror .cm-selectionBackground,
 .pm-shell[data-graphics="acrylic"] .pm-live-codemirror.cm-focused .cm-selectionBackground {
   background-color:color-mix(in srgb,var(--pm-accent-base) 13%,transparent) !important;
-  background-image:linear-gradient(105deg,transparent 34%, color-mix(in srgb,var(--pm-accent-base) 32%,transparent) 49%,color-mix(in srgb,var(--pm-accent-base) 12%,transparent) 53%,transparent 68%) !important;
-  background-size:240px 100%;
+  background-image:none !important;
   box-shadow:none !important;
   border-radius:2px;
-  animation: pm-selection-whisper 2.4s linear infinite;
+  animation:none;
 }
-@keyframes pm-selection-whisper { from{background-position:0 0}to{background-position:240px 0} }
 .pm-shell .pm-live-codemirror ::selection { text-shadow:none !important; background:color-mix(in srgb,var(--pm-accent-base) 12%,transparent); }
 /* Customized tooltips: neutral glass, current theme for shortcut accents. */
 .pm-shell .pm-optical-tooltip {

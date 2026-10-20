@@ -79,7 +79,8 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
   const area=visible.reduce((n,[,g])=>n+g.cropWidth*g.cropHeight*g.scale*g.scale,0);
   const densityBudget=Math.min(devicePixelRatio||1,1.5,Math.sqrt(BACKING_BUDGET/Math.max(1,area)));
   for(const [panel,g] of visible){
-   const density=Math.min(densityBudget*g.scale,Math.sqrt(SCRATCH_BUDGET/(g.cropWidth*g.cropHeight)),2048/Math.max(g.cropWidth,g.cropHeight));
+   // Bound each axis so a shared high-water buffer also respects the area budget.
+   const density=Math.min(densityBudget*g.scale,Math.floor(Math.sqrt(SCRATCH_BUDGET))/Math.max(g.cropWidth,g.cropHeight));
    let target=targets.get(panel);
    if(!target){
     const pane=document.createElement('canvas');pane.className='pm-acrylic-pane';pane.setAttribute('aria-hidden','true');pane.dataset.material='frosted';
@@ -124,6 +125,16 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
   if(layoutDirty||now<movingUntil)measure();
   const delta=Math.min(110,Math.max(1,now-lastTime));lastTime=now;
   let animate=!!motion||now<movingUntil;
+  // Reuse one backing store across differently sized panels and controls.
+  // Resizing per target forces GPU reallocation / synchronization every hover.
+  let scratchWidth=canvas.width,scratchHeight=canvas.height;
+  for(const target of targets.values()){
+   scratchWidth=Math.max(scratchWidth,Math.floor(target.g.cropWidth*target.density));
+   scratchHeight=Math.max(scratchHeight,Math.floor(target.g.cropHeight*target.density));
+  }
+  if(canvas.width!==scratchWidth)canvas.width=scratchWidth;
+  if(canvas.height!==scratchHeight)canvas.height=scratchHeight;
+  context.enable(context.SCISSOR_TEST);
   for(const [panel,target] of targets){
    const desired=active.has(panel)||panel===control?1:0;
    if(Math.abs(target.hover-desired)>.01){target.hover=reduced.matches?desired:target.hover+(desired-target.hover)*(1-Math.exp(-delta/38));if(Math.abs(target.hover-desired)<=.01)target.hover=desired;target.dirty=true;animate ||= target.hover!==desired;}
@@ -131,13 +142,12 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    if(target.kind===1&&panel!==control&&target.hover===0){controls.delete(panel);release(panel,target);continue;}
    if(!target.dirty)continue;
    const g=target.g,d=target.density,w=Math.max(1,Math.floor(g.cropWidth*d)),h=Math.max(1,Math.floor(g.cropHeight*d));
-   if(canvas.width!==w)canvas.width=w;if(canvas.height!==h)canvas.height=h;
-   context.viewport(0,0,w,h);context.clearColor(0,0,0,0);context.clear(context.COLOR_BUFFER_BIT);
+   context.viewport(0,0,w,h);context.scissor(0,0,w,h);context.clearColor(0,0,0,0);context.clear(context.COLOR_BUFFER_BIT);
    context.uniform2f(uniform('uSize'),g.width,g.height);context.uniform2f(uniform('uCrop'),g.left,g.top);context.uniform2f(uniform('uCropSize'),g.cropWidth,g.cropHeight);context.uniform2f(uniform('uBuffer'),w,h);context.uniform2f(uniform('uPointer'),...target.pointer);
    context.uniform1f(uniform('uDensity'),d);context.uniform1f(uniform('uRadius'),Math.min(g.radius,g.width/2,g.height/2));context.uniform1f(uniform('uHover'),target.hover);context.uniform1f(uniform('uKind'),target.kind);context.uniform1f(uniform('uReveal'),panel===sidebar?reveal:1);
    context.drawArrays(context.TRIANGLES,0,6);
    if(target.pane.width!==w)target.pane.width=w;if(target.pane.height!==h)target.pane.height=h;
-   target.ctx.clearRect(0,0,w,h);target.ctx.drawImage(canvas,0,0);target.pane.dataset.paints=String(++target.paints);target.dirty=false;canvas.dataset.draws=String(++draws);
+   target.ctx.clearRect(0,0,w,h);target.ctx.drawImage(canvas,0,canvas.height-h,w,h,0,0,w,h);target.pane.dataset.paints=String(++target.paints);target.dirty=false;canvas.dataset.draws=String(++draws);
   }
   canvas.dataset.backingPixels=String(Array.from(targets.values()).reduce((n,t)=>n+t.pane.width*t.pane.height,0));
   if(animate)frame=requestAnimationFrame(render);
