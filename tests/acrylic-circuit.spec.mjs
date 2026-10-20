@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
 
-test('circuit material responds locally and releases its animation while idle', async ({ page }) => {
+test('optical coating responds locally and releases its animation while idle', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.pm-note-item').first()).toBeVisible();
   await page.getByRole('button', { name: 'Ferramentas e ações', exact: true }).click();
   await page.getByRole('button', { name: 'Acrílico', exact: true }).click();
   const pane = page.locator('.pm-workspace-tools > .pm-acrylic-pane');
-  await expect(pane).toHaveAttribute('data-circuit', 'true');
+  await expect(pane).toBeVisible();
   await page.mouse.move(1, 1); await page.waitForTimeout(650);
   const pixels = () => pane.evaluate(c => Array.from(c.getContext('2d').getImageData(0,0,c.width,c.height).data));
   const before = await pixels();

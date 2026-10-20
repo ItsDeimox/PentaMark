@@ -26,9 +26,12 @@ void main(){
  float radial=exp(-dot(delta,delta)/(control?3800.:22500.))*uHover;
  float quiet=uKind>2.5?.35:1.;
  float grain=(hash(floor(p*1.4))-.5)*.065;
- vec2 normal=normalize((p-h)/max(h,vec2(1.))+vec2(.00001));
+ // Rounded-rectangle normal, not an ellipse stretched over straight edges.
+ vec2 corner=max(q,0.);
+ vec2 normal=length(corner)>.001?normalize(corner)*sign(p-h):
+   (q.x>q.y?vec2(sign(p.x-h.x),0.):vec2(0.,sign(p.y-h.y)));
  float incident=.5+.5*dot(normal,normalize(vec2(-.65,-1.)));
- float edge=(.035+radial*.22)*rim+bevel*(.025+incident*.035+radial*.14);
+ float edge=(.035+radial*.15)*rim+bevel*(.015+incident*.025+radial*.09);
  float reflection=radial*(spread*(control?.07:.035)+.035)*quiet;
  float sweep=(uReveal>.001&&uReveal<.999)?exp(-abs(p.x-front)*.65)*.12:0.;
  float body=(control?.045:uKind>1.5?.07:.10)+grain*.65;
@@ -38,14 +41,6 @@ void main(){
  vec3 light=mix(uAccent,vec3(.94,.97,1.),uLight>.5?.72:.26);
  vec3 rgb=(glass*body+light*optical)/max(body+optical,.001);
  rgb+=vec3((hash(floor(p*1.4))-.5)*(control?.04:.12));
- // Offset spectral lobes simulate dispersion through a rounded glass bevel.
- // The tint grows toward the edge and fades smoothly into the clear center.
- float shift=.55+incident*.65;
- vec3 spectral=vec3(exp(-pow((depth-.65)/1.1,2.)),
-                    exp(-pow((depth-1.2-shift)/1.5,2.)),
-                    exp(-pow((depth-2.-shift)/1.7,2.)));
- float prism=(.12+radial*.42)*(control?.45:1.);
- rgb+=(spectral-vec3(dot(spectral,vec3(.333))))*prism;
- rgb-=(vec3(1.)-spectral)*prism*.35*uLight;
+ // Dispersion belongs to the backdrop lens, not a painted RGB outline.
  gl_FragColor=vec4(max(rgb,vec3(0.)),alpha);
 }`;
