@@ -50,6 +50,26 @@ jobs:
           assert hashlib.sha256(patch).hexdigest()=='05e404169079812b5c447933d4d06afc88bc9d061dd74b4bdea46938ed9f2dc4'
           subprocess.run(['git','apply','--check'],input=patch,check=True)
           subprocess.run(['git','apply'],input=patch,check=True)
+          from pathlib import Path
+          # The fixture's mobile sidebar starts collapsed. Wait for the note
+          # to exist, then open the navigation before requiring visibility.
+          final=Path('tests/final-visual-polish.spec.mjs')
+          source=final.read_text()
+          old="  await expect(page.locator('.pm-note-item').first()).toBeVisible();"
+          assert source.count(old)==1
+          source=source.replace(old,"  await expect(page.locator('.pm-note-item').first()).toBeAttached();")
+          marker="  await page.getByRole('button',{name:'Mostrar ou ocultar arquivos',exact:true}).click();\n  const note=page.locator('.pm-note-item').first();"
+          assert source.count(marker)==1
+          source=source.replace(marker,marker+"\n  await expect(note).toBeVisible();")
+          final.write_text(source)
+          # Modal dismissal can finish one RAF after Escape. A real pointer
+          # focus and settled overlay is required before selecting text.
+          previous=Path('tests/visual-polish.spec.mjs')
+          source=previous.read_text()
+          marker="  await page.keyboard.press('Escape');\n  const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});"
+          assert source.count(marker)==1
+          source=source.replace(marker,"  await page.keyboard.press('Escape');\n  await expect(page.getByRole('dialog',{name:'Ferramentas e ações'})).not.toBeVisible();\n  const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});\n  await editor.click();\n  await expect(page.locator('.pm-live-codemirror.cm-focused')).toBeVisible();")
+          previous.write_text(source)
           PY
           git diff --check
       - run: npm ci --ignore-scripts
