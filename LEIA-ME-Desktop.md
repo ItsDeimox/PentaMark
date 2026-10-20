@@ -1,8 +1,8 @@
-# PentaMark Desktop 2.12.0
+# PentaMark Desktop 2.13.0
 
 ## Abrir e atualizar
 
-O arquivo portátil `PentaMark-Desktop-2.12.0-Windows.exe` abre diretamente no Windows, sem instalar Node.js ou iniciar outro servidor. Feche a versão anterior antes de abrir esta. Faça backup da pasta inteira do cofre antes de atualizar. O executável não possui assinatura digital.
+O arquivo portátil `PentaMark-Desktop-2.13.0-Windows.exe` abre diretamente no Windows, sem instalar Node.js ou iniciar outro servidor. Feche a versão anterior antes de abrir esta. Faça backup da pasta inteira do cofre antes de atualizar. O executável não possui assinatura digital.
 
 O próprio aplicativo hospeda seus arquivos no computador. Notas, anexos, histórico e lixeira permanecem no cofre; as preferências visuais anteriores são preservadas.
 

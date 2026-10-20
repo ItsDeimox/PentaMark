@@ -45,13 +45,14 @@ void main(){
    vec2 texel=vec2(1.3)/uSize;
    aura=(texture2D(uCircuit,uv+vec2(texel.x,0.)).a+texture2D(uCircuit,uv-vec2(texel.x,0.)).a+texture2D(uCircuit,uv+vec2(0.,texel.y)).a+texture2D(uCircuit,uv-vec2(0.,texel.y)).a)*.25;
  }
- float circuit=(wire*(.004+radial*.46)+aura*radial*.055)*quiet;
+ float plasma=.78+.22*sin(p.x*.047+p.y*.015+length(delta)*.020);
+ float circuit=(wire*(.008+radial*.58*plasma)+aura*radial*.085)*quiet;
  float sweep=(uReveal>.001&&uReveal<.999)?exp(-abs(p.x-front)*.65)*.12:0.;
  float body=(control?.035:uKind>1.5?.07:.11)+grain;
  float optical=edge+reflection+circuit+sweep;
  float alpha=clamp(body+optical,0.,.92)*coverage;
- vec3 glass=vec3(.075,.10,.12)+uAccent*.025;
- vec3 light=mix(uAccent,vec3(.92,.98,1.),control?.30:.15);
+ vec3 glass=vec3(.074,.082,.082)+uAccent*.055;
+ vec3 light=mix(uAccent,vec3(.94,.96,.96),control?.26:.08);
  vec3 rgb=(glass*body+light*optical)/max(body+optical,.001);
  float rimDispersion=rim*(.007+radial*(control?.028:.021));
  rgb+=vec3(rimDispersion+spectrum*.034, .001*rim, -rimDispersion*.67-spectrum*.02);

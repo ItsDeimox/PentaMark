@@ -140,6 +140,7 @@ import { AcrylicLayer } from "../features/workspace/AcrylicLayer";
 import { LinkPreviewStack, type LinkPreviewHandle } from "../features/workspace/LinkPreviewStack";
 import { QuickOpen } from "../features/workspace/QuickOpen";
 import { SelectionTools } from "../features/workspace/SelectionTools";
+import { DocumentDecode } from "../features/workspace/DocumentDecode";
 import { TooltipLayer } from "../features/workspace/TooltipLayer";
 import { useWorkspaceNavigation } from "../features/workspace/useWorkspaceNavigation";
 
@@ -829,6 +830,24 @@ export default function PentaMarkApp() {
     if (!result.ok) notify(result.error || "Não deu para abrir no Explorer");
   }, [notify]);
 
+  const copyItemPath = useCallback(async (kind: TreeItemKind, path: string, mode: "relative" | "absolute") => {
+    setContext(null);
+    try {
+      if (!window.pentaMarkDesktop) {
+        if (mode === "absolute") { notify("Caminho absoluto disponível apenas no PentaMark Desktop"); return; }
+        await copyText(path);
+        notify("Caminho relativo copiado");
+        return;
+      }
+      const result = await window.pentaMarkDesktop.resolveItemPath(kind, path);
+      if (!result.ok) throw new Error(result.error || "Não foi possível localizar o item");
+      const value = mode === "absolute" ? result.absolute : result.relative;
+      if (!value) throw new Error("Caminho indisponível");
+      await copyText(value);
+      notify(`Caminho ${mode === "absolute" ? "absoluto" : "relativo"} copiado`);
+    } catch (error) { notify(error instanceof Error ? error.message : "Não foi possível copiar o caminho"); }
+  }, [notify]);
+
   const chooseVault = useCallback(async () => {
     setContext(null);
     setMoreOpen(false);
@@ -902,7 +921,7 @@ export default function PentaMarkApp() {
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === "n") { event.preventDefault(); beginDraft("note"); }
-      if (key === "p") { event.preventDefault(); setToolsOpen(false); setQuickOpen(true); }
+      if (key === "f" || key === "p") { event.preventDefault(); setToolsOpen(false); setQuickOpen(true); }
       if (key === "s") { event.preventDefault(); void saveNow(); }
       const editingLive = document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest(".pm-live-codemirror"));
       const editingField = document.activeElement instanceof HTMLElement && document.activeElement.matches("input,textarea,select,[contenteditable='true']");
@@ -1118,7 +1137,7 @@ export default function PentaMarkApp() {
     height: `${100 / appearance.appScale}vh`,
     minHeight: 0,
     "--pm-sidebar-width": `${sidebarWidth}px`,
-    "--pm-column-width": `${Math.min(940, Math.max(180, window.innerWidth / appearance.appScale - (navigation.compact ? 48 : sidebarWidth + 96)))}px`,
+    "--pm-column-width": "940px",
     "--pm-split": `${split}%`,
     "--pm-ui-font": uiFont,
     "--pm-editor-font": editorFont,
@@ -1148,7 +1167,7 @@ export default function PentaMarkApp() {
       <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
         {saveState === "conflict" && <button className="pm-conflict-button" onClick={() => setConflictOpen(true)}>Conflito · Ver diff</button>}
         {saveState !== "saved" && saveState !== "conflict" && <span role="status">{saveState === "saving" ? "Salvando..." : "Alterado"}</span>}
-        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo" data-tooltip="Buscar arquivos" data-shortcut="Ctrl P"><Search size={18} /><span>Abrir</span><kbd>Ctrl P</kbd></button>
+        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo" data-tooltip="Buscar arquivos" data-shortcut="Ctrl F"><Search size={18} /><span>Abrir</span><kbd>Ctrl F</kbd></button>
         <button data-workspace-trigger aria-expanded={toolsOpen} aria-label="Ferramentas e ações" data-tooltip="Ferramentas" onClick={() => setToolsOpen(value => !value)}><MoreHorizontal size={21} /></button>
       </nav>
       <aside
@@ -1230,7 +1249,7 @@ export default function PentaMarkApp() {
           {uploading && <div className="pm-drop-zone"><ImagePlus size={26} /><strong>Sincronizando arquivos…</strong><span>Imagens, vídeos e anexos vão para o cofre</span></div>}
           </>}
         </DocumentWorkspace>
-        {activePath && <div key={activePath} className="pm-note-resolve" aria-hidden="true" />}
+        {activePath && <DocumentDecode key={activePath} path={activePath} enabled={!assetPreview} mode={viewMode} />}
 
         <MobileDock
           mode={viewMode}
@@ -1262,7 +1281,7 @@ export default function PentaMarkApp() {
       <SelectionTools enabled={viewMode === "live" && canEditActive && !toolsOpen && !quickOpen} scale={appearance.appScale} onFormat={applyFormat} onMore={() => setToolsOpen(true)} />
       <LinkPreviewStack ref={previewsRef} context={markdownContext} scale={appearance.appScale} onOpen={path => void openNote(path, true)} />
 
-      {context && <ContextDropdown context={context} scale={appearance.appScale} onClose={() => setContext(null)} onFormat={applyFormat} onBeginDraft={beginDraft} onRename={startRename} onDuplicate={duplicateNote} onDelete={deleteItem} onExpand={setAllExpanded} onOpen={(path) => void openNote(path, true)} onReveal={(kind, path) => void openInFolder(kind, path)} onPreviewAsset={(path) => { setContext(null); const asset = vault.assets.find((item) => item.path === path); if (asset) setAssetPreview(asset); }} onChooseVault={() => void chooseVault()} />}
+      {context && <ContextDropdown context={context} scale={appearance.appScale} onClose={() => setContext(null)} onFormat={applyFormat} onBeginDraft={beginDraft} onRename={startRename} onDuplicate={duplicateNote} onDelete={deleteItem} onExpand={setAllExpanded} onOpen={(path) => void openNote(path, true)} onReveal={(kind, path) => void openInFolder(kind, path)} onPreviewAsset={(path) => { setContext(null); const asset = vault.assets.find((item) => item.path === path); if (asset) setAssetPreview(asset); }} onChooseVault={() => void chooseVault()} onCopyPath={(kind, path, mode) => void copyItemPath(kind,path,mode)} canCopyAbsolute={Boolean(window.pentaMarkDesktop)} />}
 
       <DialogPresence open={shareOpen}><ShareModal urls={shareUrls} onClose={() => setShareOpen(false)} onNotify={notify}
         onMobile={() => { setShareOpen(false); setMobileSetupOpen(true); }} onConnect={() => { setShareOpen(false); setConnectOpen(true); }}/></DialogPresence>

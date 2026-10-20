@@ -32,7 +32,10 @@ test('selected text glows without reflow; reduced motion makes the energy static
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
   await page.getByRole('button',{name:'Acrílico',exact:true}).click();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog',{name:'Ferramentas e ações'})).not.toBeVisible();
   const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});
+  await editor.click();
+  await expect(page.locator('.pm-live-codemirror .cm-editor.cm-focused')).toBeVisible();
   await editor.focus();
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('End');
@@ -71,14 +74,11 @@ test('the document resolves visually on navigation without changing text dimensi
   await editorReady(page);
   const content=page.locator('.pm-live-codemirror .cm-content');
   const before=await content.boundingBox();
-  const overlay=page.locator('.pm-note-resolve');
-  await expect(overlay).toBeAttached();
-  expect(await overlay.evaluate(el=>getComputedStyle(el).pointerEvents)).toBe('none');
+  await expect(page.locator('.pm-note-resolve')).toHaveCount(0);
   await page.keyboard.press('Control+p');
   await page.getByRole('combobox',{name:'Buscar arquivos'}).fill('01 - Direcao');
   await page.keyboard.press('Enter');
   await expect(page.locator('.pm-document-path')).toContainText('01 - Direcao');
-  await expect(overlay).toBeAttached();
   const after=await content.boundingBox();
   expect(after.width).toBe(before.width);
   expect(after.x).toBe(before.x);

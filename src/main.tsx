@@ -16,6 +16,7 @@ import "./features/workspace/chrome.css";
 import "./components/dialogs/dialogs.css";
 import "./features/workspace/glass-polish.css";
 import "./features/workspace/visual-polish.css";
+import "./features/workspace/finish-polish.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

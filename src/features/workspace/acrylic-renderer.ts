@@ -2,7 +2,7 @@ import { ACRYLIC_FRAGMENT, ACRYLIC_VERTEX } from './acrylic-shader';
 import { createCircuitMap } from './circuit-layout';
 import { fragmentClip } from './fragment-reveal';
 
-const CHROME='.pm-sidebar,.pm-workspace-panel,.pm-modal,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools,.pm-asset-workspace>header,.pm-asset-workspace>footer,.pm-lock-banner,.pm-toast,.pm-mobile-dock';
+const CHROME='.pm-sidebar,.pm-workspace-panel,.pm-modal,.pm-context-menu,.pm-copy-path-submenu,.pm-link-hover-preview,.pm-asset-workspace>header,.pm-asset-workspace>footer,.pm-lock-banner,.pm-toast,.pm-mobile-dock';
 const INSET='.pm-identity-card,.pm-material-demo,.pm-vault-location,.pm-notice,.pm-connection-status,.pm-option-row,.pm-client-card,.pm-mobile-setup-card';
 const DOCUMENT='.pm-callout,.pm-properties,.pm-kanban,.pm-markdown pre';
 const SURFACES=`${CHROME},${INSET},${DOCUMENT}`;
@@ -173,6 +173,12 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
   if(next!==control){control=next&&shell.contains(next)?next:null;if(control)controls.add(control);layoutDirty=true;}
   cursor=[x,y];invalidate();
  };
+ const reconcile = () => {
+   if (cursor[0] < 0 || cursor[1] < 0 || cursor[0] > innerWidth || cursor[1] > innerHeight) return;
+   // New file selection can replace sidebar DOM without a new pointermove.
+   const hovered = document.elementFromPoint(cursor[0], cursor[1]);
+   aim(hovered, cursor[0], cursor[1]);
+ };
  const pointer=(e:PointerEvent)=>{if(e.pointerType!=='touch')aim(e.target instanceof Element?e.target:null,e.clientX,e.clientY);};
  const focus=(e:FocusEvent)=>{const el=e.target as HTMLElement;if(el.matches(':focus-visible')){const r=el.getBoundingClientRect();aim(el,r.x+r.width/2,r.y+r.height/2);}};
  const leave=()=>{active.clear();control=null;invalidate();};
@@ -183,6 +189,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const restored=()=>{lost=false;program=null;buffer=null;empty=null;uniforms.clear();try{initialize();targets.forEach(t=>{t.texture=null;t.textureKey='';t.dirty=true;});registryDirty=true;layout();}catch{lost=true;fallback();}};
  try{initialize();}catch(error){if(buffer)context.deleteBuffer(buffer);if(program)context.deleteProgram(program);fallback();console.warn('Material indisponível.',error);return()=>{resized.disconnect();intersections.disconnect();delete shell.dataset.gl;};}
  changed.observe(shell,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','open','data-entered','data-visible','data-navigation']});
+ shell.addEventListener('pentamark:pointer-reconcile',reconcile);
  shell.addEventListener('pointermove',pointer,{passive:true});shell.addEventListener('pointerleave',leave);shell.addEventListener('focusin',focus);
  shell.addEventListener('scroll',layout,true);shell.addEventListener('transitionrun',moving);shell.addEventListener('animationstart',moving);shell.addEventListener('transitionend',layout);
  window.addEventListener('resize',layout);window.addEventListener('blur',leave);document.addEventListener('visibilitychange',visibility);reduced.addEventListener('change',layout);
@@ -190,6 +197,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  return()=>{
   stopped=true;cancelAnimationFrame(frame);changed.disconnect();resized.disconnect();intersections.disconnect();finishReveal();if(sidebar){delete sidebar.dataset.reveal;sidebar.style.removeProperty('clip-path');sidebar.style.removeProperty('--pm-reveal-x');}
   targets.forEach((t,p)=>release(p,t));
+  shell.removeEventListener('pentamark:pointer-reconcile',reconcile);
   shell.removeEventListener('pointermove',pointer);shell.removeEventListener('pointerleave',leave);shell.removeEventListener('focusin',focus);shell.removeEventListener('scroll',layout,true);shell.removeEventListener('transitionrun',moving);shell.removeEventListener('animationstart',moving);shell.removeEventListener('transitionend',layout);
   window.removeEventListener('resize',layout);window.removeEventListener('blur',leave);document.removeEventListener('visibilitychange',visibility);reduced.removeEventListener('change',layout);
   canvas.removeEventListener('webglcontextlost',onLost);canvas.removeEventListener('webglcontextrestored',restored);

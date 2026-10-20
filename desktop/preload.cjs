@@ -19,4 +19,7 @@ contextBridge.exposeInMainWorld("pentaMarkDesktop", {
   openInFolder(kind, path) {
     return ipcRenderer.invoke("pentamark:show-item", kind, path);
   },
+  resolveItemPath(kind, path) {
+    return ipcRenderer.invoke("pentamark:resolve-item-path", kind, path);
+  },
 });

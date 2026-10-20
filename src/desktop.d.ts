@@ -6,5 +6,6 @@ interface Window {
     chooseVault(): Promise<{ ok: boolean; canceled?: boolean; path?: string; restarting?: boolean; error?: string }>;
     showVault(): Promise<{ ok: boolean; error?: string }>;
     openInFolder(kind: "note" | "folder" | "asset", path: string): Promise<{ ok: boolean; error?: string }>;
+    resolveItemPath(kind: "note" | "folder" | "asset", path: string): Promise<{ ok: boolean; relative?: string; absolute?: string; error?: string }>;
   };
 }

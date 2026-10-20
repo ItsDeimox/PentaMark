@@ -10,7 +10,7 @@ export function createCircuitMap(width: number, height: number, density: number,
   let state = (seed ^ 0x6d2b79f5) >>> 0;
   const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
   const path = (points: number[][], strength: number, lane: number) => {
-    ctx.lineWidth = lane === 0 ? .75 : .55;
+    ctx.lineWidth = lane === 0 ? .58 : .42;
     ctx.strokeStyle = `rgba(255,255,255,${strength})`;
     ctx.beginPath(); points.forEach(([x,y], i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y)); ctx.stroke();
     // Flat rectangular lands, never the old repeated circular vias.
@@ -29,7 +29,7 @@ export function createCircuitMap(width: number, height: number, density: number,
       let points = [[-8,start],[bend,start],[bend+diagonal,start+sign*diagonal],[end,start+sign*diagonal]];
       if (lane % 2 === 0) points.push([end+7,start+sign*diagonal+sign*7],[end+7,start+sign*diagonal+sign*(20+random()*32)]);
       if (right) points = points.map(([x,yy])=>[width-x,yy]);
-      path(points,.46+random()*.42,lane);
+      path(points,.56+random()*.38,lane);
     }
   };
   group(false, height*(.12+random()*.06), width*(.46+random()*.1), height*.22, width>420?5:3);
