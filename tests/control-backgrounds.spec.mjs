@@ -51,6 +51,30 @@ for (const acrylic of [false, true]) {
   });
 }
 
+test('acrylic tools panel shares the sidebar and settings surface', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Editor Markdown em Live Preview' })).toBeVisible();
+  await page.getByRole('button', { name: 'Ferramentas e ações', exact: true }).click();
+  await page.getByRole('button', { name: 'Acrílico', exact: true }).click();
+
+  const sidebar = page.locator('.pm-sidebar').first();
+  const tools = page.locator('.pm-workspace-panel').first();
+  await expect(tools).toBeVisible();
+  const surface = locator => locator.evaluate(el => {
+    const style = getComputedStyle(el);
+    return { background: style.backgroundColor, border: style.borderColor, shadow: style.boxShadow };
+  });
+  expect(await surface(tools)).toEqual(await surface(sidebar));
+
+  await page.getByRole('button', { name: 'Configurações', exact: true }).click();
+  const settings = page.locator('.pm-dialog').first();
+  await expect(settings).toBeVisible();
+  expect((await surface(settings)).background).toBe((await surface(sidebar)).background);
+  const selectedTheme = settings.locator('.pm-theme-options button[aria-pressed="true"]');
+  await selectedTheme.hover();
+  expect(await selectedTheme.evaluate(el => getComputedStyle(el).backdropFilter)).toContain('blur(');
+});
+
 test('context actions and copy-path submenu retain their hover background', async ({ page }) => {
   await page.goto('/');
   const note = page.locator('.pm-note-item--active').first();
@@ -63,3 +87,4 @@ test('context actions and copy-path submenu retain their hover background', asyn
   await relative.hover();
   await hasBackground(relative);
 });
+
