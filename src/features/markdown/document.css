@@ -204,6 +204,12 @@
 .pm-markdown li.task-list-item { margin-left: 0; padding-left: 0; }
 .pm-markdown li.task-list-item > input[type="checkbox"],
 .pm-markdown li > p:first-child > input[type="checkbox"] { margin-left: 0; }
+.pm-shell .pm-markdown li > input[type="checkbox"],
+.pm-shell .pm-markdown li > p:first-child > input[type="checkbox"] {
+  position: relative;
+  vertical-align: top;
+  top: calc(var(--pm-md-line-height) * .5em - 8px);
+}
 
 .pm-live-line--list {
   position: relative;
