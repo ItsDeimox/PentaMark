@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, ArrowRightLeft, Check, ChevronDown, Code2, Colum
 import { FORMAT_ACTIONS } from '../../app/constants';
 import type { FormatKind, ViewMode, GraphicsMode } from '../../domain/types';
 import { WorkspacePanel } from './WorkspacePanel';
+import { isAndroidLocal } from '../../platform/android';
 
 type Action = { label: string; icon: ComponentType<{size?:number}>; run: () => void; disabled?: boolean; danger?: boolean };
 export function ToolsPanel(p: {
@@ -30,7 +31,7 @@ export function ToolsPanel(p: {
     onClick={run}><Icon size={16}/><span>{label}</span></button>;
   const leave = (run:()=>void) => () => { p.onClose(); run(); };
   return <WorkspacePanel open={p.open} title="Ferramentas e ações" onClose={p.onClose} className="pm-workspace-tools">
-    <button type="button" className="pm-tool-mcp" aria-label="Ponte MCP" data-tooltip="Ponte MCP" onClick={leave(p.onMcp)}><Bot size={19}/><span><strong>Ponte MCP</strong><small>Conectar ferramentas de IA</small></span><i data-active={p.mcpEnabled}/></button>
+    {!isAndroidLocal && <button type="button" className="pm-tool-mcp" aria-label="Ponte MCP" data-tooltip="Ponte MCP" onClick={leave(p.onMcp)}><Bot size={19}/><span><strong>Ponte MCP</strong><small>Conectar ferramentas de IA</small></span><i data-active={p.mcpEnabled}/></button>}
     <section className="pm-tool-section"><div className="pm-section-label"><span>VISUALIZAÇÃO</span><span className="pm-tool-saved"><Check size={11}/>{p.saved?'Salvo':'Alterado'}</span></div>
       <div className="pm-mode-grid">{modes.map(({id,label,name,icon:Icon}) => <button key={id} aria-label={name} data-tooltip={name}
         aria-pressed={p.mode===id} onClick={()=>p.onMode(id)}><Icon size={17}/><span>{label}</span></button>)}</div>
@@ -50,24 +51,24 @@ export function ToolsPanel(p: {
         <label data-tooltip="Anexar arquivos"><ImagePlus size={16}/><input aria-label="Anexar arquivos" type="file" multiple disabled={!p.canEdit} onChange={e=>{if(e.target.files)p.onUpload(e.target.files);e.target.value='';}}/></label>
       </div>
       <div className="pm-tool-zoom"><span>Texto</span><button aria-label="Diminuir zoom do editor" data-tooltip="Diminuir zoom" onClick={()=>p.onZoom(-1)}><ZoomOut size={15}/></button><output>{p.editorSize}px</output><button aria-label="Aumentar zoom do editor" data-tooltip="Aumentar zoom" onClick={()=>p.onZoom(1)}><ZoomIn size={15}/></button><button aria-label="Sincronizar rolagem" data-tooltip="Sincronizar rolagem" aria-pressed={p.syncScroll} title="Sincronizar rolagem" onClick={p.onSync}><ArrowRightLeft size={15}/></button></div>
-      {action({label:'Mostrar no diretório',icon:ExternalLink,run:leave(p.onReveal),disabled:!p.hasNote})}
+      {!isAndroidLocal && action({label:'Mostrar no diretório',icon:ExternalLink,run:leave(p.onReveal),disabled:!p.hasNote})}
       <button className="pm-tool-action" aria-label="Mais ações" data-tooltip="Ações do arquivo" aria-expanded={fileActions} onClick={()=>setFileActions(v=>!v)}><FolderOpen size={16}/><span>Arquivo e cofre</span><ChevronDown size={14}/></button>
       {fileActions && <div className="pm-tool-file-actions">{[
         {label:'Nova nota',icon:FilePlus2,run:leave(p.onNew)},
         {label:'Renomear',icon:Pencil,run:leave(p.onRename),disabled:!p.hasNote},
         {label:'Duplicar',icon:CopyPlus,run:leave(p.onDuplicate),disabled:!p.hasNote},
-        {label:'Abrir outro cofre',icon:FolderOpen,run:leave(p.onVault)},
+        {label:isAndroidLocal?'Importar / exportar arquivos':'Abrir outro cofre',icon:FolderOpen,run:leave(p.onVault)},
         {label:'Excluir nota',icon:Trash2,run:leave(p.onDelete),disabled:!p.hasNote,danger:true},
       ].map(action)}</div>}
     </section>
-    <section className="pm-tool-section pm-tool-collaboration"><div className="pm-section-label">CONEXÕES</div>
+    {!isAndroidLocal && <section className="pm-tool-section pm-tool-collaboration"><div className="pm-section-label">CONEXÕES</div>
       {[
         {label:'Compartilhar',icon:Share2,run:leave(p.onShare)},
         {label:`${p.clients} conectado${p.clients===1?'':'s'}`,icon:Users,run:leave(p.onClients)},
         {label:'Conectar a um cofre',icon:LogIn,run:leave(p.onConnect)},
         {label:'Celular e acesso remoto',icon:Smartphone,run:leave(p.onMobile)},
       ].map(action)}
-    </section>
+    </section>}
     <footer className="pm-tool-footer">{action({label:'Conta',icon:UserCircle,run:leave(p.onProfile)})}{action({label:'Configurações',icon:Settings,run:leave(p.onSettings)})}</footer>
   </WorkspacePanel>;
 }

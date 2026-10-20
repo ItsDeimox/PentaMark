@@ -65,7 +65,8 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { androidDrafts, isAndroidLocal, vaultEvents } from '../platform/android';
 import type {
   Appearance,
   AssetMeta,
@@ -235,23 +236,32 @@ export default function PentaMarkApp() {
   const activePathRef = useRef("");
   const saveStateRef = useRef<SaveState>("saved");
   const contentRef = useRef(content);
+  const revisionRef = useRef(revision);
+  const savingRef = useRef(false);
   const scrollSyncGuard = useRef<"editor" | "preview" | null>(null);
   const noteHistory = useRef<{ paths: string[]; index: number }>({ paths: [], index: -1 });
 
   activePathRef.current = activePath;
   saveStateRef.current = saveState;
   contentRef.current = content;
+  revisionRef.current = revision;
   deviceNameRef.current = deviceName;
   deviceAvatarRef.current = deviceAvatar;
   viewModeRef.current = viewMode;
   locksRef.current = vault.locks;
 
-  const shareUrls = useMemo(() => [...new Set([window.location.origin, ...vault.urls].filter((url) => /^https?:\/\//i.test(url)))], [vault.urls]);
+  const shareUrls = useMemo(() => isAndroidLocal ? [] : [...new Set([window.location.origin, ...vault.urls].filter((url) => /^https?:\/\//i.test(url)))], [vault.urls]);
 
   const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast((current) => current === message ? "" : current), 2600);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!isAndroidLocal || !activePath || saveState === 'saved') return;
+    try { androidDrafts.put(activePath, content, revision); }
+    catch { notify('Sem espaço para proteger o rascunho. Salve ou exporte suas notas antes de sair.'); }
+  }, [activePath, content, revision, saveState, notify]);
 
   const copyValue = useCallback(async (value: string, message = "Endereço copiado") => {
     try {
@@ -281,7 +291,10 @@ export default function PentaMarkApp() {
       const next = await request<VaultState>("/api/state");
       setVault({ ...next, assets: next.assets || [], connections: next.connections || [], locks: next.locks || [] });
       setHostConfig((current) => ({ ...current, vaultName: next.vaultName }));
-      if (!activePathRef.current && next.notes[0]) setActivePath(next.notes[0].path);
+      if (!activePathRef.current && next.notes[0]) {
+        const last = isAndroidLocal ? localStorage.getItem('pentamark:android:last-note') : '';
+        setActivePath(next.notes.find(note => note.path === last)?.path || next.notes[0].path);
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Não deu para ler o cofre");
     }
@@ -293,13 +306,23 @@ export default function PentaMarkApp() {
     try {
       const note = await request<OpenNote>(`/api/note?path=${encodeURIComponent(path)}`);
       if (loadingPath.current !== path) return;
+      const recovered = isAndroidLocal ? androidDrafts.get(note.path) : null;
+      activePathRef.current = note.path;
       setActivePath(note.path);
       setAssetPreview(null);
-      setContent(note.content);
-      setRevision(note.revision);
-      setSaveState("saved");
-      setConflict(null);
-      setConflictOpen(false);
+      setContent(recovered?.content ?? note.content);
+      contentRef.current = recovered?.content ?? note.content;
+      const hasDraft = recovered && recovered.content !== note.content;
+      const hasConflict = hasDraft && recovered.revision !== note.revision;
+      setRevision(hasDraft ? recovered.revision : note.revision);
+      setSaveState(hasConflict ? 'conflict' : hasDraft ? 'dirty' : 'saved');
+      setConflict(hasConflict ? { path: note.path, localContent: recovered.content, remoteContent: note.content, remoteRevision: note.revision } : null);
+      setConflictOpen(Boolean(hasConflict));
+      if (isAndroidLocal) {
+        localStorage.setItem('pentamark:android:last-note', note.path);
+        if (recovered && !hasDraft) androidDrafts.remove(note.path);
+        if (hasDraft) notify('Rascunho recuperado do aparelho');
+      }
       setMobileSidebar(false);
       if (recordHistory) {
         const history = noteHistory.current;
@@ -401,7 +424,7 @@ export default function PentaMarkApp() {
   useEffect(() => { if (activePath && activePath !== loadingPath.current) void openNote(activePath, true); }, [activePath, openNote]);
 
   useEffect(() => {
-    const events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}&name=${encodeURIComponent(deviceName)}`);
+    const events = vaultEvents(`/api/events?clientId=${encodeURIComponent(clientId)}&name=${encodeURIComponent(deviceName)}`);
     const reloadList = () => void refreshState();
     const reloadConfig = () => { void refreshState(); void request<HostConfig>("/api/config").then(setHostConfig).catch(() => undefined); };
     const refreshPresence = (event: Event) => {
@@ -429,25 +452,34 @@ export default function PentaMarkApp() {
   useEffect(() => { void sendPresence(); }, [activeLockOwner, activePath, deviceAvatar, deviceName, sendPresence, viewMode]);
 
   const saveNow = useCallback(async () => {
-    if (!activePathRef.current || saveStateRef.current === "saved" || saveStateRef.current === "saving") return;
+    if (!activePathRef.current || saveStateRef.current === "saved" || saveStateRef.current === "conflict" || savingRef.current) return;
+    const savedPath = activePathRef.current;
+    const savedContent = contentRef.current;
+    const savedRevision = revisionRef.current;
     const lock = locksRef.current.find((item) => item.path === activePathRef.current && item.clientId !== clientId);
     if (lock) { notify(`${lock.name} está editando este arquivo`); return; }
+    savingRef.current = true;
     setSaveState("saving");
     try {
-      const result = await request<{ revision: string }>(`/api/note?path=${encodeURIComponent(activePathRef.current)}`, {
+      const result = await request<{ revision: string }>(`/api/note?path=${encodeURIComponent(savedPath)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, baseRevision: revision, clientId }),
+        body: JSON.stringify({ content: savedContent, baseRevision: savedRevision, clientId }),
       });
-      setRevision(result.revision);
-      setSaveState("saved");
+      if (isAndroidLocal) androidDrafts.saved(savedPath, savedContent, result.revision);
+      if (activePathRef.current === savedPath) {
+        revisionRef.current = result.revision;
+        setRevision(result.revision);
+        setSaveState(contentRef.current === savedContent ? 'saved' : 'dirty');
+      }
       void refreshState();
     } catch (error) {
+      if (activePathRef.current !== savedPath) { notify(`Não foi possível salvar ${savedPath}; o rascunho foi preservado.`); return; }
       if (error instanceof RequestError && error.status === 409) {
         setSaveState("conflict");
         try {
           const remote = await request<OpenNote>(`/api/note?path=${encodeURIComponent(activePathRef.current)}`);
-          setConflict({ path: remote.path, localContent: content, remoteContent: remote.content, remoteRevision: remote.revision });
+          setConflict({ path: remote.path, localContent: contentRef.current, remoteContent: remote.content, remoteRevision: remote.revision });
           setConflictOpen(true);
           notify("Conflito detectado — suas alterações foram preservadas");
         } catch {
@@ -458,11 +490,45 @@ export default function PentaMarkApp() {
       setSaveState("dirty");
       if (error instanceof RequestError && error.status === 423) void refreshState();
       notify(error instanceof Error ? error.message : "Não deu para salvar");
-    }
-  }, [clientId, content, notify, refreshState, revision]);
+    } finally { savingRef.current = false; }
+  }, [clientId, notify, refreshState]);
+
+  useEffect(() => {
+    if (!isAndroidLocal) return;
+    const flush = () => { void saveNow(); };
+    const draftSaved = (event: Event) => {
+      const detail = (event as CustomEvent<{path: string; content: string; revision: string}>).detail;
+      if (activePathRef.current !== detail.path) return;
+      revisionRef.current = detail.revision;
+      setRevision(detail.revision);
+      setSaveState(contentRef.current === detail.content ? 'saved' : 'dirty');
+    };
+    const hidden = () => { if (document.hidden) flush(); };
+    document.addEventListener('pentamark:pause', flush);
+    document.addEventListener('pentamark:draft-saved', draftSaved);
+    document.addEventListener('visibilitychange', hidden);
+    return () => { document.removeEventListener('pentamark:pause', flush); document.removeEventListener('pentamark:draft-saved', draftSaved); document.removeEventListener('visibilitychange', hidden); };
+  }, [saveNow]);
+
+  useEffect(() => {
+    if (!isAndroidLocal) return;
+    const back = (event: Event) => {
+      const dialog = Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open][data-entered="true"]')).at(-1);
+      if (dialog) { event.preventDefault(); dialog.querySelector<HTMLButtonElement>('.pm-dialog-close')?.click(); }
+      else if (toolsOpen) { event.preventDefault(); setToolsOpen(false); }
+      else if (quickOpen) { event.preventDefault(); setQuickOpen(false); }
+      else if (context) { event.preventDefault(); setContext(null); }
+      else if (assetPreview) { event.preventDefault(); setAssetPreview(null); }
+      else if (mobileSidebar) { event.preventDefault(); setMobileSidebar(false); }
+      else { void saveNow(); }
+    };
+    document.addEventListener('pentamark:back', back);
+    return () => document.removeEventListener('pentamark:back', back);
+  }, [toolsOpen, quickOpen, context, assetPreview, mobileSidebar, saveNow]);
 
   const useServerVersion = useCallback(() => {
     if (!conflict) return;
+    if (isAndroidLocal) androidDrafts.remove(conflict.path);
     setContent(conflict.remoteContent);
     setRevision(conflict.remoteRevision);
     setSaveState("saved");
@@ -481,6 +547,7 @@ export default function PentaMarkApp() {
         body: JSON.stringify({ content: resolvedContent, baseRevision: conflict.remoteRevision, clientId }),
       });
       setContent(resolvedContent);
+      if (isAndroidLocal) androidDrafts.remove(conflict.path);
       setRevision(result.revision);
       setSaveState("saved");
       setConflict(null);
@@ -501,6 +568,7 @@ export default function PentaMarkApp() {
   }, [clientId, conflict, notify, refreshState]);
 
   const connectToVault = useCallback(() => {
+    if (isAndroidLocal) { notify('Este APK usa arquivos locais. A conexão via Tailscale será adicionada na próxima etapa.'); return; }
     try {
       const target = normalizeConnectionAddress(connectionAddress);
       const cleanName = deviceName.trim().slice(0, 60) || defaultDeviceName();
@@ -1137,7 +1205,7 @@ export default function PentaMarkApp() {
     ...DOCUMENT_STYLE_VARIABLES,
     zoom: appearance.appScale,
     width: `${100 / appearance.appScale}vw`,
-    height: `${100 / appearance.appScale}vh`,
+    height: `${100 / appearance.appScale}${isAndroidLocal ? 'dvh' : 'vh'}`,
     minHeight: 0,
     "--pm-sidebar-width": `${sidebarWidth}px`,
     "--pm-column-width": "940px",
@@ -1156,7 +1224,7 @@ export default function PentaMarkApp() {
   const saveSettings = async (draft: HostConfig, baseline: HostConfig) => {
     await commitHostConfig(draft, baseline);
     localStorage.setItem("pentamark:appearance", JSON.stringify(appearance));
-    notify("Configurações salvas. Alterações de rede podem exigir reiniciar o host.");
+    notify(isAndroidLocal ? 'Configurações salvas neste aparelho.' : 'Configurações salvas. Alterações de rede podem exigir reiniciar o host.');
   };
 
   return (
@@ -1263,7 +1331,7 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />{isAndroidLocal ? (saveState === 'saved' ? 'Salvo no aparelho' : 'Alterações locais') : 'Sincronizado'}</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
@@ -1280,9 +1348,9 @@ export default function PentaMarkApp() {
         onNew={() => beginDraft("note", parentOf(activePath))} onRename={() => startRename("note", activePath)}
         onDuplicate={() => void duplicateNote(activePath)} onDelete={() => void deleteItem("note", activePath)}
         onReveal={() => void openInFolder(assetPreview ? "asset" : "note", assetPreview?.path || activePath)}
-        onVault={() => void chooseVault()} onShare={() => setShareOpen(true)} onClients={() => setClientsOpen(true)}
-        onConnect={() => setConnectOpen(true)} onMobile={() => setMobileSetupOpen(true)} onProfile={() => setProfileOpen(true)}
-        onMcp={() => setMcpOpen(true)} mcpEnabled={hostConfig.aiBridgeEnabled} onSettings={() => setSettingsOpen(true)} clients={vault.clients} saved={saveState === "saved"} />
+        onVault={() => isAndroidLocal ? setSettingsOpen(true) : void chooseVault()} onShare={() => isAndroidLocal ? setSettingsOpen(true) : setShareOpen(true)} onClients={() => isAndroidLocal ? notify('Cofre local deste aparelho; conexão remota será adicionada depois.') : setClientsOpen(true)}
+        onConnect={() => isAndroidLocal ? notify('A conexão via Tailscale será adicionada na próxima etapa.') : setConnectOpen(true)} onMobile={() => isAndroidLocal ? setSettingsOpen(true) : setMobileSetupOpen(true)} onProfile={() => setProfileOpen(true)}
+        onMcp={() => isAndroidLocal ? notify('A ponte MCP é um recurso do host Desktop.') : setMcpOpen(true)} mcpEnabled={hostConfig.aiBridgeEnabled} onSettings={() => setSettingsOpen(true)} clients={vault.clients} saved={saveState === "saved"} />
       <SelectionTools enabled={viewMode === "live" && canEditActive && !toolsOpen && !quickOpen} scale={appearance.appScale} onFormat={applyFormat} onMore={() => setToolsOpen(true)} />
       <LinkPreviewStack ref={previewsRef} context={markdownContext} scale={appearance.appScale} onOpen={path => void openNote(path, true)} />
 

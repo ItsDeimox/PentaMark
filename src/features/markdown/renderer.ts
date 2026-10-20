@@ -3,6 +3,7 @@ import { marked } from "marked";
 import { parse as parseYaml } from "yaml";
 import type { AssetMeta, NoteMeta, OpenNote } from "../../domain/types";
 import { request } from "../../api/client";
+import { isAndroidLocal, nativeFileUrl } from '../../platform/android';
 import { baseName, joinPath, parentOf, titleOf } from "../../shared/path";
 import { decodeSource, encodeSource, escapeAttribute, escapeCode } from "../../shared/text";
 import hljs, { CODE_LANGUAGES } from "./highlighting";
@@ -103,6 +104,7 @@ export function extensionOfLink(value: string) {
 
 export function vaultFileUrl(value: string, activePath: string) {
   const { path, fragment } = splitLinkTarget(value);
+  if (isAndroidLocal) return nativeFileUrl(decodedLink(path), activePath, fragment);
   const query = new URLSearchParams({ path: decodedLink(path), note: activePath });
   return `/api/file?${query.toString()}${fragment.startsWith("#") ? fragment : ""}`;
 }
