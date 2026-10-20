@@ -1,7 +1,7 @@
 name: Build e publicar PentaMark
 on:
   push:
-    branches: [main, agent/approved-visual-guide, agent/visual-acrylic]
+    branches: [main, agent/approved-visual-guide, agent/visual-acrylic, release/v2.13.2-source]
     paths:
       - '.github/workflows/publish-app.yml'
       - 'package.json'
@@ -61,7 +61,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Criar release e anexar pacotes
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/v2.13.2-source'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
