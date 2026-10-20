@@ -55,7 +55,7 @@
 @keyframes pm-console-resolve {
   0% { clip-path: polygon(100% 0, 100% 0, 100% 16%, 100% 16%, 100% 100%, 100% 100%); opacity: .56; filter: blur(3px); }
   48% { clip-path: polygon(22% 0, 100% 0, 100% 27%, 91% 27%, 91% 75%, 12% 75%, 12% 100%, 0 100%, 0 0); opacity: .88; filter: blur(.9px); }
-  100% { clip-path: inset(0 round var(--pm-radius)); opacity: 1; filter: none; }
+  100% { clip-path: none; opacity: 1; filter: none; }
 }
 @keyframes pm-console-content {
   from { opacity: 0; transform: translateX(5px); }
