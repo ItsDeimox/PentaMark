@@ -62,7 +62,7 @@ export function SettingsModal(p: {
     setTab(tabs[next].id);
     document.getElementById(`${id}-${tabs[next].id}`)?.focus();
   }}>{tabs.map(({id:key,label,icon:Icon}) => <button type="button" id={`${id}-${key}`} key={key} role="tab" aria-selected={tab===key}
-    aria-controls={`${id}-content`} tabIndex={tab===key ? 0 : -1} onClick={() => setTab(key)}><Icon size={17}/><span>{isAndroidLocal && key === 'vault' ? 'Arquivos locais' : label}</span></button>)}</div><small>As mudanças visuais aparecem em tempo real.</small></nav>;
+    aria-controls={`${id}-content`} tabIndex={tab===key ? 0 : -1} onClick={() => setTab(key)}><Icon size={17}/><span>{isAndroidLocal && key === 'vault' ? 'Arquivos locais' : label}</span></button>)}</div></nav>;
   return <DialogFrame title="Configurações" icon={Settings} className="pm-settings-dialog" navigation={navigation} onClose={close} onSubmit={() => void save()}
     footer={<><button type="button" className="pm-text-action" disabled={saving} onClick={() => p.setAppearance({ ...DEFAULT_APPEARANCE })}><RotateCcw size={14}/><span>Restaurar visual</span></button><span className="pm-footer-spacer"/><button type="button" className="secondary" disabled={saving} onClick={close}>Cancelar</button><button type="submit" className="primary" disabled={saving}><Check size={15}/>{saving ? 'Salvando…' : 'Salvar configurações'}</button></>}>
     <div role="tabpanel" id={`${id}-content`} aria-labelledby={`${id}-${tab}`} className="pm-preference-page" key={tab}>
@@ -79,7 +79,7 @@ export function SettingsModal(p: {
           {p.appearance.uiFont==='custom' && <label className="pm-field wide">Fonte instalada da interface<input value={p.appearance.customUiFont} onChange={e => appearance({customUiFont:e.target.value})}/></label>}
           {p.appearance.editorFont==='custom' && <label className="pm-field wide">Fonte instalada do editor<input value={p.appearance.customEditorFont} onChange={e => appearance({customEditorFont:e.target.value})}/></label>}
         </div></DialogSection>
-        <DialogSection title="Escala e leitura" hint="Ajuste o tamanho sem mudar o conteúdo das notas.">
+        <DialogSection title="Escala e leitura">
           <label className="pm-range-field"><span>Escala do app<output>{Math.round(p.appearance.appScale*100)}%</output></span><input aria-label="Escala do app" type="range" min="0.8" max="1.6" step="0.05" value={p.appearance.appScale} onChange={e => appearance({appScale:Number(e.target.value)})}/></label>
           <label className="pm-range-field"><span>Tamanho da interface<output>{p.appearance.uiSize}px</output></span><input aria-label="Tamanho da interface" type="range" min="10" max="20" value={p.appearance.uiSize} onChange={e => appearance({uiSize:Number(e.target.value)})}/></label>
           <label className="pm-range-field"><span>Tamanho do editor<output>{p.appearance.editorSize}px</output></span><input aria-label="Tamanho do editor" type="range" min="11" max="32" value={p.appearance.editorSize} onChange={e => appearance({editorSize:Number(e.target.value)})}/></label>

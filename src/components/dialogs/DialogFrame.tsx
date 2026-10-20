@@ -1,5 +1,5 @@
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
-import { X, type LucideIcon } from 'lucide-react';
+import { Info, X, type LucideIcon } from 'lucide-react';
 import {useInterfaceMotion} from '../../features/workspace/graphics-motion';
 
 const Presence = createContext(true);
@@ -76,6 +76,18 @@ export function DialogFrame({ title, subtitle, icon: Icon, children, footer, nav
   </dialog>;
 }
 
-export function DialogSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return <section className="pm-dialog-section"><header><h3>{title}</h3>{hint && <p>{hint}</p>}</header>{children}</section>;
+export function SettingsHeading({ title, titleId, help }: { title: string; titleId?: string; help: ReactNode }) {
+  const helpId = useId();
+  const [expanded, setExpanded] = useState(false);
+  return <div className="pm-settings-heading">
+    <div className="pm-settings-heading-row"><h3 id={titleId}>{title}</h3>
+      <button type="button" className="pm-info-toggle" aria-label={`Informações sobre ${title}`} aria-expanded={expanded} aria-controls={helpId}
+        onClick={() => setExpanded(value => !value)}><Info size={16} aria-hidden="true"/></button>
+    </div>
+    <div id={helpId} className="pm-settings-help" hidden={!expanded}>{help}</div>
+  </div>;
+}
+
+export function DialogSection({ title, hint, help, children }: { title: string; hint?: string; help?: ReactNode; children: ReactNode }) {
+  return <section className="pm-dialog-section"><header>{help ? <SettingsHeading title={title} help={help}/> : <h3>{title}</h3>}{hint && <p>{hint}</p>}</header>{children}</section>;
 }
