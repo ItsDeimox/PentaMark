@@ -1,0 +1,17 @@
+/* 2.13.1: clickable surfaces are clear again. The shader can illuminate an
+   edge, but must not place a tinted rectangle behind each control. */
+.pm-shell[data-theme] :is(
+  .pm-sidebar button,
+  .pm-command-bar button,
+  .pm-workspace-panel button,
+  .pm-context-menu button,
+  .pm-copy-path-submenu button,
+  .pm-quick-open-results button,
+  .pm-selection-tools button,
+  .pm-preferences-nav button,
+  .pm-dialog button:not(.primary):not(.danger)
+) {
+  background: transparent !important;
+}
+/* Preserve semantic selection via icon/text colors and the slim active-file
+   rail, as well as blur, focus rings and locally lit optical edges. */

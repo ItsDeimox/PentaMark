@@ -27,7 +27,7 @@ void main(){
  float grain=(hash(floor(p*1.2))-.5)*.008;
  // A single edge, with the same local falloff as Checkpoint's controls.
  float edge=(.035+radial*(control?.88:.38))*rim;
- float reflection=radial*(spread*(control?.15:.024)+.012)*quiet;
+ float reflection=radial*(spread*(control?.05:.024)+(control?0.:.012))*quiet;
  float wire=0.,aura=0.,spectrum=0.;
  if(!control){
    // Subpixel refraction through the static microtexture, not a repeated tile.
@@ -48,7 +48,7 @@ void main(){
  float plasma=.78+.22*sin(p.x*.047+p.y*.015+length(delta)*.020);
  float circuit=(wire*(.008+radial*.58*plasma)+aura*radial*.085)*quiet;
  float sweep=(uReveal>.001&&uReveal<.999)?exp(-abs(p.x-front)*.65)*.12:0.;
- float body=(control?.035:uKind>1.5?.07:.11)+grain;
+ float body=control?0.:(uKind>1.5?.07:.11)+grain;
  float optical=edge+reflection+circuit+sweep;
  float alpha=clamp(body+optical,0.,.92)*coverage;
  vec3 glass=vec3(.074,.082,.082)+uAccent*.055;
