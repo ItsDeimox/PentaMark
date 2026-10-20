@@ -1,5 +1,6 @@
 import { useId, type Dispatch, type SetStateAction } from 'react';
 import type { Appearance, GraphicsPreset } from '../../domain/types';
+import { SettingsHeading } from '../../components/dialogs/DialogFrame';
 import { applyGraphicsPreset, detectGraphicsCapabilities, recommendGraphicsPreset, resolveGraphics, type GraphicsCapabilities } from './graphics-policy';
 import './graphics.css';
 
@@ -26,9 +27,10 @@ export function GraphicsSettings({ appearance, setAppearance, capabilities }: {
   const recommendation = recommendGraphicsPreset(capabilities ?? detectGraphicsCapabilities());
   const update = (patch: Partial<Appearance>) => setAppearance(current => ({ ...current, ...patch, graphicsPreset: 'custom' }));
   return <section className="pm-graphics-settings" aria-labelledby={`${id}-title`}>
-    <h3 id={`${id}-title`}>Gráficos e desempenho</h3>
-    <p>Controle o custo visual sem mudar seu tema ou sua tipografia. Efeitos desligados liberam seus renderizadores.</p>
-    <p>O Flat antigo foi otimizado para o perfil Econômico. Você pode reativar qualquer efeito em Personalizado.</p>
+    <SettingsHeading title="Gráficos" titleId={`${id}-title`} help={<>
+      <ul>{PRESETS.map(preset => <li key={preset.id}><strong>{preset.label}:</strong> {preset.description}</li>)}</ul>
+      <ul>{TOGGLES.map(([key, , label, hint]) => <li key={key}><strong>{label}:</strong> {hint}</li>)}</ul>
+    </>}/>
     <label className="pm-graphics-preset">Perfil gráfico
       <select value={appearance.graphicsPreset || 'custom'} onChange={event => {
         const preset = event.target.value as GraphicsPreset;
@@ -36,19 +38,18 @@ export function GraphicsSettings({ appearance, setAppearance, capabilities }: {
         else setAppearance(current => applyGraphicsPreset(current, preset));
       }}>{PRESETS.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select>
     </label>
-    <p>{PRESETS.find(preset => preset.id === (appearance.graphicsPreset || 'custom'))?.description}</p>
     <fieldset><legend>Material da interface</legend>
       {(['flat', 'acrylic'] as const).map(mode => <label key={mode}>
         <input type="radio" name={`${id}-material`} checked={appearance.graphicsMode === mode}
           onChange={() => update({ graphicsMode: mode })}/>{mode === 'flat' ? 'Flat' : 'Acrílico'}
       </label>)}
     </fieldset>
-    <div className="pm-graphics-toggles">{TOGGLES.map(([key, resolvedKey, label, hint]) => <div key={key}>
-      <label><input type="checkbox" checked={resolved[resolvedKey]} aria-describedby={`${id}-${key}`}
+    <div className="pm-graphics-toggles">{TOGGLES.map(([key, resolvedKey, label]) => <div key={key}>
+      <label><input type="checkbox" checked={resolved[resolvedKey]}
         onChange={event => update({ [key]: event.target.checked })}/>{label}</label>
-      <small id={`${id}-${key}`}>{hint}</small>
     </div>)}</div>
-    <p>Recomendação para este aparelho: <strong>{recommendation === 'economical' ? 'Econômico' : 'Equilibrado'}</strong>. Suas escolhas ficam salvas; a recomendação não é reaplicada automaticamente.</p>
-    <button type="button" onClick={() => setAppearance(current => applyGraphicsPreset(current, recommendation))}>Aplicar recomendação</button>
+    <div className="pm-graphics-recommendation"><p>Recomendado: <strong>{recommendation === 'economical' ? 'Econômico' : 'Equilibrado'}</strong></p>
+      <button type="button" onClick={() => setAppearance(current => applyGraphicsPreset(current, recommendation))}>Aplicar recomendação</button>
+    </div>
   </section>;
 }
