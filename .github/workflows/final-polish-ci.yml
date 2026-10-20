@@ -68,13 +68,22 @@ jobs:
           source=previous.read_text()
           marker="  await page.keyboard.press('Escape');\n  const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});"
           assert source.count(marker)==1
-          source=source.replace(marker,"  await page.keyboard.press('Escape');\n  await expect(page.getByRole('dialog',{name:'Ferramentas e ações'})).not.toBeVisible();\n  const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});\n  await editor.click();\n  await expect(page.locator('.pm-live-codemirror.cm-focused')).toBeVisible();")
+          source=source.replace(marker,"  await page.keyboard.press('Escape');\n  await expect(page.getByRole('dialog',{name:'Ferramentas e ações'})).not.toBeVisible();\n  const editor = page.getByRole('textbox', {name:'Editor Markdown em Live Preview'});\n  await editor.click();\n  await expect(page.locator('.pm-live-codemirror .cm-editor.cm-focused')).toBeVisible();")
           previous.write_text(source)
+          # Check the same real editor focus handshake for the main visual regression.
+          final=Path('tests/final-visual-polish.spec.mjs')
+          source=final.read_text()
+          marker="  await page.keyboard.press('Escape');\n  await page.getByRole('textbox',{name:'Editor Markdown em Live Preview'}).focus();"
+          assert source.count(marker)==1
+          source=source.replace(marker,"  await page.keyboard.press('Escape');\n  await expect(page.getByRole('dialog',{name:'Ferramentas e ações'})).not.toBeVisible();\n  const editor=page.getByRole('textbox',{name:'Editor Markdown em Live Preview'});\n  await editor.click();\n  await expect(page.locator('.pm-live-codemirror .cm-editor.cm-focused')).toBeVisible();\n  await editor.focus();")
+          final.write_text(source)
           PY
           git diff --check
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npx playwright install --with-deps chromium
+      - name: Focused selection regressions
+        run: npx playwright test --grep "selected text glows|text column stays centered"
       - run: npx playwright test
       - name: Persist only validated source to the review branch
         id: publish
