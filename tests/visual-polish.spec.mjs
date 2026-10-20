@@ -52,7 +52,7 @@ test('selected text glows without reflow; reduced motion makes the energy static
   expect(await drawn.evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
 });
 
-test('the selected Live mode preserves blur on a clear background and the close X stays aligned', async ({page}) => {
+test('the selected Live mode keeps a blurred glass backplate and the close X stays aligned', async ({page}) => {
   await editorReady(page);
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
   await page.getByRole('button',{name:'Acrílico',exact:true}).click();
@@ -62,7 +62,7 @@ test('the selected Live mode preserves blur on a clear background and the close 
   for (const button of [active,idle]) {
     const result = await button.evaluate(el=>({filter:getComputedStyle(el).backdropFilter, bg:getComputedStyle(el).backgroundColor}));
     expect(result.filter).toContain('blur(');
-    expect(result.bg).toBe('rgba(0, 0, 0, 0)');
+    expect(result.bg).not.toBe('rgba(0, 0, 0, 0)');
   }
   const heading=page.locator('.pm-workspace-panel-heading h2');
   const close=page.getByRole('button',{name:'Fechar Ferramentas e ações'});

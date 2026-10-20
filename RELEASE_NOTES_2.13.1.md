@@ -1,6 +1,6 @@
 # PentaMark 2.13.1: controles transparentes
 
-Uma correção visual pontual da 2.13.0. A pedido do autor, removemos os preenchimentos coloridos atrás de botões e opções clicáveis, incluindo hover, arquivos selecionados e os modos Live, Código, Leitura e Dividido.
+Esta versão removeu os preenchimentos coloridos atrás de botões e opções clicáveis, incluindo hover, arquivos selecionados e os modos Live, Código, Leitura e Dividido. A remoção total excedeu o ajuste de fundo solicitado pelo autor e foi corrigida na 2.13.2.
 
 - Botões de navegação, menu contextual, barra de seleção e opções ficam sem preenchimento colorido em Flat e Acrílico.
 - A luz suave nas bordas do shader foi mantida, mas o corpo óptico do botão não cria um fundo tingido.
