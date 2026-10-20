@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './energy-fixture.mjs';
 
 // Samples world coordinates, so moving the raster with the pointer cannot pass.
 async function lightNear(page,x,y,radius=100){
@@ -9,7 +9,7 @@ async function lightNear(page,x,y,radius=100){
       const left=Math.max(0,Math.floor((x-radius-b.x)*sx)),top=Math.max(0,Math.floor((y-radius-b.y)*sy));
       const right=Math.min(c.width,Math.ceil((x+radius-b.x)*sx)),bottom=Math.min(c.height,Math.ceil((y+radius-b.y)*sy));
       if(right<=left||bottom<=top)continue;
-      const data=c.getContext('2d').getImageData(left,top,right-left,bottom-top).data;
+      const data=window.readEnergyPixels(c,left,top,right-left,bottom-top);
       for(let i=3;i<data.length;i+=4)peak=Math.max(peak,data[i]);
     }
     return peak;
@@ -33,13 +33,19 @@ test('ambient lights follow the former perimeter circuits, not local mesh cells'
   await page.goto('/');
   await expect(page.locator('.pm-signal-packet').first()).toBeAttached();
   const travel=await page.locator('.pm-signal-packet').first().evaluate(el=>{
-    const frames=el.getAnimations()[0].effect.getKeyframes();
-    const points=frames.map(f=>new DOMMatrix(f.transform));
-    return {spanX:Math.max(...points.map(p=>p.m41))-Math.min(...points.map(p=>p.m41)),
-      spanY:Math.max(...points.map(p=>p.m42))-Math.min(...points.map(p=>p.m42))};
+    if(!(el instanceof SVGPathElement))return {spanX:0,spanY:0,travels:false};
+    const bounds=el.getBBox(),animation=el.getAnimations()[0];
+    animation.pause();animation.currentTime=0;
+    const before=getComputedStyle(el).strokeDashoffset;
+    animation.currentTime=8000;
+    return {spanX:bounds.width,spanY:bounds.height,
+      travels:before!==getComputedStyle(el).strokeDashoffset};
   });
+  expect(travel.travels).toBe(true);
   expect(travel.spanY).toBeGreaterThan(700);
   expect(travel.spanX).toBeGreaterThan(350);
+  const dash=await page.locator('.pm-signal-packet').first().evaluate(el=>parseFloat(getComputedStyle(el).strokeDasharray));
+  expect(dash).toBe(15); // Reference 2.13.9: a travelling line, not the earlier 3-unit dot.
 });
 
 test('wide trail crossing tile boundaries keeps both sides illuminated',async({page})=>{
@@ -54,6 +60,8 @@ test('wide trail crossing tile boundaries keeps both sides illuminated',async({p
     expect(await lightNear(page,x,480,20)).toBeGreaterThan(5);
     expect(await lightNear(page,x,544,20)).toBeGreaterThan(5);
   }
+  const densities=await page.locator('.pm-energy-layer').evaluateAll(nodes=>nodes.map(c=>c.width/c.getBoundingClientRect().width));
+  expect(densities.every(d=>Math.abs(d-Math.min(2,1))<.01)).toBe(true);
 });
 
 test('resuming after decay or a drag never connects to stale coordinates',async({page})=>{

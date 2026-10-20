@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './energy-fixture.mjs';
 
 // Removing cursor injection, decay, or the reduced-motion listener must fail this.
 test('energy fragments follow the pointer and settle without moving content', async ({page}, info) => {
@@ -15,7 +15,7 @@ test('energy fragments follow the pointer and settle without moving content', as
   const energy = () => layer.evaluateAll(layers => {
     let peak=0;
     for(const c of layers){
-      const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+      const pixels=window.readEnergyPixels(c);
       for(let i=3;i<pixels.length;i+=4)peak=Math.max(peak,pixels[i]);
     }
     return peak/255;

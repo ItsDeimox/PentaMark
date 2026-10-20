@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './energy-fixture.mjs';
 
 async function settings(page) {
   await page.getByRole('button',{name:'Ferramentas e ações',exact:true}).click();
@@ -8,13 +8,13 @@ async function settings(page) {
 const peak = page => page.locator('.pm-energy-layer').evaluateAll(layers=>{
   let max=0;
   for(const c of layers){
-    const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    const pixels=window.readEnergyPixels(c);
     for(let i=3;i<pixels.length;i+=4)max=Math.max(max,pixels[i]);
   }
   return max;
 });
 const pulsePosition = page => page.locator('.pm-signal-packet').first().evaluate(el=>{
-  const b=el.getBoundingClientRect();return [b.x,b.y];
+  return getComputedStyle(el).strokeDashoffset;
 });
 
 // Missing independent state, ignored switches or coupling to graphics fails this.
@@ -138,9 +138,10 @@ test('an initially inactive window keeps effects paused after resize',async({pag
   expect(await page.locator('.pm-signal-packet').first().evaluate(el=>el.getAnimations()[0].playState)).toBe('paused');
 });
 
-test('hover raster stays local and sharp at 4K/2x; idle and reduced motion stop drawing',async({browser,baseURL})=>{
-  const context=await browser.newContext({viewport:{width:3840,height:2160},deviceScaleFactor:2});
-  const page=await context.newPage();
+test.describe('HiDPI',()=>{
+test.use({deviceScaleFactor:2});
+test('hover stays sharp at 4K/2x; idle and reduced motion stop drawing',async({page})=>{
+  await page.setViewportSize({width:3840,height:2160});
   await page.addInitScript(()=>{
     window.energyClears=0;
     const clear=CanvasRenderingContext2D.prototype.clearRect;
@@ -148,8 +149,13 @@ test('hover raster stays local and sharp at 4K/2x; idle and reduced motion stop 
       if(this.canvas.classList.contains('pm-energy-layer'))window.energyClears++;
       return clear.apply(this,args);
     };
+    const glClear=WebGL2RenderingContext.prototype.clear;
+    WebGL2RenderingContext.prototype.clear=function(...args){
+      if(this.canvas.classList.contains('pm-energy-layer'))window.energyClears++;
+      return glClear.apply(this,args);
+    };
   });
-  await page.goto(baseURL);
+  await page.goto('/');
   await expect(page.getByRole('textbox',{name:'Editor Markdown em Live Preview'})).toBeVisible();
   await page.mouse.move(1900,800);
   await page.mouse.move(2100,1000,{steps:8});
@@ -157,13 +163,10 @@ test('hover raster stays local and sharp at 4K/2x; idle and reduced motion stop 
   const sizes=await page.locator('.pm-energy-layer').evaluateAll(layers=>layers.map(c=>{
     const r=c.getBoundingClientRect();return {w:c.width,h:c.height,cssW:r.width,cssH:r.height};
   }));
-  expect(sizes.length).toBeLessThanOrEqual(4);
-  expect(sizes.reduce((sum,s)=>sum+s.w*s.h,0)).toBeLessThanOrEqual(4*1024*1024);
+  expect(sizes.length).toBe(1);
   for(const size of sizes){
-  expect(size.cssW).toBeLessThanOrEqual(512);
-  expect(size.cssH).toBeLessThanOrEqual(512);
   expect(size.w/size.cssW).toBeGreaterThanOrEqual(1.9);
-  expect(size.w*size.h).toBeLessThanOrEqual(1024*1024);
+  expect(size.w*size.h).toBeLessThanOrEqual(3840*2160*4);
   }
   await expect.poll(()=>peak(page),{timeout:5000}).toBe(0);
   const clears=await page.evaluate(()=>window.energyClears);
@@ -175,7 +178,7 @@ test('hover raster stays local and sharp at 4K/2x; idle and reduced motion stop 
   const position=await pulsePosition(page);
   await page.waitForTimeout(200);
   expect(await pulsePosition(page)).toEqual(position);
-  await context.close();
+});
 });
 
 // Diagnostic compositing isolation only: hidden layers can still run their solver.

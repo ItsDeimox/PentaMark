@@ -1,9 +1,9 @@
 type Point = {x:number;y:number};
 export type EnergyMesh = {points:Point[];edges:[number,number][];path:string;cells?:number[][]};
 
-/** Congruent symmetric pentagons in alternating rows, in screen pixels. */
+/** Regular shared-edge hexagons, measured in screen pixels. */
 export function createEnergyMesh(width=1600,height=1000):EnergyMesh {
-  const pitch=48,wall=28,roof=14,band=2*wall+roof;
+  const radius=26,pitchY=Math.sqrt(3)*radius;
   const points:Point[]=[],edges:[number,number][]=[],cells:number[][]=[];
   const vertices=new Map<string,number>(),connections=new Set<string>();
   const addCell=(polygon:Point[])=>{
@@ -19,37 +19,41 @@ export function createEnergyMesh(width=1600,height=1000):EnergyMesh {
       if(a!==b&&!connections.has(key)){connections.add(key);edges.push([a,b]);}
     }
   };
-  // A row and its half-pitch shifted reflection share the entire zigzag.
-  // Consecutive bands share flat bases, without T-junctions or random vertices.
-  for(let row=-1;row<=Math.ceil(height/band);row++){
-    const y=row*band,shift=((row%2)+2)%2*pitch/2;
-    for(let col=-2;col<=Math.ceil(width/pitch)+1;col++){
-      const x=col*pitch+shift;
-      addCell([{x,y},{x:x+pitch,y},{x:x+pitch,y:y+wall},
-        {x:x+pitch/2,y:y+wall+roof},{x,y:y+wall}]);
-      const dx=x+pitch/2,base=y+band;
-      addCell([{x:dx,y:base},{x:dx+pitch,y:base},{x:dx+pitch,y:base-wall},
-        {x:dx+pitch/2,y:base-wall-roof},{x:dx,y:base-wall}]);
+  for(let col=-1;col<=Math.ceil(width/(radius*1.5))+1;col++){
+    for(let row=-1;row<=Math.ceil(height/pitchY)+1;row++){
+      const x=col*radius*1.5,y=(row+(Math.abs(col)%2)*.5)*pitchY;
+      addCell(Array.from({length:6},(_,i)=>({
+        x:x+radius*Math.cos(i*Math.PI/3),y:y+radius*Math.sin(i*Math.PI/3),
+      })));
     }
   }
   const path=edges.map(([a,b])=>`M${points[a].x.toFixed(1)} ${points[a].y.toFixed(1)}L${points[b].x.toFixed(1)} ${points[b].y.toFixed(1)}`).join('');
   return {points,edges,path,cells};
 }
 
-/** Diffusion along actual connections; no moving vertices or per-frame DOM work. */
+/** Damped spring wave adapted from Checkpoint's PanelEnergyField.
+ * Velocity carries the released impulse outward; glow retains its afterimage.
+ * The reference lattice is rigid: brightness, not clock-driven jitter, moves.
+ */
 export class EnergyNetwork {
   readonly values:Float32Array;
-  private readonly delta:Float32Array;
-  private readonly decayRates:Float32Array;
-  private readonly attenuation:Float32Array;
-  private readonly positions:Point[];
+  readonly height:Float32Array;
+  readonly velocity:Float32Array;
+  private readonly force:Float32Array;
+  private readonly springs:Float32Array;
+  private accumulator=0;
+  private age=0;
   active=false;
   constructor(readonly mesh:EnergyMesh){
     this.values=new Float32Array(mesh.points.length);
-    this.delta=new Float32Array(mesh.points.length);
-    this.decayRates=Float32Array.from(mesh.points,(_,i)=>3.3+((Math.imul(i+1,2654435761)>>>0)%1024)/1024*1.1);
-    this.attenuation=new Float32Array(mesh.points.length);
-    this.positions=mesh.points.map(p=>({...p}));
+    this.height=new Float32Array(mesh.points.length);
+    this.velocity=new Float32Array(mesh.points.length);
+    this.force=new Float32Array(mesh.points.length);
+    this.springs=Float32Array.from(mesh.edges,([a,b])=>{
+      const p=mesh.points[a],q=mesh.points[b];
+      const weight=.86+.14*(((Math.imul(a*197+b*73+11,1664525)+1013904223)>>>0)/4294967296);
+      return Math.min(900,600*600*weight/Math.max(1,(p.x-q.x)**2+(p.y-q.y)**2));
+    });
   }
   inject(x:number,y:number){
     if(!Number.isFinite(x)||!Number.isFinite(y))return;
@@ -58,37 +62,34 @@ export class EnergyNetwork {
       const d=(p.x-x)**2+(p.y-y)**2;
       if(d<distance){distance=d;nearest=i;}
     });
-    this.values[nearest]=Math.min(2,this.values[nearest]+2);
-    this.active=true;
+    this.velocity[nearest]=Math.min(28,this.velocity[nearest]+5);
+    this.values[nearest]=Math.min(2.5,Math.abs(this.velocity[nearest])*.55);
+    this.active=true;this.age=0;
   }
   step(dt:number){
     if(!this.active||!Number.isFinite(dt)||dt<=0)return;
-    const steps=Math.ceil(Math.min(dt,.1)/(1/120)),h=Math.min(dt,.1)/steps;
-    for(let i=0;i<this.attenuation.length;i++)this.attenuation[i]=Math.exp(-h*this.decayRates[i]);
+    const h=1/120;
+    this.accumulator=Math.min(this.accumulator+dt,h*8);
+    const steps=Math.floor((this.accumulator+1e-10)/h);
+    const decay=Math.exp(-4.4*h),afterglow=Math.exp(-3.6*h);
     for(let s=0;s<steps;s++){
-      this.delta.fill(0);
-      for(const [a,b] of this.mesh.edges){
-        const flow=(this.values[b]-this.values[a])*h*24;
-        this.delta[a]+=flow;this.delta[b]-=flow;
+      this.force.fill(0);
+      for(let e=0;e<this.mesh.edges.length;e++){
+        const [a,b]=this.mesh.edges[e],f=(this.height[b]-this.height[a])*this.springs[e];
+        this.force[a]+=f;this.force[b]-=f;
       }
       let peak=0;
       for(let i=0;i<this.values.length;i++){
-        this.values[i]=Math.max(0,(this.values[i]+this.delta[i])*this.attenuation[i]);
+        this.velocity[i]=(this.velocity[i]+(this.force[i]-this.height[i]*12)*h)*decay;
+        this.height[i]+=this.velocity[i]*h;
+        this.values[i]=Math.max(this.values[i]*afterglow,Math.min(2.5,Math.abs(this.height[i])*18+Math.abs(this.velocity[i])*.55));
         peak=Math.max(peak,this.values[i]);
       }
-      if(peak<.002){this.clear();break;}
+      this.age+=h;
+      if(this.age>3&&peak<.002){this.clear();return;}
     }
+    this.accumulator=Math.max(0,this.accumulator-steps*h);
   }
-  /** Shared vertices deform once, so neighboring faces never separate. */
-  samplePositions(seconds:number){
-    for(let i=0;i<this.positions.length;i++){
-      const p=this.mesh.points[i],target=this.positions[i];
-      const strength=Math.min(1,Math.sqrt(this.values[i]));
-      const phase=seconds*28+i*2.399963;
-      target.x=p.x+Math.sin(phase)*1.65*strength;
-      target.y=p.y+Math.cos(phase*.83)*1.35*strength;
-    }
-    return this.positions;
-  }
-  clear(){this.values.fill(0);this.active=false;}
+  samplePositions(_seconds:number){return this.mesh.points;}
+  clear(){this.values.fill(0);this.height.fill(0);this.velocity.fill(0);this.force.fill(0);this.accumulator=0;this.age=0;this.active=false;}
 }
