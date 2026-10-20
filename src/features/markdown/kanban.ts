@@ -1,3 +1,4 @@
+import { requestConfirmation } from "../../components/dialogs/confirmation-request";
 import type React from "react";
 import { marked } from "marked";
 import type { KanbanDialogState } from "../../domain/types";
@@ -95,7 +96,10 @@ export function handleKanbanAction(
   if (action === "edit-column") {
     openDialog({ kind: "column", title: "Renomear lista", value: column.title, onSave: (value) => { column.title = value.trim() || column.title; save(); } });
   } else if (action === "remove-column") {
-    if (window.confirm(`Remover a lista "${column.title}" e seus ${column.cards.length} cartões?`)) { board.columns.splice(columnIndex, 1); if (!board.columns.length) board.columns.push({ title: "Lista", cards: [] }); save(); }
+    void requestConfirmation(boardElement, { title: "Remover lista", message: `Remover a lista "${column.title}" e seus ${column.cards.length} cartões?`, accept: "Remover lista", danger: true }).then(approved => {
+      if (!approved || !boardElement.isConnected || decodeSource(boardElement.dataset.pmOriginal) !== source) return;
+      board.columns.splice(columnIndex, 1); if (!board.columns.length) board.columns.push({ title: "Lista", cards: [] }); save();
+    });
   } else if (action === "add-card") {
     openDialog({ kind: "card", title: `Novo cartão · ${column.title}`, value: "", onSave: (value, task) => { if (value.trim()) { column.cards.push({ text: value.trim(), task, checked: false }); save(); } } });
   } else {
@@ -103,7 +107,12 @@ export function handleKanbanAction(
     if (!card) return true;
     if (action === "edit-card") {
       openDialog({ kind: "card", title: `Editar cartão · ${column.title}`, value: card.text, task: card.task, onSave: (value, task) => { card.text = value.trim() || card.text; card.task = task; if (!task) card.checked = false; save(); } });
-    } else if (action === "remove-card" && window.confirm("Remover este cartão?")) { column.cards.splice(cardIndex, 1); save(); }
+    } else if (action === "remove-card") {
+      void requestConfirmation(boardElement, { title: "Remover cartão", message: `Remover este cartão?\n${card.text}`, accept: "Remover cartão", danger: true }).then(approved => {
+        if (!approved || !boardElement.isConnected || decodeSource(boardElement.dataset.pmOriginal) !== source) return;
+        column.cards.splice(cardIndex, 1); save();
+      });
+    }
   }
   return true;
 }

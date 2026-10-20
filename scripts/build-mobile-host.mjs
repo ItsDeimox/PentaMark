@@ -1,9 +1,10 @@
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputRoot = join(projectRoot, "mobile-dist");
+const { version } = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8"));
 
 await rm(outputRoot, { recursive: true, force: true });
 await Promise.all([
@@ -21,7 +22,7 @@ await Promise.all([
 
 await writeFile(join(outputRoot, "package.json"), `${JSON.stringify({
   name: "pentamark-mobile-host",
-  version: "2.8.0",
+  version,
   private: true,
   type: "module",
   scripts: { start: "node local/server.mjs" },

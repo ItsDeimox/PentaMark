@@ -1,15 +1,14 @@
 name: Build e publicar PentaMark
 on:
   push:
-    branches: [main, agent/approved-visual-guide]
+    branches: [main, agent/approved-visual-guide, agent/visual-acrylic]
     paths:
       - '.github/workflows/publish-app.yml'
       - 'package.json'
+      - 'RELEASE_NOTES_*.md'
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   package:
     name: Windows portatil e hosts
@@ -29,6 +28,9 @@ jobs:
         run: npm run desktop:build -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verificar inicializacao nativa no Windows
+        shell: pwsh
+        run: ./scripts/verify-windows-app.ps1
       - name: Compilar host Android
         run: npm run mobile:bundle
       - name: Criar os tres pacotes
@@ -43,9 +45,11 @@ jobs:
           Compress-Archive -Path 'mobile-dist/*' -DestinationPath $android -CompressionLevel Optimal -Force
           $exe = "desktop-dist/PentaMark-Desktop-$version-Windows.exe"
           if (!(Test-Path $exe)) { throw "Executavel nao encontrado: $exe" }
-          if ((Get-Item $exe).Length -lt 40000000) { throw "Executavel muito pequeno." }
-          if (!(Test-Path $ready) -or !(Test-Path $android)) { throw 'Pacotes incompletos.' }
+          if ((Get-Item $exe).Length -lt 40000000) { throw 'Executavel incompleto.' }
           Get-Item $exe, $ready, $android | Select-Object Name, Length | Format-Table -AutoSize
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @{ version=$version; commit=$env:GITHUB_SHA; executable=(Split-Path $exe -Leaf); sha256=$hash; bytes=(Get-Item $exe).Length; nativeSmoke='passed' } | ConvertTo-Json | Set-Content 'release-packages/build-manifest.json' -Encoding utf8NoBOM
+          Get-Content 'release-packages/build-manifest.json'
       - name: Publicar artifacts para verificacao
         uses: actions/upload-artifact@v4
         with:
@@ -53,6 +57,7 @@ jobs:
           path: |
             desktop-dist/*.exe
             release-packages/*.zip
+            release-packages/build-manifest.json
           retention-days: 7
           if-no-files-found: error
       - name: Criar release e anexar pacotes
@@ -64,10 +69,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
           $tag = "v$version"
+          $notes = "RELEASE_NOTES_$version.md"
+          if (!(Test-Path $notes)) { throw "Notas de versao ausentes: $notes" }
           $releases = gh release list --repo $env:GITHUB_REPOSITORY --json tagName --limit 100 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel consultar releases.' }
           if ($releases.tagName -contains $tag) { Write-Host "Release $tag ja publicado."; exit 0 }
           $exe = "desktop-dist/PentaMark-Desktop-$version-Windows.exe"
           $ready = "release-packages/PentaMark-$version-Pronto.zip"
           $android = "release-packages/PentaMark-$version-Mobile-Host-Android.zip"
-          gh release create $tag $exe $ready $android --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "PentaMark $tag - Interface aprovada Pentagory" --notes-file "RELEASE_NOTES_2.8.0.md" --latest
+          gh release create $tag $exe $ready $android --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "PentaMark $tag - Interface Pentagory" --notes-file $notes --latest
           if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar $tag" }

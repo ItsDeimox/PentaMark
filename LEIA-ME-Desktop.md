@@ -1,42 +1,35 @@
-# PentaMark Desktop 2.8.0
+# PentaMark Desktop 2.13.2
 
-## Como abrir
+## Abrir e atualizar
 
-1. Extraia o ZIP inteiro.
-2. Abra a pasta `PentaMark`.
-3. Execute `PentaMark.exe`.
+O arquivo portátil `PentaMark-Desktop-2.13.2-Windows.exe` abre diretamente no Windows, sem instalar Node.js ou iniciar outro servidor. Feche a versão anterior antes de abrir esta. Faça backup da pasta inteira do cofre antes de atualizar. O executável não possui assinatura digital.
 
-Não é necessário instalar Python, Node.js ou abrir outro servidor. O próprio aplicativo hospeda o cofre para a rede local e para o Radmin VPN.
+O próprio aplicativo hospeda seus arquivos no computador. Notas, anexos, histórico e lixeira permanecem no cofre; as preferências visuais anteriores são preservadas.
 
-## Compartilhar
+## Acrílico e circuitos
 
-1. No computador host, abra o PentaMark.
-2. Para celular ou acesso fora de casa, execute `Configurar-Acesso-Remoto-Tailscale.bat` uma vez.
-3. Clique em **Compartilhar** e envie o endereço HTTPS do Tailscale. Na mesma rede Wi-Fi, o endereço de rede local também funciona.
-4. No celular, abra o endereço no navegador e use **Instalar app** ou **Adicionar à Tela de Início**.
+No menu dos três pontos, escolha **Material > Acrílico**. A luz do cursor revela os circuitos discretos sob o material. Conta, configurações, compartilhamento, conexões, celular, revisão de conflitos, Kanban e edição de blocos compartilham a mesma identidade. O modo **Flat** permanece disponível sem os canvases do material.
 
-Use **Conta** para escolher apelido e foto. O botão **Conectados** mostra quem está online e permite ao host definir Leitor, Editor ou Admin. Os cursores remotos aparecem inclusive no Live Preview; acessos da IA ficam marcados como **IA / MCP**.
+**Configurações** organiza as opções em **Aparência**, **Tipografia**, **Cofre e host** e **MCP**. A prévia visual é imediata; **Cancelar** restaura o visual anterior. As opções do host só são gravadas ao salvar.
 
-Em **Configurações > Host local**, o host pode ativar **Bloquear edição simultânea**. Quando essa regra está ligada, apenas a primeira pessoa no arquivo consegue editá-lo; as demais continuam podendo visualizar.
+## Perfil e colaboração
 
-## Trocar de cofre
+Use **Conta** para escolher apelido e foto. É um perfil local, não uma conta na nuvem. **Conectados** mostra as sessões e permite ao host definir Leitor, Editor ou Admin. As permissões da colaboração não foram substituídas nesta atualização.
 
-Clique com o botão direito no nome do cofre no topo, use o menu `…` ou abra **Configurações > Cofre** e escolha **Abrir outro**. Selecione qualquer pasta com arquivos `.md`; o PentaMark reinicia sozinho usando essa pasta.
+Para compartilhar, abra **Compartilhar** e copie um endereço acessível ao outro dispositivo. Mantenha o host ligado. O painel **Celular e acesso remoto** contém as instruções de instalação e acesso. Não exponha a porta do host diretamente na internet.
 
-Wikilinks como `[[Nota|apelido]]`, embeds como `![[assets/imagem.png]]`, áudios, vídeos, PDFs, propriedades YAML, callouts, Kanban e blocos `mermaid` são reconhecidos no Preview e no Live Preview. Assets aparecem na árvore e abrem no workspace, com zoom por scroll e movimento por arraste para imagens.
+## Diretório do cofre
 
-O Live Preview mantém a leitura estável ao clicar e selecionar; use o modo Editor Markdown para acessar explicitamente os marcadores da fonte. O Kanban permite criar, editar, remover e arrastar cartões entre colunas, alternar o layout horizontal/vertical e recolher o quadro inteiro.
+Use **Configurações > Cofre e host > Mostrar diretório** para abrir a localização atual no Explorer. **Abrir outro cofre** permite escolher outra pasta. No menu de contexto de uma nota, pasta ou asset, use **Mostrar no diretório**.
 
-## Ponte IA
+## Ponte MCP
 
-O host pode ativar **Configurações > Ponte IA · Codex / MCP** e copiar a URL do Radmin. No Codex Desktop/IDE do amigo, adicione essa URL como servidor MCP do tipo **Streamable HTTP**. Assim o Codex consegue buscar, ler e editar o cofre sob demanda sem uma cópia local completa e sem chave de API adicional do PentaMark.
+**Ponte MCP** aparece diretamente no topo do menu dos três pontos. Também está disponível em **Configurações > MCP**. Abrir o painel não habilita a ponte.
 
-## Arquivos e backup
+O host precisa ativar a opção e salvar. O token fica oculto por padrão; um token novo só entra em vigor após salvar. O endereço copiado contém a credencial: compartilhe somente com clientes autorizados. A ponte permite buscar, ler, editar, mover arquivos e enviá-los à lixeira. Os arquivos continuam no host.
 
-Notas, anexos, histórico e lixeira ficam na pasta `vault` do host ou na pasta escolhida como cofre. Para fazer backup, copie essa pasta inteira.
+## Edição e segurança dos dados
 
-No aplicativo do host, clique com o botão direito em uma nota ou pasta e escolha **Abrir na pasta** para localizá-la no Explorer.
+Os blocos complexos usam um editor de fonte sobreposto, sem deslocar as linhas apenas ao entrar na edição. Aplicar uma mudança real pode alterar o tamanho do conteúdo. Alterações concorrentes são verificadas antes de aplicar. Descartes e remoções usam confirmação dentro da interface.
 
-## Atualizar
-
-Feche o aplicativo e extraia a nova versão. O PentaMark não apaga seu cofre. Mesmo assim, mantenha backup da pasta `vault` antes de atualizações importantes.
+Os testes de navegador e inicialização Windows não substituem medição na GPU do usuário nem testes prolongados em dispositivos físicos. As dependências existentes continuam com alertas de auditoria, registrados na validação do projeto; esta entrega tem escopo visual e não é uma auditoria de segurança.

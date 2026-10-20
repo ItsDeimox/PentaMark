@@ -1,0 +1,119 @@
+/* Final material tuning. Every colored surface derives from the active theme. */
+.pm-shell[data-theme] {
+  --pm-neutral-glass: rgba(13, 19, 20, .20);
+  --pm-control-glass: color-mix(in srgb, var(--pm-accent-base) 5%, rgba(12, 20, 21, .32));
+  --pm-soft-border: color-mix(in srgb, var(--pm-accent-base) 6%, rgba(207, 234, 239, .045));
+}
+.pm-shell[data-graphics="acrylic"] {
+  --pm-bg-base: #121616;
+  --pm-panel: color-mix(in srgb, var(--pm-accent-base) 3%, #171c1d);
+  --pm-panel-2: color-mix(in srgb, var(--pm-accent-base) 5%, #1a2122);
+  --pm-border: color-mix(in srgb,var(--pm-accent-base) 7%,transparent);
+  background: radial-gradient(ellipse at 10% 68%,color-mix(in srgb,var(--pm-accent-base) 4%,transparent),transparent 53%),
+              radial-gradient(ellipse at 86% 15%,color-mix(in srgb,var(--pm-accent-base) 2%,transparent),transparent 46%), #121616;
+}
+/* Flat still has structure but no hard double outlines. */
+.pm-shell[data-graphics="flat"] :is(.pm-sidebar,.pm-workspace-panel,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools,.pm-dialog) {
+  border-color: var(--pm-soft-border);
+  box-shadow: 0 14px 38px rgba(0,0,0,.12), inset 0 1px rgba(255,255,255,.018);
+}
+.pm-shell[data-graphics="flat"] :is(.pm-mode-grid button[aria-pressed="true"],.pm-material-switch button[aria-pressed="true"],.pm-note-item--active) {
+  border-color: color-mix(in srgb,var(--pm-accent-base) 11%,transparent);
+}
+/* Unified blur for idle, hover, keyboard focus, selected and checked states. */
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button,.pm-tool-action,.pm-tool-footer button,.pm-library-head button,.pm-sidebar-create button,.pm-command-bar button,.pm-quick-open-results button,.pm-context-menu button,.pm-option-row button,.pm-note-item,.pm-folder-title) {
+  background-color: var(--pm-control-glass);
+  backdrop-filter: blur(9px) saturate(1.08);
+  -webkit-backdrop-filter: blur(9px) saturate(1.08);
+  border-color: transparent;
+}
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button,.pm-tool-action,.pm-tool-footer button,.pm-library-head button,.pm-sidebar-create button,.pm-command-bar button,.pm-quick-open-results button,.pm-context-menu button,.pm-option-row button,.pm-note-item,.pm-folder-title):is(:hover,:focus-visible),
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button)[aria-pressed="true"],
+.pm-shell[data-graphics="acrylic"] .pm-note-item--active {
+  background-color: color-mix(in srgb,var(--pm-accent-base) 9%,rgba(12,20,21,.33)) !important;
+  backdrop-filter: blur(11px) saturate(1.15);
+  -webkit-backdrop-filter: blur(11px) saturate(1.15);
+  border-color: transparent !important;
+}
+.pm-shell .pm-note-item--active {
+  background-color: color-mix(in srgb,var(--pm-accent-base) 9%,rgba(15,21,22,.40)) !important;
+  box-shadow: inset 2px 0 color-mix(in srgb,var(--pm-accent-base) 60%,transparent);
+}
+.pm-shell .pm-folder-title:hover { background: color-mix(in srgb,var(--pm-accent-base) 5%,rgba(14,20,21,.18)); }
+.pm-shell[data-graphics="acrylic"] :is(.pm-sidebar,.pm-workspace-panel,.pm-context-menu,.pm-link-hover-preview,.pm-dialog) {
+  background-color: var(--pm-neutral-glass);
+}
+.pm-shell[data-graphics="acrylic"] .pm-identity-card,
+.pm-shell[data-graphics="acrylic"] :is(.pm-material-demo,.pm-client-card,.pm-option-row) {
+  background: color-mix(in srgb,var(--pm-accent-base) 4%,rgba(12,19,20,.16));
+}
+/* Selection tools are intentionally optical but not circuitry panels. */
+.pm-shell[data-graphics="acrylic"] .pm-selection-tools {
+  background: color-mix(in srgb,var(--pm-accent-base) 5%,rgba(12,18,19,.71));
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  box-shadow: 0 8px 20px rgba(0,0,0,.22);
+  border-color: color-mix(in srgb,var(--pm-accent-base) 8%,transparent);
+}
+.pm-shell[data-graphics="acrylic"] .pm-selection-tools .pm-acrylic-pane { display:none !important; }
+.pm-shell[data-graphics="acrylic"] .pm-selection-tools button:hover { background: color-mix(in srgb,var(--pm-accent-base) 11%,transparent); }
+/* Actual text selection rectangles own their geometry; never stretch a glowing
+   box over an entire line, even for multiple-line selections. */
+.pm-shell[data-graphics="acrylic"] .pm-live-codemirror .cm-selectionBackground,
+.pm-shell[data-graphics="acrylic"] .pm-live-codemirror.cm-focused .cm-selectionBackground {
+  background-color:color-mix(in srgb,var(--pm-accent-base) 13%,transparent) !important;
+  background-image:linear-gradient(115deg,transparent 31%, color-mix(in srgb,var(--pm-accent-base) 16%,transparent) 50%,transparent 69%) !important;
+  background-size:175% 100%;
+  box-shadow:inset 0 0 1px color-mix(in srgb,var(--pm-accent-base) 18%,transparent) !important;
+  border-radius:2px;
+  animation: pm-selection-whisper 4.6s linear infinite;
+}
+@keyframes pm-selection-whisper { from{background-position:145% 0}to{background-position:-145% 0} }
+.pm-shell .pm-live-codemirror ::selection { text-shadow:none !important; background:color-mix(in srgb,var(--pm-accent-base) 12%,transparent); }
+/* Customized tooltips: neutral glass, current theme for shortcut accents. */
+.pm-shell .pm-optical-tooltip {
+  background: color-mix(in srgb,var(--pm-accent-base) 5%,rgba(12,17,18,.88));
+  border-color:color-mix(in srgb,var(--pm-accent-base) 12%,transparent);
+  backdrop-filter:blur(18px) saturate(1.08);
+  -webkit-backdrop-filter:blur(18px) saturate(1.08);
+  box-shadow: 0 10px 22px rgba(0,0,0,.25);
+}
+/* Copy-path menu must be a real adjacent submenu and remain keyboard reachable. */
+.pm-shell .pm-context-menu:not(.pm-format-menu) { overflow:visible; }
+.pm-copy-path-host { position:relative; }
+.pm-shell .pm-copy-path-host > button { position:relative; }
+.pm-copy-path-host > button > svg:last-child { margin-left:auto; }
+.pm-shell .pm-copy-path-submenu {
+  position:absolute; top:0; left:calc(100% - 2px); z-index:3;
+  width:226px; padding:5px; border:1px solid var(--pm-soft-border); border-radius:7px;
+  background: color-mix(in srgb,var(--pm-accent-base) 4%,rgba(16,23,24,.93));
+  backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px);
+  box-shadow:0 16px 34px rgba(0,0,0,.34);
+  animation:pm-submenu-enter 135ms ease-out both;
+}
+.pm-copy-path-host[data-flip="true"] .pm-copy-path-submenu { left:auto; right:calc(100% - 2px); }
+.pm-copy-path-host[data-compact="true"] .pm-copy-path-submenu { left:0; right:auto; top:calc(100% - 2px); }
+.pm-copy-path-submenu button { width:100%; white-space:nowrap; }
+.pm-copy-path-submenu button:disabled { opacity:.42; }
+@keyframes pm-submenu-enter {from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:translateX(0)}}
+/* Cross-panel mouse focus restores optical control under the pointer rather
+   than leaving a stale highlight at the brand on file navigation. */
+.pm-shell .pm-note-item { contain: paint; }
+/* The writing column is centered on its own available surface in every mode. */
+.pm-shell .pm-workspace { min-width:0; }
+.pm-shell .pm-document-path { width:min(calc(100% - 48px),940px); margin-inline:auto; }
+.pm-shell .pm-live-codemirror .cm-content { width:min(calc(100% - 48px),940px); max-width:940px; margin-inline:auto; }
+.pm-shell .pm-document--preview .pm-preview-pane { padding-inline:max(24px,calc((100% - 940px) / 2)); }
+/* The line-level decode never replaces source content or changes editor layout. */
+.pm-decode-layer { position:absolute; inset:0; z-index:5; pointer-events:none; contain:paint; overflow:hidden; }
+.pm-decode-glyphs { position:absolute; display:block; overflow:hidden; white-space:pre; pointer-events:none;
+  color:var(--pm-text); text-shadow:0 0 6px color-mix(in srgb,var(--pm-accent-base) 14%,transparent);
+  opacity:.98; user-select:none; }
+.pm-decoding-original { opacity:.1 !important; filter:blur(1.5px); }
+/* Prior full-height vertical scan is replaced by the decoding overlay. */
+.pm-note-resolve { display:none !important; }
+@media(prefers-reduced-motion:reduce) {
+  .pm-decode-layer {display:none !important}
+  .pm-decoding-original {filter:none !important;opacity:1 !important}
+  .pm-shell[data-graphics="acrylic"] .pm-live-codemirror .cm-selectionBackground {animation:none!important}
+}

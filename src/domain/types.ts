@@ -33,7 +33,10 @@ export type ContextMenu =
   | { type: "blank"; x: number; y: number }
   | { type: "editor"; x: number; y: number };
 
+export type GraphicsMode = "flat" | "acrylic";
+
 export type Appearance = {
+  graphicsMode: GraphicsMode;
   theme: "pentagory" | "eclipse" | "ember" | "terminal";
   uiFont: string;
   editorFont: string;

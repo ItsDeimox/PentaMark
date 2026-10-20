@@ -5,13 +5,14 @@ import type { Appearance, FormatKind, VaultState } from "../domain/types";
 export const EMPTY_STATE: VaultState = { notes: [], assets: [], folders: [], clients: 1, connections: [], locks: [], urls: [], vaultName: "PentaMark" };
 export const DEFAULT_APPEARANCE: Appearance = {
   theme: "pentagory",
+  graphicsMode: "flat",
   uiFont: "technical",
   editorFont: "technical",
   customUiFont: "",
   customEditorFont: "",
   appScale: 1,
-  uiSize: 18,
-  editorSize: 22,
+  uiSize: 16,
+  editorSize: 20,
 };
 
 export const UI_FONTS: Record<string, string> = {

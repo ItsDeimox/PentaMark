@@ -15,7 +15,7 @@ test('new installations open the document-first live view', async ({ page }) => 
   await expect(page.locator('.pm-toolbar')).not.toBeVisible();
 });
 
-test('approved theme has square controls and a matte graphite base', async ({ page }) => {
+test('refined theme has restrained corners and a matte graphite base', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.pm-note-item').first()).toBeVisible();
   const style = await page.locator('.pm-shell').evaluate(el => ({
@@ -23,10 +23,10 @@ test('approved theme has square controls and a matte graphite base', async ({ pa
     corners: Array.from(el.querySelectorAll('.pm-note-item, .pm-search, .pm-view-switch')).map(e => getComputedStyle(e).borderRadius),
   }));
   expect(style.bg).toBe('rgb(24, 26, 27)');
-  expect(style.corners.every(v => v === '0px')).toBe(true);
+  expect(style.corners.every(v => parseFloat(v) <= 5)).toBe(true);
 });
 
-test('collapsing the tree does not move or rewrap the document', async ({ page }) => {
+test('collapsing the tree recenters without rewrapping the document', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('pentamark:view', 'live'));
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'Editor Markdown em Live Preview' });
@@ -35,7 +35,7 @@ test('collapsing the tree does not move or rewrap the document', async ({ page }
   await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
   await page.waitForTimeout(260);
   const after = await editor.boundingBox();
-  expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.x + after.width / 2 - page.viewportSize().width / 2)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
   await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();
   await page.waitForTimeout(260);
@@ -53,7 +53,7 @@ test('clicking bold near wrapping boundaries preserves the rendered block height
   const changes = [];
   for (const width of [491, 497, 503, 509, 515, 521, 527, 533]) {
     await page.locator('.pm-live-codemirror').evaluate((el, w) => { el.style.width = `${w}px`; }, width);
-    await page.locator('.pm-brand').click();
+    await page.getByRole('button', {name:'Abrir arquivo',exact:true}).focus();
     await page.waitForTimeout(100);
     const line = page.locator('.cm-line').filter({ has: page.locator('.pm-live-strong') }).first();
     const before = await line.boundingBox();
@@ -110,14 +110,18 @@ test('tools preserve all view modes and appearance preferences', async ({ page }
     await page.getByRole('button', { name: label, exact: true }).click();
   }
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
-  await expect(page.getByText('Ponte IA · Codex / MCP', { exact: true })).toBeVisible();
-  await expect(page.locator('select').first()).toHaveValue('technical');
+  const dialog = page.getByRole('dialog', { name: 'Configurações', exact: true });
+  await dialog.getByRole('tab', { name: 'MCP', exact: true }).click();
+  await expect(dialog.getByText('Streamable HTTP', { exact: true })).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Tipografia', exact: true }).click();
+  await expect(dialog.getByLabel('Fonte da interface', { exact: true })).toHaveValue('technical');
 });
 
 test('tree expansion and scroll survive collapse', async ({ page }) => {
   await page.goto('/');
   const folder = page.locator('.pm-folder-title').filter({ hasText: 'Planejamento' }).first();
   await folder.click();
+  await page.waitForTimeout(210);
   await page.locator('.pm-note-list').evaluate(el => el.scrollTop = 310);
   const scroll = await page.locator('.pm-note-list').evaluate(el => el.scrollTop);
   await page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true }).click();

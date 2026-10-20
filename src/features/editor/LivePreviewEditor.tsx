@@ -1,8 +1,9 @@
-import { defaultKeymap, history as codeMirrorHistory, historyKeymap, redo } from "@codemirror/commands";
+import { defaultKeymap, history as codeMirrorHistory, historyKeymap, redo, isolateHistory } from "@codemirror/commands";
 import { markdown as codeMirrorMarkdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, type DecorationSet } from "@codemirror/view";
 import React, { useEffect, useRef, useState } from "react";
+import { BlockSourceEditor, type BlockEditRequest } from "./live-preview/BlockSourceEditor";
 import { formatSelectionValue } from "./formatting";
 import { buildLivePreviewDecorations } from "./live-preview/decorations";
 import { liveSourceRevealEffect, type LiveSourceReveal } from "./live-preview/state";
@@ -21,7 +22,15 @@ export function LivePreviewEditor(props: LiveEditorProps) {
   const renderVersion = useRef(0);
   const focusedRef = useRef(false);
   const [mountError, setMountError] = useState("");
-  propsRef.current = props;
+  const [editingBlock, setEditingBlock] = useState<BlockEditRequest | null>(null);
+  propsRef.current = { ...props, onEditBlock: (from, to) => {
+    const view = viewRef.current;
+    if (!view || props.readOnly || from < 0 || to > view.state.doc.length) return;
+    setEditingBlock({ from, to, source: view.state.doc.sliceString(from, to), document: view.state.doc.toString(), path: props.context.activePath });
+  } };
+  const presenceKey = props.remoteClients.map(c => [c.id,c.cursor,c.selectionEnd,c.name,c.color].join(":")).join("|");
+  const contextKey = props.context.activePath + "|" + props.context.notes.map(n => n.path).join("|")
+    + "|" + props.context.assets.map(a => a.path + ":" + a.modified).join("|");
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -51,7 +60,6 @@ export function LivePreviewEditor(props: LiveEditorProps) {
           ))) reveal = null;
 
           if (transaction.docChanged
-            || transaction.selection
             || transaction.effects.some((effect) => (
               effect.is(liveRefreshEffect) || effect.is(liveSourceRevealEffect)
             ))) {
@@ -89,12 +97,10 @@ export function LivePreviewEditor(props: LiveEditorProps) {
           EditorView.domEventHandlers({
             focus(_event, currentView) {
               focusedRef.current = true;
-              currentView.dispatch({ effects: liveRefreshEffect.of(++renderVersion.current) });
               return false;
             },
             blur(_event, currentView) {
               focusedRef.current = false;
-              currentView.dispatch({ effects: liveRefreshEffect.of(++renderVersion.current) });
               propsRef.current.onLinkLeave();
               return false;
             },
@@ -193,7 +199,7 @@ export function LivePreviewEditor(props: LiveEditorProps) {
     if (!view) return;
     renderVersion.current += 1;
     view.dispatch({ effects: liveRefreshEffect.of(renderVersion.current) });
-  }, [props.context, props.remoteClients]);
+  }, [contextKey, presenceKey, props.readOnly]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
@@ -215,5 +221,19 @@ export function LivePreviewEditor(props: LiveEditorProps) {
     </div>;
   }
 
-  return <div ref={hostRef} className="pm-live-codemirror" />;
+  const applyBlock = (request: BlockEditRequest, source: string): string | null => {
+    const view = viewRef.current;
+    if (!view || propsRef.current.readOnly || view.state.readOnly) return "Este arquivo está em modo de leitura.";
+    if (propsRef.current.context.activePath !== request.path || view.state.doc.toString() !== request.document) {
+      return "A nota mudou enquanto este editor estava aberto. Copie suas alterações, feche e reabra o bloco antes de aplicar.";
+    }
+    const insert = request.source.endsWith("\n") && !source.endsWith("\n") ? source + "\n" : source;
+    const scroll = view.scrollDOM.scrollTop;
+    view.dispatch({ changes: { from: request.from, to: request.to, insert }, annotations: isolateHistory.of("full") });
+    view.scrollDOM.scrollTop = scroll;
+    return null;
+  };
+  return <><div ref={hostRef} className="pm-live-codemirror" />
+    <BlockSourceEditor request={editingBlock} readOnly={props.readOnly} onApply={applyBlock} onClose={() => setEditingBlock(null)} />
+  </>;
 }

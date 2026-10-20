@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { X } from "lucide-react";
 
 /** An overlay, never a child of the document's measured layout. */
 export function WorkspacePanel({ open, title, onClose, children, className = "", modal = false }: {
@@ -34,7 +35,7 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
     });
     const outside = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
-      if (ref.current?.contains(target) || target.closest("[data-workspace-trigger],.pm-modal-backdrop,.pm-modal")) return;
+      if (ref.current?.contains(target) || target.closest("[data-workspace-trigger],.pm-workspace-scrim,.pm-modal-backdrop,.pm-modal")) return;
       closeRef.current();
     };
     const escape = (event: KeyboardEvent) => {
@@ -72,7 +73,7 @@ export function WorkspacePanel({ open, title, onClose, children, className = "",
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }}>
-      <header className="pm-workspace-panel-heading"><h2 id={id}>{title}</h2><button type="button" onClick={close} aria-label={`Fechar ${title}`}>×</button></header>
+      <header className="pm-workspace-panel-heading"><h2 id={id}>{title}</h2><button type="button" onClick={close} aria-label={`Fechar ${title}`} data-tooltip="Fechar" data-shortcut="Esc"><X size={16} aria-hidden="true" /></button></header>
       {children}
     </div>
   </>;
