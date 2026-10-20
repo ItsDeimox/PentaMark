@@ -37,7 +37,8 @@ export type GraphicsMode = "flat" | "acrylic";
 
 export type Appearance = {
   graphicsMode: GraphicsMode;
-  theme: "pentagory" | "eclipse" | "ember" | "terminal";
+  theme: "pentagory" | "eclipse" | "ember" | "terminal" | "pearl";
+  backgroundMotion?: boolean;
   uiFont: string;
   editorFont: string;
   customUiFont: string;

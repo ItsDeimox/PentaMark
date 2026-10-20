@@ -137,6 +137,7 @@ import { decodeSource, replaceNth } from "../shared/text";
 import { ToolsPanel } from "../features/workspace/ToolsPanel";
 import { AnimatedDisclosure } from "../features/workspace/AnimatedDisclosure";
 import { AcrylicLayer } from "../features/workspace/AcrylicLayer";
+import { SignalBackground } from "../features/workspace/SignalBackground";
 import { LinkPreviewStack, type LinkPreviewHandle } from "../features/workspace/LinkPreviewStack";
 import { QuickOpen } from "../features/workspace/QuickOpen";
 import { SelectionTools } from "../features/workspace/SelectionTools";
@@ -1158,6 +1159,7 @@ export default function PentaMarkApp() {
 
   return (
     <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
+      <SignalBackground animated={appearance.backgroundMotion !== false} />
       <AcrylicLayer enabled={appearance.graphicsMode === "acrylic"} theme={appearance.theme} />
       <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}
         onClick={() => navigation.setVisible(!navigation.visible)} aria-expanded={navigation.visible}
