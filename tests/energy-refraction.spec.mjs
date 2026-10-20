@@ -72,9 +72,14 @@ test('refraction changes backdrop pixels at the edge, not the center', async ({p
   await expect.poll(()=>probe.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
   await page.mouse.move(40,40);
   await page.waitForTimeout(300);
-  const distorted=await probe.screenshot({path:info.outputPath('optical-chart-refracted.png')});
+  await expect.poll(()=>probe.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
+  // Capture the fixed chart without scrolling it or injecting caret-hiding CSS,
+  // which causes CodeMirror to remeasure/scroll and activate lightweight glass.
+  const clip=await probe.boundingBox();
+  const distorted=await page.screenshot({clip,caret:'initial',path:info.outputPath('optical-chart-refracted.png')});
+  expect(await probe.evaluate(el=>getComputedStyle(el).backdropFilter)).toContain('url(');
   await probe.locator('feDisplacementMap').evaluateAll(nodes=>nodes.forEach(n=>n.setAttribute('scale','0')));
-  const undistorted=await probe.screenshot({path:info.outputPath('optical-chart-neutral.png')});
+  const undistorted=await page.screenshot({clip,caret:'initial',path:info.outputPath('optical-chart-neutral.png')});
   const difference=await page.evaluate(async([a,b])=>{
     const decode=async data=>{
       const image=new Image();image.src='data:image/png;base64,'+data;await image.decode();

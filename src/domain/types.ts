@@ -39,6 +39,7 @@ export type Appearance = {
   graphicsMode: GraphicsMode;
   theme: "pentagory" | "eclipse" | "ember" | "terminal" | "pearl";
   backgroundMotion?: boolean;
+  backgroundHover?: boolean;
   uiFont: string;
   editorFont: string;
   customUiFont: string;

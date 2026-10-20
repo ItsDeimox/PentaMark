@@ -10,8 +10,10 @@ test('closing a folder at 160 percent scale never stretches it before collapse',
   const disclosure=el.querySelector(':scope > .pm-tree-disclosure');
   const before=disclosure.getBoundingClientRect().height;
   el.querySelector(':scope > .pm-folder-title').click();
-  const heights=[];let n=0;
-  const sample=()=>{heights.push(disclosure.getBoundingClientRect().height);if(++n<20)requestAnimationFrame(sample);else resolve({before,heights})};requestAnimationFrame(sample);
+  const heights=[],start=performance.now();
+  // Sample elapsed time, not 20 frames: a high-refresh display reaches frame 20
+  // before the 180 ms transition is over.
+  const sample=now=>{heights.push(disclosure.getBoundingClientRect().height);if(now-start<350)requestAnimationFrame(sample);else resolve({before,heights})};requestAnimationFrame(sample);
  }));
  expect(Math.max(...result.heights),JSON.stringify(result)).toBeLessThanOrEqual(result.before+1);
  expect(result.heights.at(-1)).toBeLessThanOrEqual(1);

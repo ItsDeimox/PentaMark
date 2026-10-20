@@ -23,24 +23,24 @@ test('Pearl persists, renders both materials and pauses its background', async (
     expect(await dialog.evaluate(el => getComputedStyle(el).color)).toBe('rgb(35, 53, 65)');
     await expect(dialog.getByRole('button',{name:'Pérola',exact:true})).toHaveCSS('background-color','rgba(48, 122, 148, 0.12)');
   }
-  await dialog.getByLabel('Pulsos de luz no fundo').uncheck();
+  await dialog.getByLabel('Animações de fundo',{exact:true}).uncheck();
   await expect(page.locator('.pm-signal-background')).toHaveAttribute('data-animated','false');
-  await expect(page.locator('.pm-signal-packet').first()).toHaveCSS('animation-play-state','paused');
+  expect(await page.locator('.pm-signal-packet').first().evaluate(el=>el.getAnimations().every(a=>a.playState==='paused'))).toBe(true);
   await dialog.getByRole('button',{name:'Salvar configurações',exact:true}).click();
   await expect(dialog).not.toBeVisible();
   await page.reload();
   await expect(page.locator('.pm-shell')).toHaveAttribute('data-theme','pearl');
   await expect(page.locator('.pm-signal-background')).toHaveAttribute('data-animated','false');
   const reopened = await settings(page);
-  await reopened.getByLabel('Pulsos de luz no fundo').check();
+  await reopened.getByLabel('Animações de fundo',{exact:true}).check();
   await reopened.getByRole('button',{name:'Salvar configurações',exact:true}).click();
   await expect(reopened).not.toBeVisible();
   const packet=page.locator('.pm-signal-packet').first();
-  const offset=await packet.evaluate(el=>getComputedStyle(el).strokeDashoffset);
-  await expect.poll(()=>packet.evaluate(el=>getComputedStyle(el).strokeDashoffset)).not.toBe(offset);
+  const offset=await packet.evaluate(el=>getComputedStyle(el).transform);
+  await expect.poll(()=>packet.evaluate(el=>getComputedStyle(el).transform)).not.toBe(offset);
   await page.screenshot({path:info.outputPath('pearl-writing.png')});
   await page.emulateMedia({reducedMotion:'reduce'});
-  await expect(page.locator('.pm-signal-packet').first()).toHaveCSS('animation-name','none');
+  expect(await packet.evaluate(el=>el.getAnimations().every(a=>a.playState==='paused'))).toBe(true);
   expect(errors).toEqual([]);
 });
 

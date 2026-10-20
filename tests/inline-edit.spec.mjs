@@ -58,22 +58,24 @@ test('editing, contextual formatting, save, undo and redo remain functional', as
   await page.screenshot({ path: testInfo.outputPath('contextual-formatting.png') });
   await page.getByRole('button', { name: 'Negrito na seleção' }).click();
   await page.keyboard.press('Control+s');
-  await expect.poll(() => readSource(page)).toContain('**Validação de edição**');
+  await expect(async()=>expect(await readSource(page)).toContain('**Validação de edição**')).toPass({timeout:6000});
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+s');
-  await expect.poll(() => readSource(page)).not.toContain('**Validação de edição**');
-  await expect.poll(() => readSource(page)).toContain('Validação de edição');
+  // The existing host replaces a file via unlink/rename; retry transient reads
+  // during that asynchronous save, while still asserting the final real file.
+  await expect(async()=>expect(await readSource(page)).not.toContain('**Validação de edição**')).toPass({timeout:6000});
+  await expect(async()=>expect(await readSource(page)).toContain('Validação de edição')).toPass({timeout:6000});
   // Use the uppercase key emitted by a physical Shift+Z, not a synthetic lowercase z.
   await page.keyboard.press('Control+Shift+Z');
   await page.keyboard.press('Control+s');
-  await expect.poll(() => readSource(page)).toContain('**Validação de edição**');
+  await expect(async()=>expect(await readSource(page)).toContain('**Validação de edição**')).toPass({timeout:6000});
   // Restore this synthetic note through the explicit source editor.
   await page.getByRole('button', { name: 'Ferramentas e ações', exact: true }).click();
   await page.getByRole('button', { name: 'Editor Markdown', exact: true }).click();
   await page.keyboard.press('Escape');
   const raw = page.locator('.pm-editor-pane textarea');
   await raw.fill(original); await page.keyboard.press('Control+s');
-  await expect.poll(() => readSource(page)).toBe(original);
+  await expect(async()=>expect(await readSource(page)).toBe(original)).toPass({timeout:6000});
 });
 
 test('rapid open/close and keyboard switching between overlays do not trap focus', async ({ page }) => {

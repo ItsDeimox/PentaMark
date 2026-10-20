@@ -5,6 +5,11 @@ const {createEnergyMesh,EnergyNetwork}=await import('data:text/javascript;base64
 assert.equal(typeof EnergyNetwork,'function','A real edge-connected energy solver is required');
 const mesh=createEnergyMesh();
 assert.deepEqual(mesh,createEnergyMesh(),'Geometry must not reshuffle');
+assert.ok(mesh.cells?.length>100,'Connected polygon cells are required, not a triangular grid');
+assert.ok(mesh.cells.filter(c=>c.length===5).length>mesh.cells.length*.15,'Irregular pentagons must be present throughout the mesh');
+assert.ok(mesh.cells.filter(c=>c.length<4).length<mesh.cells.length*.05,'Avoid the old triangulation');
+const large=createEnergyMesh(3200,2000);
+assert.ok(large.cells.length>mesh.cells.length*2,'Larger displays add cells instead of enlarging the pattern');
 assert.ok(mesh.edges.length>500);
 for(const [a,b] of mesh.edges){
   const p=mesh.points[a],q=mesh.points[b];

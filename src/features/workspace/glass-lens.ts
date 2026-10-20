@@ -1,6 +1,6 @@
 const NS='http://www.w3.org/2000/svg';
 let sequence=0;
-export type GlassLens={update:(width:number,height:number,radius:number)=>void;dispose:()=>void};
+export type GlassLens={update:(width:number,height:number,radius:number)=>void;setScrolling:(active:boolean)=>void;dispose:()=>void};
 
 /** Distorts the actual backdrop, not the panel's children. The blue map channel
  * masks a clear curved bevel over the frosted center. Separate sample distances
@@ -39,6 +39,10 @@ export function attachGlassLens(panel:HTMLElement):GlassLens|null {
   if(!ctx){svg.remove();return null;}
   let previous='';
   let pending=0;
+  let scrolling=false;
+  const apply=()=>{
+    for(const {name} of saved)panel.style.setProperty(name,scrolling?'blur(9px)':`url("#${id}")`,'important');
+  };
   const rebuild=(width:number,height:number,radius:number)=>{
       const key=`${Math.round(width)}:${Math.round(height)}:${Math.round(radius)}`;if(previous===key)return;
       previous=key;
@@ -63,9 +67,13 @@ export function attachGlassLens(panel:HTMLElement):GlassLens|null {
         pixels.data[i+2]=Math.round(edge*255);pixels.data[i+3]=255;
       }
       ctx.putImageData(pixels,0,0);map.setAttribute('href',canvas.toDataURL());
-      for(const {name} of saved)panel.style.setProperty(name,`url("#${id}")`,'important');
+      apply();
   };
   return {
+    setScrolling(active){
+      if(scrolling===active)return;
+      scrolling=active;apply();
+    },
     update(width,height,radius){
       // Percentages resolve against the hidden SVG's zero-size viewport.
       // Stretch bounds immediately, even while map regeneration is debounced.

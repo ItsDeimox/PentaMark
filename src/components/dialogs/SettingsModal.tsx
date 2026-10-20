@@ -52,7 +52,10 @@ export function SettingsModal(p: {
       {tab==='appearance' && <>
         <DialogSection title="Identidade visual">
           <div className="pm-theme-options">{THEMES.map(theme => <button type="button" key={theme.id} aria-pressed={p.appearance.theme===theme.id} onClick={() => appearance({theme:theme.id})} style={{'--pm-swatch':theme.color} as React.CSSProperties}><i/><span>{theme.name}</span>{p.appearance.theme===theme.id && <Check size={13}/>}</button>)}</div>
-          <label className="pm-background-toggle"><input type="checkbox" checked={p.appearance.backgroundMotion !== false} onChange={e => appearance({backgroundMotion:e.target.checked})}/>Pulsos de luz no fundo</label>
+          <label className="pm-background-toggle"><input type="checkbox" checked={p.appearance.backgroundMotion !== false} onChange={e => appearance({backgroundMotion:e.target.checked})}/>Animações de fundo</label>
+          <small className="pm-background-hint">Luzes percorrendo as linhas, mesmo sem mover o mouse.</small>
+          <label className="pm-background-toggle"><input type="checkbox" checked={p.appearance.backgroundHover !== false} onChange={e => appearance({backgroundHover:e.target.checked})}/>Reação ao mouse</label>
+          <small className="pm-background-hint">Energia nas arestas próximas ao cursor. Independente das animações e do modo gráfico.</small>
         </DialogSection>
         <DialogSection title="Gráficos">
           <div className="pm-material-options"><button type="button" aria-pressed={p.appearance.graphicsMode==='flat'} onClick={() => appearance({graphicsMode:'flat'})}><Square size={21}/><strong>Flat</strong></button><button type="button" aria-pressed={p.appearance.graphicsMode==='acrylic'} onClick={() => appearance({graphicsMode:'acrylic'})}><Layers size={21}/><strong>Acrílico</strong></button></div>

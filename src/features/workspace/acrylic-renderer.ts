@@ -21,6 +21,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const sidebar=shell.querySelector<HTMLElement>('.pm-sidebar');
  let program:WebGLProgram|null=null,buffer:WebGLBuffer|null=null;
  let frame=0,stopped=false,lost=false,registryDirty=true,layoutDirty=true,movingUntil=0,lastTime=0,draws=0;
+ let scrollTimer=0,scrolling=false;
  let candidates:HTMLElement[]=[],cursor:[number,number]=[-10000,-10000],control:HTMLElement|null=null;
  let navigation=shell.dataset.navigation==='true',reveal=navigation?1:0,ownedStyle='';
  let motion:{from:number;to:number;start:number;duration:number}|null=null;
@@ -95,6 +96,7 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
    target.pane.style.cssText=`left:${g.left}px;top:${panel.scrollTop+g.top}px;width:${g.cropWidth}px;height:${g.cropHeight}px;`;
    if(target.kind===0){
     target.lens ??= attachGlassLens(panel);
+    target.lens?.setScrolling(scrolling);
     target.lens?.update(panel.offsetWidth,panel.offsetHeight,g.radius);
    }
   }
@@ -185,6 +187,16 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  const focus=(e:FocusEvent)=>{const el=e.target as HTMLElement;if(el.matches(':focus-visible')){const r=el.getBoundingClientRect();aim(el,r.x+r.width/2,r.y+r.height/2);}};
  const leave=()=>{active.clear();control=null;invalidate();};
  const layout=()=>{layoutDirty=true;invalidate();};
+ const scroll=(event:Event)=>{
+   if(event.target instanceof Element&&event.target.closest('.pm-document')){
+     if(!scrolling){scrolling=true;targets.forEach(t=>t.lens?.setScrolling(true));}
+     clearTimeout(scrollTimer);
+     scrollTimer=window.setTimeout(()=>{
+       scrolling=false;targets.forEach(t=>t.lens?.setScrolling(false));
+     },180);
+   }
+   layout();
+ };
  const moving=(e:Event)=>{if(e.target instanceof Element&&e.target.matches(`${SURFACES},.pm-dialog-layer`)){movingUntil=performance.now()+(reduced.matches?0:240);layout();}};
  const visibility=()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0;active.clear();control=null;finishReveal();}else{targets.forEach(t=>t.dirty=true);layout();}};
  const onLost=(e:Event)=>{e.preventDefault();lost=true;cancelAnimationFrame(frame);frame=0;targets.forEach(t=>{t.lens?.dispose();t.lens=undefined;});finishReveal();fallback();};
@@ -193,14 +205,14 @@ export function attachAcrylicRenderer(canvas:HTMLCanvasElement,shell:HTMLElement
  changed.observe(shell,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','open','data-entered','data-visible','data-navigation']});
  shell.addEventListener('pentamark:pointer-reconcile',reconcile);
  shell.addEventListener('pointermove',pointer,{passive:true});shell.addEventListener('pointerleave',leave);shell.addEventListener('focusin',focus);
- shell.addEventListener('scroll',layout,true);shell.addEventListener('transitionrun',moving);shell.addEventListener('animationstart',moving);shell.addEventListener('transitionend',layout);
+ shell.addEventListener('scroll',scroll,true);shell.addEventListener('transitionrun',moving);shell.addEventListener('animationstart',moving);shell.addEventListener('transitionend',layout);
  window.addEventListener('resize',layout);window.addEventListener('blur',leave);document.addEventListener('visibilitychange',visibility);reduced.addEventListener('change',layout);
  canvas.addEventListener('webglcontextlost',onLost);canvas.addEventListener('webglcontextrestored',restored);invalidate();
  return()=>{
-  stopped=true;cancelAnimationFrame(frame);changed.disconnect();resized.disconnect();intersections.disconnect();finishReveal();if(sidebar){delete sidebar.dataset.reveal;sidebar.style.removeProperty('clip-path');sidebar.style.removeProperty('--pm-reveal-x');}
+  stopped=true;clearTimeout(scrollTimer);cancelAnimationFrame(frame);changed.disconnect();resized.disconnect();intersections.disconnect();finishReveal();if(sidebar){delete sidebar.dataset.reveal;sidebar.style.removeProperty('clip-path');sidebar.style.removeProperty('--pm-reveal-x');}
   targets.forEach((t,p)=>release(p,t));
   shell.removeEventListener('pentamark:pointer-reconcile',reconcile);
-  shell.removeEventListener('pointermove',pointer);shell.removeEventListener('pointerleave',leave);shell.removeEventListener('focusin',focus);shell.removeEventListener('scroll',layout,true);shell.removeEventListener('transitionrun',moving);shell.removeEventListener('animationstart',moving);shell.removeEventListener('transitionend',layout);
+  shell.removeEventListener('pointermove',pointer);shell.removeEventListener('pointerleave',leave);shell.removeEventListener('focusin',focus);shell.removeEventListener('scroll',scroll,true);shell.removeEventListener('transitionrun',moving);shell.removeEventListener('animationstart',moving);shell.removeEventListener('transitionend',layout);
   window.removeEventListener('resize',layout);window.removeEventListener('blur',leave);document.removeEventListener('visibilitychange',visibility);reduced.removeEventListener('change',layout);
   canvas.removeEventListener('webglcontextlost',onLost);canvas.removeEventListener('webglcontextrestored',restored);
   if(!lost){if(buffer)context.deleteBuffer(buffer);if(program)context.deleteProgram(program);}canvas.width=canvas.height=1;delete shell.dataset.gl;
