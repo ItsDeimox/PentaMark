@@ -3,11 +3,11 @@ import { circuitRoutes } from './signal-routes';
 import { createEnergyPainter } from './energy-painter';
 
 /** Accelerated analytic wires, with fixed-density Canvas tiles as fallback. */
-export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh:EnergyMesh,zoom:number,enabled:boolean) {
+export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh:EnergyMesh,zoom:number,enabled:boolean,acrylic=false) {
   if(!enabled){canvas.width=canvas.height=1;return()=>{};}
   const size=512,density=Math.min(2,devicePixelRatio||1);
   const bounds=root.getBoundingClientRect(),color=getComputedStyle(root).color;
-  let gpu=createEnergyPainter(canvas,mesh,bounds.width,bounds.height,zoom,color);
+  let gpu=createEnergyPainter(canvas,mesh,bounds.width,bounds.height,zoom,color,acrylic);
   // Fixed world-space tiles retain the trail without a full-window raster.
   // Allocate only visible tiles. Never stretch backing pixels when a wave grows.
   const createLayer=(i:number)=>{
@@ -49,14 +49,14 @@ export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh
   const restored=()=>{
     gpu?.dispose();layers.forEach(layer=>{if(layer.canvas!==canvas)layer.canvas.remove();});layers.length=0;
     canvas.hidden=false;canvas.classList.add('pm-energy-layer');
-    gpu=createEnergyPainter(canvas,mesh,bounds.width,bounds.height,zoom,color);
+    gpu=createEnergyPainter(canvas,mesh,bounds.width,bounds.height,zoom,color,acrylic);
     if(!gpu)layers.push(createLayer(0));
     graphicsLost=false;
   };
   canvas.addEventListener('webglcontextlost',lost);canvas.addEventListener('webglcontextrestored',restored);
   const render=(now:number)=>{
     frame=0;
-    if(!enabled||!focused||graphicsLost||document.hidden||reduced.matches){clear();return;}
+    if(!enabled||graphicsLost||document.hidden||reduced.matches){clear();return;}
     // Limit only the decorative raster, never scrolling or compositor motion.
     if(now-painted<1000/(gpu?60:30)-1){frame=requestAnimationFrame(render);return;}
     painted=now;
@@ -132,7 +132,8 @@ export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh
       ctx.save();
       ctx.beginPath();ctx.rect(tile.x+left/renderDensity,tile.y+top/renderDensity,(right-left)/renderDensity,(bottom-top)/renderDensity);ctx.clip();
       ctx.strokeStyle=color;ctx.lineCap='round';
-      for(let i=1;i<12;i++)for(const [width,alpha] of [[7,.018],[3,.065],[.8,.7]]){
+      for(let i=1;i<12;i++)for(const [width,alpha] of [[10,.008],[6,.018],[2.5,.045],[.45,.7]]){
+        ctx.strokeStyle=width<1?`color-mix(in srgb, ${color} 8%, white)`:color;
         ctx.lineWidth=width;ctx.globalAlpha=i/11*alpha;ctx.stroke(tile.buckets[i]);
       }
       ctx.restore();
@@ -143,11 +144,14 @@ export function attachEnergyHover(root:HTMLElement,canvas:HTMLCanvasElement,mesh
   const pointer=(e:PointerEvent)=>{
     if(e.pointerType==='touch'||e.buttons){pending=null;previous=null;return;}
     if(!enabled||!focused||graphicsLost||document.hidden||reduced.matches)return;
+    if(e.clientX<bounds.left||e.clientX>=bounds.right||e.clientY<bounds.top||e.clientY>=bounds.bottom)return;
     pending={x:e.clientX-bounds.left,y:e.clientY-bounds.top};
     if(!frame){last=performance.now();painted=0;frame=requestAnimationFrame(render);}
   };
-  const leave=(e:PointerEvent)=>{if(!e.relatedTarget)clear();};
-  const blur=()=>{focused=false;clear();},focus=()=>{focused=true;};
+  // Stop injection, not propagation. Existing energy finishes its finite decay.
+  const stopInput=()=>{pending=null;previous=null;};
+  const leave=(e:PointerEvent)=>{if(!e.relatedTarget)stopInput();};
+  const blur=()=>{focused=false;stopInput();},focus=()=>{focused=true;};
   clear();
   if(enabled)document.addEventListener('pointermove',pointer,{passive:true});
   document.addEventListener('pointerout',leave);

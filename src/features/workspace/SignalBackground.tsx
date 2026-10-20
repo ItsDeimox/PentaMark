@@ -5,8 +5,8 @@ import { attachEnergyHover, attachAmbientSignals } from './signal-renderer';
 type Geometry = {mesh:EnergyMesh;width:number;height:number;zoom:number;density:number};
 
 /** Geometry changes on resize, never on pointer input or document edits. */
-export const SignalBackground = memo(function SignalBackground({animated,reactive,theme}:{
-  animated:boolean;reactive:boolean;theme:string;
+export const SignalBackground = memo(function SignalBackground({animated,reactive,theme,acrylic=false}:{
+  animated:boolean;reactive:boolean;theme:string;acrylic?:boolean;
 }) {
   const host=useRef<HTMLDivElement>(null),canvas=useRef<HTMLCanvasElement>(null);
   const ambient=useRef<HTMLDivElement>(null);
@@ -29,8 +29,8 @@ export const SignalBackground = memo(function SignalBackground({animated,reactiv
   },[]);
   useEffect(()=>{
     if(!host.current||!canvas.current||!geometry)return;
-    return attachEnergyHover(host.current,canvas.current,geometry.mesh,geometry.zoom,reactive);
-  },[geometry,reactive,theme]);
+    return attachEnergyHover(host.current,canvas.current,geometry.mesh,geometry.zoom,reactive,acrylic);
+  },[geometry,reactive,theme,acrylic]);
   useEffect(()=>{
     if(!ambient.current||!geometry)return;
     return attachAmbientSignals(ambient.current,geometry.width,geometry.height,animated);

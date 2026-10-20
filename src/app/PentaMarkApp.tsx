@@ -1161,7 +1161,7 @@ export default function PentaMarkApp() {
 
   return (
     <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
-      <SignalBackground animated={appearance.backgroundMotion !== false} reactive={appearance.backgroundHover !== false} theme={appearance.theme} />
+      <SignalBackground animated={appearance.backgroundMotion !== false} reactive={appearance.backgroundHover !== false} theme={appearance.theme} acrylic={appearance.graphicsMode === "acrylic"} />
       <AcrylicLayer enabled={appearance.graphicsMode === "acrylic"} theme={appearance.theme} />
       <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}
         onClick={() => navigation.setVisible(!navigation.visible)} aria-expanded={navigation.visible}
