@@ -9,13 +9,12 @@
 .pm-signal-background > svg { position:absolute; inset:0; width:100%; height:100%; mask-image:radial-gradient(ellipse at 54% 43%,#0002 15%,#0009 64%,#000 100%); }
 .pm-energy-layer { position:absolute; left:0; top:0; pointer-events:none; opacity:.6; }
 .pm-ambient-signals { position:absolute; left:0; top:0; transform-origin:0 0; }
-.pm-signal-packet {
-  position:absolute; left:0; top:0; width:36px; height:10px; margin:-5px 0 0 -18px;
-  border-radius:50%; pointer-events:none;
-  background:radial-gradient(ellipse 4px 1px at 65% 50%,#edffffd9,transparent),
-    radial-gradient(ellipse 13px .7px at 55% 50%,currentColor,transparent),
-    radial-gradient(ellipse 18px 5px at 50% 50%,color-mix(in srgb,currentColor 24%,transparent),transparent);
-}
+.pm-ambient-signals svg { display:block; mask-image:radial-gradient(ellipse at 54% 48%,#0001 15%,#0008 64%,#000 100%); }
+.pm-signal-track { stroke-width:.65; opacity:.14; }
+.pm-signal-halo { stroke-width:4; opacity:.08; stroke-dasharray:35 965; }
+.pm-signal-packet { stroke-width:1.1; opacity:.35; stroke-dasharray:15 985; }
+.pm-shell[data-theme="pearl"] .pm-signal-track { opacity:.23; }
+.pm-shell[data-theme="pearl"] .pm-signal-packet { opacity:.65; }
 .pm-mesh-track { stroke-width:.55; opacity:0; }
 .pm-lens-defs { position:absolute; width:0; height:0; pointer-events:none; overflow:hidden; }
 .pm-theme-options { grid-template-columns:repeat(5,minmax(0,1fr)); }

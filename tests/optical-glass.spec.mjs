@@ -36,11 +36,11 @@ test('Pearl persists, renders both materials and pauses its background', async (
   await reopened.getByRole('button',{name:'Salvar configurações',exact:true}).click();
   await expect(reopened).not.toBeVisible();
   const packet=page.locator('.pm-signal-packet').first();
-  const offset=await packet.evaluate(el=>getComputedStyle(el).transform);
-  await expect.poll(()=>packet.evaluate(el=>getComputedStyle(el).transform)).not.toBe(offset);
+  const offset=await packet.evaluate(el=>getComputedStyle(el).strokeDashoffset);
+  await expect.poll(()=>packet.evaluate(el=>getComputedStyle(el).strokeDashoffset)).not.toBe(offset);
   await page.screenshot({path:info.outputPath('pearl-writing.png')});
   await page.emulateMedia({reducedMotion:'reduce'});
-  expect(await packet.evaluate(el=>el.getAnimations().every(a=>a.playState==='paused'))).toBe(true);
+  await expect.poll(()=>packet.evaluate(el=>el.getAnimations().every(a=>a.playState==='paused'))).toBe(true);
   expect(errors).toEqual([]);
 });
 

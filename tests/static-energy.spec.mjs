@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './energy-fixture.mjs';
 
 test('pointer light never translates the mesh geometry',async({page})=>{
   await page.goto('/');
@@ -65,7 +65,7 @@ test('live theme changes recolor the energy instead of retaining the old accent'
   await page.mouse.move(1200,200);
   await page.mouse.move(1300,400,{steps:12});
   const color=await page.locator('.pm-energy-layer').first().evaluate(c=>{
-    const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    const data=window.readEnergyPixels(c);
     let best=3;for(let i=3;i<data.length;i+=4)if(data[i]>data[best])best=i;
     return Array.from(data.slice(best-3,best+1));
   });
