@@ -1,24 +1,12 @@
-import { ArrowRightLeft, LogIn, Wifi, X } from "lucide-react";
-
-export function ConnectModal(props: {
-  address: string;
-  setAddress: (value: string) => void;
-  deviceName: string;
-  setDeviceName: (value: string) => void;
-  onClose: () => void;
-  onConnect: () => void;
+import { ArrowRightLeft, LogIn, Wifi } from 'lucide-react';
+import { DialogFrame, DialogSection } from './DialogFrame';
+export function ConnectModal(p: {
+  address: string; setAddress: (value: string) => void; deviceName: string; setDeviceName: (value: string) => void; onClose: () => void; onConnect: () => void;
 }) {
-  return <div className="pm-modal-backdrop" onMouseDown={props.onClose}><form className="pm-modal pm-connect-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); props.onConnect(); }}>
-    <button type="button" className="pm-modal-close" onClick={props.onClose}><X size={17} /></button>
-    <div className="pm-modal-icon"><LogIn size={21} /></div>
-    <h2>Conectar a um cofre</h2>
-    <p>Cole o endereço compartilhado pelo host. Pode ser HTTPS do Tailscale, IP da rede local ou Radmin no Windows.</p>
-    <div className="pm-connect-fields">
-      <label>Endereço do host<input autoFocus value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="https://meu-pc.tailnet.ts.net" spellCheck={false} inputMode="url" /></label>
-      <label>Seu nome neste cofre<input value={props.deviceName} onChange={(event) => props.setDeviceName(event.target.value)} placeholder="Ex.: Deimox — Desktop" maxLength={60} /></label>
-    </div>
-    <div className="pm-connect-hint"><Wifi size={13} />No celular, use Tailscale ou a mesma rede Wi-Fi do host.</div>
-    <div className="pm-dialog-actions"><button type="button" className="secondary" onClick={props.onClose}>Cancelar</button><button type="submit" className="primary"><ArrowRightLeft size={14} />Conectar</button></div>
-  </form></div>;
+  return <DialogFrame title="Conectar a um cofre" subtitle="Continue seu trabalho em um host compartilhado." icon={LogIn} onClose={p.onClose} onSubmit={p.onConnect}
+    footer={<><span className="pm-footer-hint">Conexão ao host</span><button type="button" className="secondary" onClick={p.onClose}>Cancelar</button><button type="submit" className="primary" disabled={!p.address.trim() || !p.deviceName.trim()}><ArrowRightLeft size={15}/>Conectar</button></>}>
+    <DialogSection title="Destino" hint="Cole o endereço fornecido pelo responsável pelo cofre."><label className="pm-field">Endereço do host<input data-autofocus value={p.address} onChange={e => p.setAddress(e.target.value)} placeholder="https://meu-host.example" spellCheck={false} inputMode="url" autoComplete="off" required/></label></DialogSection>
+    <DialogSection title="Identificação"><label className="pm-field">Seu nome neste cofre<input value={p.deviceName} onChange={e => p.setDeviceName(e.target.value)} maxLength={60} required autoComplete="nickname"/></label></DialogSection>
+    <div className="pm-notice"><Wifi size={18}/><span>Os dispositivos precisam alcançar a mesma rede do host ou o endereço remoto configurado por ele.</span></div>
+  </DialogFrame>;
 }
-

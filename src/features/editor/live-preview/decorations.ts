@@ -222,13 +222,12 @@ export function buildLivePreviewDecorations(
   const coveredLines = new Set<number>();
   const inlineZones: SourceRange[] = [];
   const protectedRanges: SourceRange[] = [];
-  const focused = focusedRef.current;
+  const focused = false; // Focusing a rendered block never exposes raw source geometry.
 
   for (const block of blocks) {
     if (!block.raw.trim()) continue;
     const contentEnd = liveBlockContentEnd(block);
-    const selected = localRangeTouched(block.start, contentEnd, state, focused);
-    const renderedAsWidget = liveBlockUsesWidget(block) && !selected;
+    const renderedAsWidget = liveBlockUsesWidget(block);
 
     if (renderedAsWidget) {
       // A block replacement beginning at a line boundary still leaves the

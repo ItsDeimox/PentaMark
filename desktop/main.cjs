@@ -204,16 +204,28 @@ ipcMain.handle("pentamark:show-vault", async (event) => {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
+function validatedVaultItem(kind, relativePath) {
+  if (kind !== "note" && kind !== "folder" && kind !== "asset") throw new Error("Tipo de item inválido");
+  const normalized = String(relativePath || "").replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!normalized || normalized.split("/").some(part => !part || part === "." || part === "..")) throw new Error("Caminho inválido");
+  const directory = resolve(kind === "asset" ? activeVaultPath : activeNotesDirectory());
+  const absolute = resolve(directory, normalized);
+  if (!absolute.startsWith(`${directory}\\`) && !absolute.startsWith(`${directory}/`)) throw new Error("Caminho inválido");
+  if (!existsSync(absolute)) throw new Error("O item não existe mais");
+  const relative = activeVaultIsCustom || kind === "asset" ? normalized : `notes/${normalized}`;
+  return { absolute, relative };
+}
+ipcMain.handle("pentamark:resolve-item-path", (event, kind, relativePath) => {
+  try {
+    if (!rendererIsLocal(event)) return {ok:false,error:"Disponível apenas no Desktop local"};
+    const {absolute,relative} = validatedVaultItem(kind,relativePath);
+    return {ok:true,absolute,relative};
+  } catch(error) {return {ok:false,error:error instanceof Error ? error.message : String(error)};}
+});
 ipcMain.handle("pentamark:show-item", async (event, kind, relativePath) => {
   try {
     if (!rendererIsLocal(event)) return { ok: false, error: "Disponível apenas no cofre local do host" };
-    if (kind !== "note" && kind !== "folder" && kind !== "asset") return { ok: false, error: "Tipo de item inválido" };
-    const normalized = String(relativePath || "").replaceAll("\\", "/").replace(/^\/+/, "");
-    if (!normalized || normalized.split("/").some((part) => !part || part === "." || part === "..")) return { ok: false, error: "Caminho inválido" };
-    const itemDirectory = resolve(kind === "asset" ? activeVaultPath : activeNotesDirectory());
-    const target = resolve(itemDirectory, normalized);
-    if (!target.startsWith(`${itemDirectory}\\`) && !target.startsWith(`${itemDirectory}/`)) return { ok: false, error: "Caminho inválido" };
-    if (!existsSync(target)) return { ok: false, error: "O item não existe mais" };
+    const {absolute: target} = validatedVaultItem(kind, relativePath);
     if (kind === "folder") {
       const error = await shell.openPath(target);
       return error ? { ok: false, error } : { ok: true };

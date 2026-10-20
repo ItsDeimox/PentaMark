@@ -1,3 +1,10 @@
+import { version as APP_VERSION } from "../../package.json";
+import { DialogPresence } from "../components/dialogs/DialogFrame";
+import { ShareModal } from "../components/dialogs/ShareModal";
+import { McpModal } from "../components/dialogs/McpSettings";
+import { useConfirmation } from "../components/dialogs/Confirmation";
+import { saveHostSettings } from "../api/host-settings";
+import { useTreeInputFocus } from "../features/workspace/useTreeInputFocus";
 import {
   Archive,
   ArrowLeft,
@@ -72,7 +79,6 @@ import type {
   HostConfig,
   ItemKind,
   KanbanDialogState,
-  LinkHoverPreview,
   LockInfo,
   NoteMeta,
   OpenNote,
@@ -128,9 +134,14 @@ import {
   titleOf,
 } from "../shared/path";
 import { decodeSource, replaceNth } from "../shared/text";
-import { WorkspacePanel } from "../features/workspace/WorkspacePanel";
+import { ToolsPanel } from "../features/workspace/ToolsPanel";
+import { AnimatedDisclosure } from "../features/workspace/AnimatedDisclosure";
+import { AcrylicLayer } from "../features/workspace/AcrylicLayer";
+import { LinkPreviewStack, type LinkPreviewHandle } from "../features/workspace/LinkPreviewStack";
 import { QuickOpen } from "../features/workspace/QuickOpen";
 import { SelectionTools } from "../features/workspace/SelectionTools";
+import { DocumentDecode } from "../features/workspace/DocumentDecode";
+import { TooltipLayer } from "../features/workspace/TooltipLayer";
 import { useWorkspaceNavigation } from "../features/workspace/useWorkspaceNavigation";
 
 type InstallPromptEvent = Event & {
@@ -139,6 +150,8 @@ type InstallPromptEvent = Event & {
 };
 
 export default function PentaMarkApp() {
+  const confirmation = useConfirmation();
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [vault, setVault] = useState<VaultState>(EMPTY_STATE);
   const [activePath, setActivePath] = useState("");
   const [content, setContent] = useState("");
@@ -147,7 +160,7 @@ export default function PentaMarkApp() {
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("pentamark:view") as ViewMode) || "live");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebar, setMobileSidebar] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem("pentamark:sidebar")) || Math.min(440, Math.max(268, window.innerWidth * .265)));
+  const [sidebarWidth, setSidebarWidth] = useState(() => Math.min(380, Math.max(260, Number(localStorage.getItem("pentamark:sidebar")) || 304)));
   const [split, setSplit] = useState(() => Number(localStorage.getItem("pentamark:split")) || 50);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
@@ -167,7 +180,7 @@ export default function PentaMarkApp() {
   const [kanbanDialog, setKanbanDialog] = useState<KanbanDialogState | null>(null);
   const [syncScroll, setSyncScroll] = useState(() => localStorage.getItem("pentamark:sync-scroll") !== "false");
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [linkPreview, setLinkPreview] = useState<LinkHoverPreview | null>(null);
+  const previewsRef = useRef<LinkPreviewHandle>(null);
   const [connectionAddress, setConnectionAddress] = useState("");
   const [deviceName, setDeviceName] = useState(initialDeviceName);
   const [deviceAvatar, setDeviceAvatar] = useState(() => localStorage.getItem("pentamark:avatar") || "");
@@ -219,12 +232,6 @@ export default function PentaMarkApp() {
   const activePathRef = useRef("");
   const saveStateRef = useRef<SaveState>("saved");
   const contentRef = useRef(content);
-  const linkPreviewRef = useRef<HTMLDivElement>(null);
-  const linkPreviewOpenTimer = useRef<number | null>(null);
-  const linkPreviewCloseTimer = useRef<number | null>(null);
-  const linkPreviewRequest = useRef(0);
-  const linkPreviewTarget = useRef("");
-  const linkPreviewPoint = useRef({ x: 0, y: 0 });
   const scrollSyncGuard = useRef<"editor" | "preview" | null>(null);
   const noteHistory = useRef<{ paths: string[]; index: number }>({ paths: [], index: -1 });
 
@@ -528,13 +535,14 @@ export default function PentaMarkApp() {
   useEffect(() => {
     let lastMouseNavigation = 0;
     const mouse = (event: MouseEvent) => {
-      if (event.button !== 3 && event.button !== 4) return;
+      if (document.querySelector("dialog[open]") || (event.button !== 3 && event.button !== 4)) return;
       event.preventDefault();
       if (Date.now() - lastMouseNavigation < 120) return;
       lastMouseNavigation = Date.now();
       navigateHistory(event.button === 3 ? -1 : 1);
     };
     const key = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (!event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
       event.preventDefault();
       navigateHistory(event.key === "ArrowLeft" ? -1 : 1);
@@ -545,8 +553,8 @@ export default function PentaMarkApp() {
     return () => { window.removeEventListener("mouseup", mouse); window.removeEventListener("auxclick", mouse); window.removeEventListener("keydown", key); };
   }, [navigateHistory]);
 
-  useEffect(() => { if (draft) requestAnimationFrame(() => draftRef.current?.focus()); }, [draft]);
-  useEffect(() => { if (renaming) requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); }); }, [renaming?.path]);
+  useTreeInputFocus(draftRef, draft ? `${draft.kind}:${draft.parent}` : "");
+  useTreeInputFocus(renameRef, renaming?.path || "", true);
   const markdownContext = useMemo<MarkdownContext>(() => ({ activePath, notes: vault.notes, folders: vault.folders, assets: vault.assets }), [activePath, vault.assets, vault.folders, vault.notes]);
 
   useEffect(() => {
@@ -559,19 +567,11 @@ export default function PentaMarkApp() {
   }, []);
 
   const html = useMemo(() => sanitizeMarkdown(content, markdownContext), [content, markdownContext]);
-  useEffect(() => {
-    if (!linkPreview?.html || !linkPreviewRef.current) return;
-    void renderDynamicMarkdown(linkPreviewRef.current, { ...markdownContext, activePath: linkPreview.path });
-  }, [linkPreview?.html, linkPreview?.path, markdownContext]);
-  useEffect(() => () => {
-    if (linkPreviewOpenTimer.current) window.clearTimeout(linkPreviewOpenTimer.current);
-    if (linkPreviewCloseTimer.current) window.clearTimeout(linkPreviewCloseTimer.current);
-    linkPreviewRequest.current += 1;
-  }, []);
   const words = useMemo(() => content.trim() ? content.trim().split(/\s+/).length : 0, [content]);
   const allFolders = useMemo(() => ["", ...vault.folders], [vault.folders]);
   const activeLock = vault.locks.find((item) => item.path === activePath && item.clientId !== clientId) || null;
-  const activeFileUsers = vault.connections.filter((client) => client.activePath === activePath);
+  const activeFileUsers = useMemo(() => vault.connections.filter((client) => client.activePath === activePath), [vault.connections, activePath]);
+  const remoteLiveUsers = useMemo(() => activeFileUsers.filter(client => client.id !== clientId && client.editing), [activeFileUsers, clientId]);
   const clientPermission = vault.connections.find((client) => client.id === clientId)?.permission || (hostConfig.isHost ? "admin" : "editor");
   const canEditActive = clientPermission !== "viewer" && (!hostConfig.lockEditedNotes || !activeLock);
 
@@ -645,61 +645,9 @@ export default function PentaMarkApp() {
     });
   }, []);
 
-  const cancelLinkPreviewClose = useCallback(() => {
-    if (!linkPreviewCloseTimer.current) return;
-    window.clearTimeout(linkPreviewCloseTimer.current);
-    linkPreviewCloseTimer.current = null;
-  }, []);
-
-  const closeLinkPreview = useCallback(() => {
-    if (linkPreviewOpenTimer.current) window.clearTimeout(linkPreviewOpenTimer.current);
-    if (linkPreviewCloseTimer.current) window.clearTimeout(linkPreviewCloseTimer.current);
-    linkPreviewOpenTimer.current = null;
-    linkPreviewCloseTimer.current = null;
-    linkPreviewTarget.current = "";
-    linkPreviewRequest.current += 1;
-    setLinkPreview(null);
-  }, []);
-
-  const scheduleLinkPreviewClose = useCallback(() => {
-    if (linkPreviewCloseTimer.current) return;
-    linkPreviewCloseTimer.current = window.setTimeout(closeLinkPreview, 150);
-  }, [closeLinkPreview]);
-
-  useEffect(() => closeLinkPreview(), [activePath, closeLinkPreview]);
-
-  const handleLinkPreviewMove = useCallback((event: React.MouseEvent<HTMLElement>, insidePreview = false) => {
-    const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[data-pm-note]");
-    if (!anchor) {
-      if (insidePreview) cancelLinkPreviewClose();
-      else scheduleLinkPreviewClose();
-      return;
-    }
-    const notePath = anchor.dataset.pmNote || "";
-    if (!notePath) return;
-    cancelLinkPreviewClose();
-    linkPreviewPoint.current = { x: event.clientX, y: event.clientY };
-    if (linkPreviewTarget.current === notePath) {
-      setLinkPreview((current) => current?.path === notePath ? { ...current, x: event.clientX, y: event.clientY } : current);
-      return;
-    }
-    linkPreviewTarget.current = notePath;
-    linkPreviewRequest.current += 1;
-    const requestId = linkPreviewRequest.current;
-    if (linkPreviewOpenTimer.current) window.clearTimeout(linkPreviewOpenTimer.current);
-    linkPreviewOpenTimer.current = window.setTimeout(() => {
-      const point = linkPreviewPoint.current;
-      setLinkPreview({ path: notePath, ...point, html: "", loading: true, error: "" });
-      void request<OpenNote>(`/api/note?path=${encodeURIComponent(notePath)}`).then((note) => {
-        if (linkPreviewRequest.current !== requestId || linkPreviewTarget.current !== notePath) return;
-        const nestedContext = { ...markdownContext, activePath: notePath };
-        setLinkPreview((current) => current?.path === notePath ? { ...current, html: sanitizeMarkdown(note.content, nestedContext), loading: false, error: "" } : current);
-      }).catch(() => {
-        if (linkPreviewRequest.current !== requestId || linkPreviewTarget.current !== notePath) return;
-        setLinkPreview((current) => current?.path === notePath ? { ...current, loading: false, error: `Não deu para visualizar ${titleOf(notePath)}` } : current);
-      });
-    }, 180);
-  }, [cancelLinkPreviewClose, markdownContext, scheduleLinkPreviewClose]);
+  const closeLinkPreview = useCallback(() => previewsRef.current?.close(), []);
+  const scheduleLinkPreviewClose = useCallback(() => previewsRef.current?.leave(), []);
+  const handleLinkPreviewMove = useCallback((event: React.MouseEvent<HTMLElement>) => previewsRef.current?.hover(event), []);
 
   const handleMarkdownLink = useCallback((event: React.MouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a");
@@ -723,16 +671,15 @@ export default function PentaMarkApp() {
     }
     if (createPath) {
       event.preventDefault();
-      if (!window.confirm(`A nota "${titleOf(createPath)}" não existe. Criar agora?`)) return true;
-      void request("/api/note", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: ensureMarkdown(createPath), content: `# ${titleOf(createPath)}\n\n` }),
-      }).then(async () => { await refreshState(); await openNote(ensureMarkdown(createPath), true); }).catch((error) => notify(error instanceof Error ? error.message : "Não deu para criar a nota"));
+      void confirmation({ title: "Criar nota", message: `A nota "${titleOf(createPath)}" não existe. Criar agora?`, accept: "Criar nota" }).then(async approved => {
+        if (!approved) return;
+        await request("/api/note", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: ensureMarkdown(createPath), content: `# ${titleOf(createPath)}\n\n` }) });
+        await refreshState(); await openNote(ensureMarkdown(createPath), true);
+      }).catch(error => notify(error instanceof Error ? error.message : "Não deu para criar a nota"));
       return true;
     }
     return false;
-  }, [closeLinkPreview, expandParents, notify, openNote, refreshState]);
+  }, [confirmation, closeLinkPreview, expandParents, notify, openNote, refreshState]);
 
   const openAssetTarget = useCallback((target: string) => {
     const asset = resolveAssetTarget(target, activePathRef.current, vault.assets);
@@ -825,7 +772,7 @@ export default function PentaMarkApp() {
   const deleteItem = useCallback(async (kind: TreeItemKind, path: string) => {
     setContext(null);
     const label = kind === "folder" ? "a pasta e tudo dentro dela" : kind === "asset" ? "o asset" : "a nota";
-    if (!window.confirm(`Mover ${label} para a lixeira?`)) return;
+    if (!await confirmation({ title: "Mover para a lixeira", message: `Mover ${label} para a lixeira?\n${path}`, accept: "Mover para a lixeira", danger: true })) return;
     try {
       await request(`/api/${kind}?path=${encodeURIComponent(path)}&clientId=${encodeURIComponent(clientId)}`, { method: "DELETE" });
       if (kind === "note" && activePathRef.current === path) { setActivePath(""); setContent(""); }
@@ -833,7 +780,7 @@ export default function PentaMarkApp() {
       if (kind === "asset" && assetPreview?.path === path) setAssetPreview(null);
       await refreshState();
     } catch (error) { notify(error instanceof Error ? error.message : "Não deu para apagar"); }
-  }, [assetPreview?.path, clientId, notify, refreshState]);
+  }, [confirmation, assetPreview?.path, clientId, notify, refreshState]);
 
   const duplicateNote = useCallback(async (path: string) => {
     setContext(null);
@@ -881,6 +828,24 @@ export default function PentaMarkApp() {
     }
     const result = await window.pentaMarkDesktop.openInFolder(kind, path);
     if (!result.ok) notify(result.error || "Não deu para abrir no Explorer");
+  }, [notify]);
+
+  const copyItemPath = useCallback(async (kind: TreeItemKind, path: string, mode: "relative" | "absolute") => {
+    setContext(null);
+    try {
+      if (!window.pentaMarkDesktop) {
+        if (mode === "absolute") { notify("Caminho absoluto disponível apenas no PentaMark Desktop"); return; }
+        await copyText(path);
+        notify("Caminho relativo copiado");
+        return;
+      }
+      const result = await window.pentaMarkDesktop.resolveItemPath(kind, path);
+      if (!result.ok) throw new Error(result.error || "Não foi possível localizar o item");
+      const value = mode === "absolute" ? result.absolute : result.relative;
+      if (!value) throw new Error("Caminho indisponível");
+      await copyText(value);
+      notify(`Caminho ${mode === "absolute" ? "absoluto" : "relativo"} copiado`);
+    } catch (error) { notify(error instanceof Error ? error.message : "Não foi possível copiar o caminho"); }
   }, [notify]);
 
   const chooseVault = useCallback(async () => {
@@ -951,11 +916,12 @@ export default function PentaMarkApp() {
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (event.key === "Escape") { setQuickOpen(false); setToolsOpen(false); return; }
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === "n") { event.preventDefault(); beginDraft("note"); }
-      if (key === "p") { event.preventDefault(); setToolsOpen(false); setQuickOpen(true); }
+      if (key === "f" || key === "p") { event.preventDefault(); setToolsOpen(false); setQuickOpen(true); }
       if (key === "s") { event.preventDefault(); void saveNow(); }
       const editingLive = document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest(".pm-live-codemirror"));
       const editingField = document.activeElement instanceof HTMLElement && document.activeElement.matches("input,textarea,select,[contenteditable='true']");
@@ -989,7 +955,7 @@ export default function PentaMarkApp() {
   const openContext = useCallback((event: React.MouseEvent, menu: ContextMenu) => {
     event.preventDefault();
     event.stopPropagation();
-    const width = menu.type === "editor" ? 238 : 206;
+    const width = menu.type === "editor" ? 260 : 230;
     const height = menu.type === "editor" ? 448 : 310;
     setContext({ ...menu, x: Math.min(menu.x, window.innerWidth - width * appearance.appScale - 8), y: Math.min(menu.y, window.innerHeight - height * appearance.appScale - 8) } as ContextMenu);
   }, [appearance.appScale]);
@@ -1027,9 +993,16 @@ export default function PentaMarkApp() {
     return needle ? vault.assets.filter((asset) => asset.path.toLocaleLowerCase("pt-BR").includes(needle)) : [];
   }, [query, vault.assets]);
 
-  const directFolders = (parent: string) => vault.folders.filter((path) => parentOf(path) === parent);
-  const directNotes = (parent: string) => vault.notes.filter((note) => parentOf(note.path) === parent);
-  const directAssets = (parent: string) => vault.assets.filter((asset) => parentOf(asset.path) === parent);
+  const treeIndex = useMemo(() => {
+    const folders = new Map<string, string[]>(), notes = new Map<string, NoteMeta[]>(), assets = new Map<string, AssetMeta[]>();
+    for (const path of vault.folders) { const parent = parentOf(path); if (!folders.has(parent)) folders.set(parent, []); folders.get(parent)!.push(path); }
+    for (const note of vault.notes) { const parent = parentOf(note.path); if (!notes.has(parent)) notes.set(parent, []); notes.get(parent)!.push(note); }
+    for (const asset of vault.assets) { const parent = parentOf(asset.path); if (!assets.has(parent)) assets.set(parent, []); assets.get(parent)!.push(asset); }
+    return { folders, notes, assets };
+  }, [vault.folders, vault.notes, vault.assets]);
+  const directFolders = (parent: string) => treeIndex.folders.get(parent) || [];
+  const directNotes = (parent: string) => treeIndex.notes.get(parent) || [];
+  const directAssets = (parent: string) => treeIndex.assets.get(parent) || [];
 
   const navigateToClient = (client: ClientInfo) => {
     if (!client.activePath) { notify(`${client.name} não está em nenhum arquivo agora`); return; }
@@ -1079,7 +1052,6 @@ export default function PentaMarkApp() {
             onDragStart={(event) => onDragStart(event, { kind: "note", path: note.path })}
             onDragEnd={() => { setDragging(null); setDropTarget(null); }}
             onClick={() => void openNote(note.path, true)}
-            onDoubleClick={() => startRename("note", note.path)}
             onContextMenu={(event) => openContext(event, { type: "note", path: note.path, x: event.clientX, y: event.clientY })}
             title={`${note.path} — arraste para mover`}
           >
@@ -1134,27 +1106,24 @@ export default function PentaMarkApp() {
             onDragStart={(event) => !root && onDragStart(event, { kind: "folder", path })}
             onDragEnd={() => { setDragging(null); setDropTarget(null); }}
             onClick={() => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })}
-            onDoubleClick={() => !root && startRename("folder", path)}
             onContextMenu={(event) => openContext(event, root ? { type: "blank", x: event.clientX, y: event.clientY } : { type: "folder", path, x: event.clientX, y: event.clientY })}
             title={`${root ? "Raiz do cofre" : path} — solte itens aqui para mover`}
           >
             {!root && <GripVertical className="pm-drag-grip" size={12} />}
-            {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <ChevronRight className="pm-tree-chevron" data-expanded={isOpen} size={13} />
             {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
             <span>{root ? (vault.vaultName || "Cofre") : baseName(path)}</span>
             {!isOpen && !!folderUsers.length && <PresenceStack clients={folderUsers} compact onClientClick={navigateToClient} />}
             <small>{childrenFolders.length + childrenNotes.length + childrenAssets.length}</small>
           </button>
         )}
-        {isOpen && (
-          <div className="pm-folder-children">
+        <AnimatedDisclosure open={isOpen}>{() => <>
             {childrenFolders.map((folder) => folderTree(folder, depth + 1))}
             {draft?.parent === path && inlineInput(draft.kind, draft.value, (value) => setDraft({ ...draft, value }), () => void commitDraft(), draftRef)}
             {childrenNotes.map((note) => noteRow(note, depth + 1))}
             {childrenAssets.map((asset) => assetRow(asset, depth + 1))}
             {!childrenFolders.length && !childrenNotes.length && !childrenAssets.length && draft?.parent !== path && <div className="pm-empty-folder">Pasta vazia — solte algo aqui</div>}
-          </div>
-        )}
+        </>}</AnimatedDisclosure>
       </div>
     );
   };
@@ -1168,6 +1137,7 @@ export default function PentaMarkApp() {
     height: `${100 / appearance.appScale}vh`,
     minHeight: 0,
     "--pm-sidebar-width": `${sidebarWidth}px`,
+    "--pm-column-width": "940px",
     "--pm-split": `${split}%`,
     "--pm-ui-font": uiFont,
     "--pm-editor-font": editorFont,
@@ -1175,60 +1145,39 @@ export default function PentaMarkApp() {
     "--pm-ui-size": `${appearance.uiSize}px`,
     "--pm-editor-size": `${appearance.editorSize}px`,
   } as React.CSSProperties;
-  const previewScale = Math.max(0.1, appearance.appScale);
-  const previewViewport = {
-    width: window.innerWidth / previewScale,
-    height: window.innerHeight / previewScale,
+  const commitHostConfig = async (draft: HostConfig, baseline: HostConfig) => {
+    const saved = await saveHostSettings(draft, baseline);
+    setHostConfig(saved);
+    await refreshState();
   };
-  const previewBox = {
-    width: Math.min(500, previewViewport.width - 24),
-    height: Math.min(440, previewViewport.height - 24),
-  };
-  const previewCursor = linkPreview ? { x: linkPreview.x / previewScale, y: linkPreview.y / previewScale } : { x: 0, y: 0 };
-  const linkPreviewStyle = linkPreview ? {
-    left: Math.max(12, Math.min(previewCursor.x + 18 / previewScale, previewViewport.width - previewBox.width - 12)),
-    top: previewCursor.y + 18 / previewScale + previewBox.height > previewViewport.height - 12
-      ? Math.max(12, previewCursor.y - previewBox.height - 14 / previewScale)
-      : previewCursor.y + 18 / previewScale,
-    width: previewBox.width,
-    maxHeight: previewBox.height,
-  } as React.CSSProperties : undefined;
-
-  const saveSettings = async () => {
+  const saveSettings = async (draft: HostConfig, baseline: HostConfig) => {
+    await commitHostConfig(draft, baseline);
     localStorage.setItem("pentamark:appearance", JSON.stringify(appearance));
-    try {
-      if (hostConfig.isHost) await request("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(hostConfig) });
-      setSettingsOpen(false);
-      if (hostConfig.isHost) await refreshState();
-      notify(hostConfig.isHost ? "Configurações salvas — porta nova vale no próximo início" : "Aparência salva neste dispositivo");
-    } catch (error) { notify(error instanceof Error ? error.message : "Não deu para salvar as configurações"); }
+    notify("Configurações salvas. Alterações de rede podem exigir reiniciar o host.");
   };
 
   return (
-    <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} style={shellStyle}>
-      <div className="pm-ambient" />
-      {!navigation.visible && <button ref={navigation.openerRef} className="pm-navigation-opener" onClick={() => navigation.setVisible(true)} aria-label="Mostrar ou ocultar arquivos" title="Abrir arquivos"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 12 24 28H8L3 12Z" /></svg></button>}
+    <main className="pm-shell" data-theme={appearance.theme} data-compact={navigation.compact} data-navigation={navigation.visible} data-graphics={appearance.graphicsMode || "flat"} style={shellStyle}>
+      <AcrylicLayer enabled={appearance.graphicsMode === "acrylic"} theme={appearance.theme} />
+      <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}
+        onClick={() => navigation.setVisible(!navigation.visible)} aria-expanded={navigation.visible}
+        aria-label="Mostrar ou ocultar arquivos" title={navigation.visible ? "Recolher arquivos" : "Abrir arquivos"}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 12 24 28H8L3 12Z" /><path d="M16 9 23 14 20 22H12L9 14Z" /></svg><span>PentaMark</span>
+      </button>
       <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
         {saveState === "conflict" && <button className="pm-conflict-button" onClick={() => setConflictOpen(true)}>Conflito · Ver diff</button>}
         {saveState !== "saved" && saveState !== "conflict" && <span role="status">{saveState === "saving" ? "Salvando..." : "Alterado"}</span>}
-        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo"><Search size={18} /><span>Abrir</span><kbd>Ctrl P</kbd></button>
-        <button data-workspace-trigger aria-expanded={toolsOpen} aria-label="Ferramentas e ações" onClick={() => setToolsOpen(value => !value)}><MoreHorizontal size={21} /></button>
+        <button data-workspace-trigger onClick={() => { setToolsOpen(false); setQuickOpen(true); }} aria-label="Abrir arquivo" data-tooltip="Buscar arquivos" data-shortcut="Ctrl F"><Search size={18} /><span>Abrir</span><kbd>Ctrl F</kbd></button>
+        <button data-workspace-trigger aria-expanded={toolsOpen} aria-label="Ferramentas e ações" data-tooltip="Ferramentas" onClick={() => setToolsOpen(value => !value)}><MoreHorizontal size={21} /></button>
       </nav>
       <aside
         ref={navigation.sidebarRef} inert={!navigation.visible} aria-hidden={!navigation.visible}
         className={`pm-sidebar ${navigation.visible ? "" : "pm-sidebar--closed"}`}
         onContextMenu={(event) => { if ((event.target as HTMLElement).closest("button,input")) return; openContext(event, { type: "blank", x: event.clientX, y: event.clientY }); }}
       >
-        <div className="pm-brand">
-          <div className="pm-mark"><span /></div>
-          <div className="pm-brand-copy"><strong>PentaMark</strong></div>
-          <button className="pm-sidebar-collapse" aria-label="Mostrar ou ocultar arquivos" onClick={() => navigation.setVisible(false)} title="Recolher arquivos"><ChevronRight size={15} /><span>Recolher</span></button>
-        </div>
-
-
-
+        <div className="pm-brand"><button className="pm-sidebar-collapse" aria-label="Recolher arquivos" onClick={() => navigation.setVisible(false)} title="Recolher arquivos"><ChevronRight size={16} /></button></div>
         <div className="pm-library-head" {...folderDropProps("")}>
-          <span>{vault.vaultName || "Cofre"}</span>
+          <span>ARQUIVOS</span>
           <div>
             <button title="Nova nota inline" onClick={() => beginDraft("note")}><FilePlus2 size={13} /></button>
             <button title="Nova pasta inline" onClick={() => beginDraft("folder")}><FolderPlus size={13} /></button>
@@ -1284,7 +1233,7 @@ export default function PentaMarkApp() {
                 value={content}
                 context={markdownContext}
                 readOnly={!canEditActive}
-                remoteClients={activeFileUsers.filter((client) => client.id !== clientId && client.editing)}
+                remoteClients={remoteLiveUsers}
                 apiRef={liveEditorApiRef}
                 onChange={(value) => { contentRef.current = value; setContent(value); setSaveState("dirty"); }}
                 onSelection={(from, to) => { cursorRef.current = { cursor: from, selectionEnd: to }; schedulePresence(); }}
@@ -1300,6 +1249,7 @@ export default function PentaMarkApp() {
           {uploading && <div className="pm-drop-zone"><ImagePlus size={26} /><strong>Sincronizando arquivos…</strong><span>Imagens, vídeos e anexos vão para o cofre</span></div>}
           </>}
         </DocumentWorkspace>
+        {activePath && <DocumentDecode key={activePath} path={activePath} enabled={!assetPreview} mode={viewMode} />}
 
         <MobileDock
           mode={viewMode}
@@ -1308,115 +1258,43 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark 2.8.0</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />Sincronizado</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
         onClose={() => { setQuickOpen(false); setQuery(""); }} onOpen={entry => { if (entry.kind === "note") void openNote(entry.path, true); else { const asset = vault.assets.find(item => item.path === entry.path); if (asset) setAssetPreview(asset); } }} />
-      <WorkspacePanel open={toolsOpen} title="Ferramentas e ações" onClose={() => setToolsOpen(false)} className="pm-workspace-tools">
-        <header className="pm-topbar">
-          <div className="pm-title-area">
-            <span className="pm-history-controls" data-history-version={historyVersion}>
-              <button className="pm-icon-button" disabled={noteHistory.current.index <= 0} onClick={() => navigateHistory(-1)} title="Voltar · Alt+← · botão lateral"><ArrowLeft size={15} /></button>
-              <button className="pm-icon-button" disabled={noteHistory.current.index < 0 || noteHistory.current.index >= noteHistory.current.paths.length - 1} onClick={() => navigateHistory(1)} title="Avançar · Alt+→ · botão lateral"><ArrowRight size={15} /></button>
-            </span>
-            <div className="pm-breadcrumb">
-              <button className="pm-vault-breadcrumb" onClick={() => void showVault()} onContextMenu={(event) => { event.preventDefault(); void chooseVault(); }} title="Clique para abrir a pasta · botão direito para trocar de cofre"><Archive size={13} /><span>{desktopVault?.name || "Cofre"}</span></button>
-              <span>/</span><strong>{assetPreview?.title || (activePath ? titleOf(activePath) : "Nenhuma nota")}</strong>
-            </div>
-            {!!activeFileUsers.length && <PresenceStack clients={activeFileUsers} onClientClick={navigateToClient} />}
-          </div>
-          <div className="pm-top-actions">
-            {activeLock && <button className="pm-file-lock" onClick={() => setClientsOpen(true)} title={`${activeLock.name} está editando`}><Lock size={12} />{activeLock.name}</button>}
-            {saveState === "conflict" && conflict ? (
-              <button className="pm-conflict-button" onClick={() => setConflictOpen(true)} title="Visualizar diferenças"><GitCompareArrows size={13} />Conflito · Ver diff</button>
-            ) : (
-              <span className={`pm-save-state pm-save-state--${saveState}`}>{saveState === "saved" ? "Salvo" : saveState === "saving" ? "Salvando" : "Alterado"}</span>
-            )}
-            <div className="pm-view-switch" aria-label="Modo de visualização">
-              <button className={viewMode === "edit" ? "active" : ""} onClick={() => setViewMode("edit")} title="Editor Markdown"><Edit3 size={15} /></button>
-              <button className={viewMode === "split" ? "active" : ""} onClick={() => setViewMode("split")} title="Editor + visualização"><Columns2 size={15} /></button>
-              <button className={viewMode === "preview" ? "active" : ""} onClick={() => setViewMode("preview")} title="Somente leitura"><Eye size={15} /></button>
-              <button className={viewMode === "live" ? "active" : ""} onClick={() => setViewMode("live")} title="Live Preview"><Sparkles size={15} /></button>
-            </div>
-            <button className="pm-share-button" aria-label="Compartilhar" onClick={() => setShareOpen(true)}><Share2 size={14} /><span>Compartilhar</span></button>
-            <div className="pm-menu-wrap">
-              <button className="pm-icon-button" aria-label="Mais ações" onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}><MoreHorizontal size={17} /></button>
-              {moreOpen && <div className="pm-popover pm-note-menu" onPointerDown={(event) => event.stopPropagation()}>
-                <button onClick={() => beginDraft("note", parentOf(activePath))}><FilePlus2 size={14} />Nova nota aqui</button>
-                <button onClick={() => void chooseVault()}><FolderOpen size={14} />Abrir outro cofre</button>
-                {activePath && <button onClick={() => startRename("note", activePath)}><Pencil size={14} />Renomear</button>}
-                {activePath && <button onClick={() => void duplicateNote(activePath)}><CopyPlus size={14} />Duplicar</button>}
-                {activePath && <button className="danger" onClick={() => void deleteItem("note", activePath)}><Trash2 size={14} />Excluir</button>}
-              </div>}
-            </div>
-          </div>
-        </header>
-
-        <div className="pm-toolbar" onMouseDown={(event) => { if ((event.target as HTMLElement).closest("button,label")) event.preventDefault(); }}>
-          <button onClick={() => applyFormat("bold")} title="Negrito — Ctrl+B"><Bold size={15} /></button>
-          <button onClick={() => applyFormat("italic")} title="Itálico — Ctrl+I"><Italic size={15} /></button>
-          <button onClick={() => applyFormat("heading")} title="Título — Ctrl+Shift+H"><Heading2 size={15} /></button><span />
-          <button onClick={() => applyFormat("bullet")} title="Lista — Ctrl+Shift+8"><List size={15} /></button>
-          <button onClick={() => applyFormat("task")} title="Tarefa — Ctrl+Shift+X"><ListTodo size={15} /></button>
-          <button onClick={() => applyFormat("quote")} title="Citação — Ctrl+Shift+Q"><Quote size={15} /></button>
-          <button onClick={() => applyFormat("code")} title="Código — Ctrl+Shift+K"><Code2 size={15} /></button><span />
-          <button onClick={() => applyFormat("link")} title="Link — Ctrl+K"><Link size={15} /></button>
-          <button onClick={() => applyFormat("collapse")} title="Seção recolhível — Ctrl+Alt+D"><PanelTopClose size={15} /></button>
-          <button onClick={() => applyFormat("kanban")} title="Kanban — Ctrl+Alt+K"><LayoutDashboard size={15} /></button>
-          <label className="pm-upload-label" title="Anexar arquivos"><ImagePlus size={15} /><input type="file" multiple onChange={(event) => event.target.files && void uploadFiles(event.target.files)} /></label>
-          <span className="pm-toolbar-spacer" />
-          <button className={syncScroll ? "active" : ""} onClick={() => setSyncScroll((value) => !value)} title={`Sincronização de rolagem: ${syncScroll ? "ligada" : "desligada"}`}><ArrowRightLeft size={14} /></button>
-          <button onClick={() => setAppearance((current) => ({ ...current, editorSize: Math.max(11, current.editorSize - 1) }))} title="Diminuir zoom do editor"><ZoomOut size={14} /></button>
-          <button onClick={() => setAppearance((current) => ({ ...current, editorSize: Math.min(32, current.editorSize + 1) }))} title="Aumentar zoom do editor · Ctrl+Scroll"><ZoomIn size={14} /></button>
-          <span className="pm-document-meta"><Hash size={11} />{words} palavras</span>
-        </div>
-
-        <div className="pm-workspace-account" onClick={() => setToolsOpen(false)}>
-          <button className="pm-connected-button" onClick={() => setClientsOpen(true)}><Users size={14} /><span>{vault.clients} conectado{vault.clients === 1 ? "" : "s"}</span><i className="pm-live-dot" /></button>
-          <button onClick={() => setConnectOpen(true)}><LogIn size={14} /><span>Conectar a um cofre</span></button>
-          <button onClick={() => { setMobileSidebar(false); setMobileSetupOpen(true); }}><Smartphone size={14} /><span>Celular e acesso remoto</span></button>
-          <button onClick={() => setProfileOpen(true)}><UserCircle size={14} /><span>Conta</span><PresenceAvatar client={{ id: clientId, name: deviceName, avatar: deviceAvatar, color: colorForClient(clientId) }} tiny /></button>
-          <button onClick={() => setSettingsOpen(true)}><Settings size={14} /><span>Configurações</span></button>
-        </div>
-      </WorkspacePanel>
+      <ToolsPanel open={toolsOpen} onClose={() => setToolsOpen(false)} mode={viewMode} onMode={setViewMode}
+        graphics={appearance.graphicsMode || "flat"} onGraphics={mode => setAppearance(current => {
+          const next = { ...current, graphicsMode: mode }; localStorage.setItem("pentamark:appearance", JSON.stringify(next)); return next;
+        })}
+        canEdit={canEditActive && !assetPreview && viewMode !== "preview"} onFormat={applyFormat} onUpload={files => void uploadFiles(files)}
+        editorSize={appearance.editorSize} onZoom={direction => setAppearance(current => ({ ...current, editorSize: Math.max(11, Math.min(32, current.editorSize + direction)) }))}
+        syncScroll={syncScroll} onSync={() => setSyncScroll(value => !value)}
+        hasNote={!!activePath} canBack={noteHistory.current.index > 0} canForward={noteHistory.current.index < noteHistory.current.paths.length - 1}
+        onBack={() => navigateHistory(-1)} onForward={() => navigateHistory(1)}
+        onNew={() => beginDraft("note", parentOf(activePath))} onRename={() => startRename("note", activePath)}
+        onDuplicate={() => void duplicateNote(activePath)} onDelete={() => void deleteItem("note", activePath)}
+        onReveal={() => void openInFolder(assetPreview ? "asset" : "note", assetPreview?.path || activePath)}
+        onVault={() => void chooseVault()} onShare={() => setShareOpen(true)} onClients={() => setClientsOpen(true)}
+        onConnect={() => setConnectOpen(true)} onMobile={() => setMobileSetupOpen(true)} onProfile={() => setProfileOpen(true)}
+        onMcp={() => setMcpOpen(true)} mcpEnabled={hostConfig.aiBridgeEnabled} onSettings={() => setSettingsOpen(true)} clients={vault.clients} saved={saveState === "saved"} />
       <SelectionTools enabled={viewMode === "live" && canEditActive && !toolsOpen && !quickOpen} scale={appearance.appScale} onFormat={applyFormat} onMore={() => setToolsOpen(true)} />
-      {linkPreview && <aside
-        ref={linkPreviewRef}
-        className="pm-link-hover-preview pm-markdown"
-        style={linkPreviewStyle}
-        onMouseEnter={cancelLinkPreviewClose}
-        onMouseMove={(event) => handleLinkPreviewMove(event, true)}
-        onMouseLeave={scheduleLinkPreviewClose}
-        onClick={(event) => { if (!handleMarkdownLink(event)) event.stopPropagation(); }}
-      >
-        <header>
-          <div><strong>{titleOf(linkPreview.path)}</strong><small>{linkPreview.path}</small></div>
-          <button type="button" onClick={() => { closeLinkPreview(); void openNote(linkPreview.path, true); }}>Abrir <ExternalLink size={12} /></button>
-        </header>
-        {linkPreview.loading && <div className="pm-link-hover-loading"><span /><span /><span /></div>}
-        {linkPreview.error && <div className="pm-link-hover-error">{linkPreview.error}</div>}
-        {!!linkPreview.html && <div className="pm-link-hover-content" dangerouslySetInnerHTML={{ __html: linkPreview.html }} />}
-      </aside>}
+      <LinkPreviewStack ref={previewsRef} context={markdownContext} scale={appearance.appScale} onOpen={path => void openNote(path, true)} />
 
-      {context && <ContextDropdown context={context} scale={appearance.appScale} onClose={() => setContext(null)} onFormat={applyFormat} onBeginDraft={beginDraft} onRename={startRename} onDuplicate={duplicateNote} onDelete={deleteItem} onExpand={setAllExpanded} onOpen={(path) => void openNote(path, true)} onReveal={(kind, path) => void openInFolder(kind, path)} onPreviewAsset={(path) => { setContext(null); const asset = vault.assets.find((item) => item.path === path); if (asset) setAssetPreview(asset); }} onChooseVault={() => void chooseVault()} />}
+      {context && <ContextDropdown context={context} scale={appearance.appScale} onClose={() => setContext(null)} onFormat={applyFormat} onBeginDraft={beginDraft} onRename={startRename} onDuplicate={duplicateNote} onDelete={deleteItem} onExpand={setAllExpanded} onOpen={(path) => void openNote(path, true)} onReveal={(kind, path) => void openInFolder(kind, path)} onPreviewAsset={(path) => { setContext(null); const asset = vault.assets.find((item) => item.path === path); if (asset) setAssetPreview(asset); }} onChooseVault={() => void chooseVault()} onCopyPath={(kind, path, mode) => void copyItemPath(kind,path,mode)} canCopyAbsolute={Boolean(window.pentaMarkDesktop)} />}
 
-      {shareOpen && <div className="pm-modal-backdrop" onMouseDown={() => setShareOpen(false)}><div className="pm-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="pm-modal-close" aria-label="Fechar compartilhamento" onClick={() => setShareOpen(false)}><X size={17} /></button>
-        <div className="pm-modal-icon"><Share2 size={21} /></div><h2>Compartilhar o cofre</h2><p>No celular e fora de casa, prefira o endereço HTTPS criado pelo Tailscale. Na mesma rede Wi-Fi, o endereço local também funciona.</p>
-        <div className="pm-url-list">{shareUrls.map((url) => <button key={url} onClick={() => void copyValue(url)}><Copy size={14} /><code>{url}</code><span>{connectionLabel(url)}</span></button>)}</div>
-        <div className="pm-share-note"><Server size={14} />O aparelho host precisa continuar ligado e com o PentaMark aberto.</div>
-        <button className="pm-modal-inline-action" onClick={() => { setShareOpen(false); setMobileSetupOpen(true); }}><Smartphone size={14} />Configurar celular e Tailscale</button>
-        <button className="pm-modal-inline-action" onClick={() => { setShareOpen(false); setConnectOpen(true); }}><LogIn size={14} />Entrar em outro cofre</button>
-      </div></div>}
+      <DialogPresence open={shareOpen}><ShareModal urls={shareUrls} onClose={() => setShareOpen(false)} onNotify={notify}
+        onMobile={() => { setShareOpen(false); setMobileSetupOpen(true); }} onConnect={() => { setShareOpen(false); setConnectOpen(true); }}/></DialogPresence>
+      <DialogPresence open={mcpOpen}><McpModal config={hostConfig} urls={shareUrls} onClose={() => setMcpOpen(false)} onNotify={notify} onSave={async (draft, baseline) => { await commitHostConfig(draft, baseline); notify("Configuração MCP salva"); }}/></DialogPresence>
 
-      {connectOpen && <ConnectModal address={connectionAddress} setAddress={setConnectionAddress} deviceName={deviceName} setDeviceName={setDeviceName} onClose={() => setConnectOpen(false)} onConnect={connectToVault} />}
-      {clientsOpen && <ClientsModal vault={vault} currentClientId={clientId} isHost={hostConfig.isHost} onPermission={(targetId, permission) => { void request("/api/permission", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: targetId, permission }) }).then(() => refreshState()).catch((error) => notify(error instanceof Error ? error.message : "Não deu para alterar a permissão")); }} onClose={() => setClientsOpen(false)} onConnect={() => { setClientsOpen(false); setConnectOpen(true); }} onRefresh={() => void refreshState()} />}
-      {profileOpen && <ProfileModal name={deviceName} avatar={deviceAvatar} color={colorForClient(clientId)} onClose={() => setProfileOpen(false)} onSave={saveProfile} onError={notify} />}
-      {conflictOpen && conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}
-      {kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}
-      {mobileSetupOpen && <MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} />}
-      {settingsOpen && <SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} setConfig={setHostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={() => void saveSettings()} onNotify={notify} />}
+      <DialogPresence open={connectOpen}><ConnectModal address={connectionAddress} setAddress={setConnectionAddress} deviceName={deviceName} setDeviceName={setDeviceName} onClose={() => setConnectOpen(false)} onConnect={connectToVault} /></DialogPresence>
+      <DialogPresence open={clientsOpen}><ClientsModal vault={vault} currentClientId={clientId} isHost={hostConfig.isHost} onPermission={(targetId, permission) => { void request("/api/permission", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: targetId, permission }) }).then(() => refreshState()).catch((error) => notify(error instanceof Error ? error.message : "Não deu para alterar a permissão")); }} onClose={() => setClientsOpen(false)} onConnect={() => { setClientsOpen(false); setConnectOpen(true); }} onRefresh={() => void refreshState()} /></DialogPresence>
+      <DialogPresence open={profileOpen}><ProfileModal name={deviceName} avatar={deviceAvatar} color={colorForClient(clientId)} onClose={() => setProfileOpen(false)} onSave={saveProfile} onError={notify} /></DialogPresence>
+      <DialogPresence open={conflictOpen && !!conflict}>{conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}</DialogPresence>
+      <DialogPresence open={!!kanbanDialog}>{kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}</DialogPresence>
+      <DialogPresence open={mobileSetupOpen}><MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} /></DialogPresence>
+      <DialogPresence open={settingsOpen}><SettingsModal appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} /></DialogPresence>
+      <TooltipLayer />
       {toast && <div className="pm-toast">{toast}</div>}
     </main>
   );

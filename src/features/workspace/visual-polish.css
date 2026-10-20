@@ -1,0 +1,129 @@
+/* Optical finishing layer. This stylesheet does not change editor line geometry. */
+.pm-shell[data-theme] {
+  --pm-edge-whisper: color-mix(in srgb, var(--pm-accent-base) 9%, transparent);
+  --pm-inset-haze: color-mix(in srgb, var(--pm-accent-base) 5%, transparent);
+}
+
+/* A single soft silhouette for either material. Flat retains recognizable boundaries. */
+.pm-shell[data-graphics="flat"] :is(.pm-sidebar,.pm-workspace-panel,.pm-context-menu,.pm-link-hover-preview,.pm-selection-tools,.pm-dialog) {
+  border-color: var(--pm-edge-whisper);
+  box-shadow: 0 18px 45px #0002, inset 0 1px #ffffff06;
+}
+.pm-shell[data-graphics="flat"] :is(.pm-mode-grid button[aria-pressed="true"],.pm-material-switch button[aria-pressed="true"]) {
+  border-color: color-mix(in srgb,var(--pm-accent-base) 20%,transparent);
+}
+
+/* Main tools: the selected Live button has the same optical depth as its neighbors. */
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button,.pm-tool-action,.pm-tool-footer button) {
+  background-color: rgba(11, 27, 35, .16);
+  border-color: transparent;
+  transition: background-color 150ms ease, color 150ms ease, filter 150ms ease;
+}
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button,.pm-tool-action,.pm-tool-footer button):is(:hover,:focus-visible),
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button)[aria-pressed="true"] {
+  background-color: color-mix(in srgb,var(--pm-accent-base) 9%,rgba(9,25,33,.24));
+  backdrop-filter: blur(9px) saturate(1.2);
+  -webkit-backdrop-filter: blur(9px) saturate(1.2);
+  box-shadow: inset 0 1px color-mix(in srgb,var(--pm-accent-base) 10%,transparent);
+}
+.pm-shell[data-graphics="acrylic"] :is(.pm-mode-grid button,.pm-material-switch button)[aria-pressed="true"]:is(:hover,:focus-visible) {
+  background-color: color-mix(in srgb,var(--pm-accent-base) 12%,rgba(9,25,33,.3));
+}
+.pm-shell[data-graphics="acrylic"] :is(.pm-identity-card,.pm-material-demo,.pm-client-card,.pm-option-row) {
+  background-color: rgba(9,26,36,.16);
+  backdrop-filter: blur(10px) saturate(1.08);
+  -webkit-backdrop-filter: blur(10px) saturate(1.08);
+}
+
+/* Replace default 22px font glyph with a geometry-centered icon. */
+.pm-shell .pm-workspace-panel-heading { min-height: 39px; align-items: center; }
+.pm-shell .pm-workspace-panel-heading > button {
+  display: flex; flex: 0 0 29px; align-items: center; justify-content: center;
+  min-height: 29px; width: 29px; height: 29px; padding: 0; margin: 0;
+  line-height: 1; font-size: inherit; border-radius: 6px;
+  color: var(--pm-muted);
+}
+.pm-shell .pm-workspace-panel-heading > button > svg { flex: none; display: block; }
+
+/* The acrylic plate resolves first, then the contents. Flat keeps a short fade. */
+.pm-shell[data-graphics="acrylic"] .pm-workspace-tools[data-entered="true"] {
+  animation: pm-console-resolve 255ms cubic-bezier(.18,.72,.2,1) both;
+}
+.pm-shell[data-graphics="acrylic"] .pm-workspace-tools[data-entered="true"] :is(.pm-tool-section,.pm-tool-mcp,.pm-tool-footer) {
+  animation: pm-console-content 185ms ease-out both;
+}
+@keyframes pm-console-resolve {
+  0% { clip-path: polygon(100% 0, 100% 0, 100% 16%, 100% 16%, 100% 100%, 100% 100%); opacity: .56; filter: blur(3px); }
+  48% { clip-path: polygon(22% 0, 100% 0, 100% 27%, 91% 27%, 91% 75%, 12% 75%, 12% 100%, 0 100%, 0 0); opacity: .88; filter: blur(.9px); }
+  100% { clip-path: inset(0 round var(--pm-radius)); opacity: 1; filter: none; }
+}
+@keyframes pm-console-content {
+  from { opacity: 0; transform: translateX(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* CodeMirror paints the selection in its own geometry-preserving layer. */
+.pm-shell[data-graphics="acrylic"] .pm-live-codemirror .cm-selectionBackground,
+.pm-shell[data-graphics="acrylic"] .pm-live-codemirror.cm-focused .cm-selectionBackground {
+  background-color: color-mix(in srgb,var(--pm-accent-base) 21%, transparent) !important;
+  background-image: linear-gradient(105deg, transparent 20%,rgba(235,252,255,.08) 37%, rgba(209,252,255,.37) 48%, rgba(131,218,232,.10) 55%, transparent 72%) !important;
+  background-size: 260% 100%;
+  border-radius: 1.5px;
+  box-shadow: inset 0 0 3px #e3fcff15, 0 0 6px color-mix(in srgb,var(--pm-accent-base) 22%, transparent);
+  animation: pm-selection-signal 3.2s linear infinite;
+  pointer-events: none;
+}
+.pm-shell .pm-live-codemirror ::selection { color: inherit; background: color-mix(in srgb, var(--pm-accent-base) 21%, transparent); text-shadow: 0 0 4px color-mix(in srgb,var(--pm-accent-base) 35%, transparent); }
+@keyframes pm-selection-signal { from { background-position: 130% 0; } to { background-position: -135% 0; } }
+
+/* Noninteractive optical pass on note navigation. No changes to the editor DOM. */
+.pm-workspace { position: relative; }
+.pm-note-resolve {
+  position: absolute; inset: 94px 0 24px; z-index: 4; overflow: hidden;
+  pointer-events: none; contain: paint;
+}
+.pm-note-resolve::before {
+  content: ''; position: absolute; inset: -35% 10%;
+  opacity: 0;
+  background: linear-gradient(to bottom,transparent 39%,color-mix(in srgb,var(--pm-accent-base) 16%,transparent) 50%,#c5fcff0e 50.3%,transparent 57%);
+  mask-image: linear-gradient(to right, transparent,black 28%, black 75%,transparent);
+  animation: pm-note-scan 480ms ease-out both;
+}
+.pm-shell[data-graphics="flat"] .pm-note-resolve::before { animation-duration: 170ms; background: transparent; }
+@keyframes pm-note-scan { 0% { transform: translateY(-36%); opacity: 0; } 22% { opacity:.82; } 82% { opacity:.27; } 100% { transform: translateY(58%); opacity: 0; } }
+
+/* One accessible tooltip layer anchored to the button, never to the cursor. */
+.pm-shell .pm-optical-tooltip {
+  position:absolute; z-index: 380; pointer-events:none;
+  display:flex; align-items:center; gap:11px; width:max-content; max-width: min(300px,calc(100% - 32px));
+  min-height:29px; padding:6px 10px;
+  border:1px solid color-mix(in srgb,var(--pm-accent-base) 17%,transparent); border-radius:6px;
+  background:rgba(14,27,35,.84); backdrop-filter: blur(14px) saturate(1.14); -webkit-backdrop-filter: blur(14px) saturate(1.14);
+  box-shadow: 0 12px 28px #0004, inset 0 1px #e9ffff0c;
+  color:var(--pm-text); font-size: .71em; line-height:1.4; white-space:nowrap;
+  transform:translate(-50%,-100%); animation:pm-hint-in 110ms ease-out both;
+}
+.pm-shell .pm-optical-tooltip[data-below="true"] { transform:translate(-50%,0); }
+.pm-optical-tooltip kbd { color:var(--pm-cyan); font:inherit; font-size:.85em; padding:2px 5px; border:1px solid var(--pm-edge-whisper); border-radius:3px; background:#ffffff06; }
+@keyframes pm-hint-in { from { opacity:0; filter:blur(2px); } to { opacity:1; filter:none; } }
+
+/* Eight one-tap formatting options plus source/overflow: still compact on phones. */
+.pm-shell .pm-selection-tools { gap:3px; padding:5px; border-radius:8px; }
+.pm-shell .pm-selection-tools button { flex: 0 0 30px; width:30px; height:31px; padding:0; border-radius:4px; }
+.pm-shell[data-graphics="acrylic"] .pm-selection-tools button:hover,
+.pm-shell[data-graphics="acrylic"] .pm-selection-tools button:focus-visible {
+  background:rgba(14,34,44,.33); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px color-mix(in srgb,var(--pm-accent-base) 14%,transparent);
+}
+@media(max-width:560px) {
+  .pm-shell .pm-selection-tools button[data-compact-action="true"] { display:none; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .pm-shell .pm-selection-tools .cm-selectionBackground,
+  .pm-shell[data-graphics="acrylic"] .pm-live-codemirror .cm-selectionBackground,
+  .pm-shell[data-graphics="acrylic"] .pm-live-codemirror.cm-focused .cm-selectionBackground { animation:none !important; background-position:center !important; }
+  .pm-note-resolve { display:none !important; }
+  .pm-shell[data-graphics="acrylic"] .pm-workspace-tools[data-entered="true"] :is(.pm-tool-section,.pm-tool-mcp,.pm-tool-footer) { animation:none !important; }
+  .pm-shell[data-graphics="acrylic"] .pm-workspace-tools[data-entered="true"] { animation:none !important; clip-path:none !important; }
+  .pm-optical-tooltip { animation:none !important; }
+}

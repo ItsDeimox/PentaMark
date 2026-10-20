@@ -1,65 +1,91 @@
-import { ArrowRightLeft, Bot, Check, Copy, ExternalLink, FolderOpen, Lock, Palette, RotateCcw, Server, Settings, Type, X } from "lucide-react";
-import React from "react";
-import { DEFAULT_APPEARANCE } from "../../app/constants";
-import type { Appearance, DesktopVaultInfo, HostConfig } from "../../domain/types";
-import { connectionLabel, copyText } from "../../shared/client";
+import { Bot, Check, ExternalLink, FolderOpen, Layers, LockKeyhole, Palette, RotateCcw, Settings, Square, Type } from 'lucide-react';
+import { useId, useState, type Dispatch, type SetStateAction } from 'react';
+import { DEFAULT_APPEARANCE } from '../../app/constants';
+import type { Appearance, DesktopVaultInfo, HostConfig } from '../../domain/types';
+import { DialogFrame, DialogSection } from './DialogFrame';
+import { McpSettings } from './McpSettings';
 
-export function SettingsModal(props: {
-  appearance: Appearance;
-  setAppearance: React.Dispatch<React.SetStateAction<Appearance>>;
-  config: HostConfig;
-  setConfig: React.Dispatch<React.SetStateAction<HostConfig>>;
-  urls: string[];
-  desktopVault: DesktopVaultInfo | null;
-  onChooseVault: () => void;
-  onShowVault: () => void;
-  onClose: () => void;
-  onSave: () => void;
-  onNotify: (message: string) => void;
+const THEMES = [
+  { id:'pentagory', name:'PentaMark', color:'#79d2dc' },
+  { id:'eclipse', name:'Eclipse', color:'#b5a1e7' },
+  { id:'ember', name:'Ember', color:'#e8b087' },
+  { id:'terminal', name:'Terminal', color:'#9dd0aa' },
+] as const;
+const TABS = [
+  { id:'appearance', label:'Aparência', icon:Palette },
+  { id:'type', label:'Tipografia', icon:Type },
+  { id:'vault', label:'Cofre e host', icon:FolderOpen },
+  { id:'mcp', label:'MCP', icon:Bot },
+] as const;
+const FONT_OPTIONS = [['technical','Técnica · PentaMark'],['modern','Moderna'],['rounded','Arredondada'],['mono','Monoespaçada'],['serif','Serifada'],['custom','Personalizada']];
+export function SettingsModal(p: {
+  appearance: Appearance; setAppearance: Dispatch<SetStateAction<Appearance>>;
+  config: HostConfig; urls: string[]; desktopVault: DesktopVaultInfo | null;
+  onChooseVault: () => void; onShowVault: () => void; onClose: () => void;
+  onSave: (draft: HostConfig, baseline: HostConfig) => Promise<void>; onNotify: (message: string) => void;
 }) {
-  const themes: Array<{ id: Appearance["theme"]; name: string; color: string }> = [
-    { id: "pentagory", name: "PentaMark", color: "#67e7ef" },
-    { id: "eclipse", name: "Eclipse", color: "#a78bfa" },
-    { id: "ember", name: "Ember", color: "#f0a35e" },
-    { id: "terminal", name: "Terminal", color: "#73dc8c" },
-  ];
-  return <div className="pm-modal-backdrop" onMouseDown={props.onClose}><div className="pm-modal pm-settings-modal" onMouseDown={(event) => event.stopPropagation()}>
-    <button className="pm-modal-close" onClick={props.onClose}><X size={17} /></button>
-    <div className="pm-settings-heading"><div className="pm-modal-icon"><Settings size={21} /></div><div><h2>Configurações</h2><p>Aparência local e opções do host</p></div></div>
-    <div className="pm-settings-scroll">
-      <section className="pm-settings-section"><h3><Palette size={15} />Tema</h3><div className="pm-theme-grid">
-        {themes.map((theme) => <button key={theme.id} className={props.appearance.theme === theme.id ? "active" : ""} onClick={() => props.setAppearance((current) => ({ ...current, theme: theme.id }))}><span style={{ background: theme.color }} /><strong>{theme.name}</strong></button>)}
-      </div></section>
-      <section className="pm-settings-section"><h3><Type size={15} />Fontes</h3><div className="pm-settings-grid">
-        <label>Interface<select value={props.appearance.uiFont} onChange={(event) => props.setAppearance((current) => ({ ...current, uiFont: event.target.value }))}><option value="technical">Técnica · PentaMark</option><option value="modern">Moderna</option><option value="rounded">Arredondada</option><option value="mono">Monoespaçada</option><option value="serif">Serifada</option><option value="custom">Personalizada</option></select></label>
-        <label>Editor<select value={props.appearance.editorFont} onChange={(event) => props.setAppearance((current) => ({ ...current, editorFont: event.target.value }))}><option value="mono">Monoespaçada</option><option value="technical">Técnica · PentaMark</option><option value="modern">Moderna</option><option value="rounded">Arredondada</option><option value="serif">Serifada</option><option value="custom">Personalizada</option></select></label>
-        {props.appearance.uiFont === "custom" && <label className="wide">Fonte instalada da interface<input value={props.appearance.customUiFont} placeholder="Ex.: JetBrains Mono" onChange={(event) => props.setAppearance((current) => ({ ...current, customUiFont: event.target.value }))} /></label>}
-        {props.appearance.editorFont === "custom" && <label className="wide">Fonte instalada do editor<input value={props.appearance.customEditorFont} placeholder="Ex.: Fira Code" onChange={(event) => props.setAppearance((current) => ({ ...current, customEditorFont: event.target.value }))} /></label>}
-        <label className="wide">Escala do app: {Math.round(props.appearance.appScale * 100)}%<input type="range" min="0.8" max="1.6" step="0.05" value={props.appearance.appScale} onChange={(event) => props.setAppearance((current) => ({ ...current, appScale: Number(event.target.value) }))} /></label>
-        <label>Tamanho da interface: {props.appearance.uiSize}px<input type="range" min="10" max="20" value={props.appearance.uiSize} onChange={(event) => props.setAppearance((current) => ({ ...current, uiSize: Number(event.target.value) }))} /></label>
-        <label>Tamanho do editor: {props.appearance.editorSize}px<input type="range" min="11" max="32" value={props.appearance.editorSize} onChange={(event) => props.setAppearance((current) => ({ ...current, editorSize: Number(event.target.value) }))} /></label>
-      </div><small className="pm-settings-hint">A fonte da interface agora é herdada por botões, menus, inputs, atalhos e modais. O editor usa a fonte escolhida logo ao lado.</small></section>
-      <section className="pm-settings-section"><h3><FolderOpen size={15} />Cofre</h3>
-        {props.desktopVault ? <div className="pm-vault-settings">
-          <div><strong>{props.desktopVault.name}</strong><code title={props.desktopVault.path}>{props.desktopVault.path}</code></div>
-          <div><button onClick={props.onShowVault}><ExternalLink size={14} />Explorer</button><button onClick={props.onChooseVault}><ArrowRightLeft size={14} />Abrir outro</button></div>
-        </div> : <div className="pm-host-only-note"><FolderOpen size={15} /><span>A troca de diretório está disponível no PentaMark Desktop do computador host.</span></div>}
-      </section>
-      <section className="pm-settings-section"><h3><Server size={15} />Host local</h3>{props.config.isHost ? <div className="pm-settings-grid">
-        <label className="wide">Nome do cofre<input value={props.config.vaultName} onChange={(event) => props.setConfig((current) => ({ ...current, vaultName: event.target.value }))} /></label>
-        <label>Porta<input type="number" min="1024" max="65535" value={props.config.port} onChange={(event) => props.setConfig((current) => ({ ...current, port: Number(event.target.value) }))} /></label>
-        <label>Upload máximo (MB)<input type="number" min="1" max="16384" value={props.config.maxUploadMB} onChange={(event) => props.setConfig((current) => ({ ...current, maxUploadMB: Number(event.target.value) }))} /></label>
-        <label className="pm-check-row"><input type="checkbox" checked={props.config.openBrowser} onChange={(event) => props.setConfig((current) => ({ ...current, openBrowser: event.target.checked }))} />Abrir navegador ao iniciar</label>
-        <label className="pm-check-row wide"><input type="checkbox" checked={props.config.lockEditedNotes} onChange={(event) => props.setConfig((current) => ({ ...current, lockEditedNotes: event.target.checked }))} /><span><strong>Bloquear edição simultânea</strong><small>O primeiro usuário no arquivo recebe a trava; os demais entram em modo leitura.</small></span></label>
-        <label className="pm-check-row wide"><input type="checkbox" checked={props.config.cleanupUnusedAssets} onChange={(event) => props.setConfig((current) => ({ ...current, cleanupUnusedAssets: event.target.checked }))} /><span><strong>Limpar assets sem uso</strong><small>Após salvar uma nota, imagens, áudios, vídeos e PDFs sem nenhuma referência vão para .trash/unused-assets. Desativado por padrão.</small></span></label>
-      </div> : <div className="pm-host-only-note"><Lock size={15} /><span>Estas opções só podem ser alteradas no computador que está hospedando o cofre.</span></div>}</section>
-      <section className="pm-settings-section"><h3><Bot size={15} />Ponte IA · Codex / MCP</h3>{props.config.isHost ? <div className="pm-ai-settings">
-        <label className="pm-check-row wide"><input type="checkbox" checked={props.config.aiBridgeEnabled} onChange={(event) => props.setConfig((current) => ({ ...current, aiBridgeEnabled: event.target.checked }))} /><span><strong>Permitir acesso da IA ao cofre</strong><small>Expõe ferramentas MCP de busca, leitura, edição, movimentação e lixeira pela rede do PentaMark.</small></span></label>
-        <div className="pm-ai-token"><label>Token da ponte<input value={props.config.aiBridgeToken} onChange={(event) => props.setConfig((current) => ({ ...current, aiBridgeToken: event.target.value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 128) }))} spellCheck={false} /></label><button onClick={() => { const bytes = crypto.getRandomValues(new Uint8Array(18)); props.setConfig((current) => ({ ...current, aiBridgeToken: Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("") })); }}><RotateCcw size={13} />Gerar</button></div>
-        <div className="pm-ai-urls">{props.urls.map((url) => { const mcpUrl = `${url}/mcp?token=${props.config.aiBridgeToken}`; return <button key={url} disabled={!props.config.aiBridgeEnabled} onClick={() => void copyText(mcpUrl).then(() => props.onNotify("URL MCP copiada")).catch((error) => props.onNotify(error instanceof Error ? error.message : "Não deu para copiar"))}><Copy size={13} /><code>{mcpUrl}</code><span>{connectionLabel(url)}</span></button>; })}</div>
-        <p><strong>No Codex:</strong> Configurações → MCP servers → Add server → Streamable HTTP. Cole a URL acima e reinicie o Codex. Ele usará a conta já conectada do seu amigo; o PentaMark não cobra nem precisa de chave da API.</p>
-      </div> : <div className="pm-host-only-note"><Bot size={15} /><span>{props.config.aiBridgeEnabled ? "A Ponte IA está habilitada. Peça ao host a URL MCP com token." : "A Ponte IA está desabilitada pelo host deste cofre."}</span></div>}</section>
+  const [initialAppearance] = useState(p.appearance), [baseline] = useState(p.config), [draft, setDraft] = useState(p.config);
+  const [tab, setTab] = useState<string>('appearance');
+  const [saving, setSaving] = useState(false), [error, setError] = useState('');
+  const id = useId();
+  const appearance = (patch: Partial<Appearance>) => p.setAppearance(current => ({ ...current, ...patch }));
+  const config = (patch: Partial<HostConfig>) => setDraft(current => ({ ...current, ...patch }));
+  const close = () => { if (saving) return; p.setAppearance(initialAppearance); p.onClose(); };
+  const save = async () => {
+    if (saving) return;
+    setSaving(true); setError('');
+    try { await p.onSave(draft, baseline); p.onClose(); } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível salvar.'); } finally { setSaving(false); }
+  };
+  const navigation = <nav className="pm-preferences-nav" aria-label="Categorias das configurações"><span>PREFERÊNCIAS</span><div role="tablist" aria-label="Categorias das configurações" onKeyDown={event => {
+    if (!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    const index = TABS.findIndex(t => t.id === tab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length-1 : (index + (['ArrowDown','ArrowRight'].includes(event.key) ? 1 : -1) + TABS.length) % TABS.length;
+    setTab(TABS[next].id);
+    document.getElementById(`${id}-${TABS[next].id}`)?.focus();
+  }}>{TABS.map(({id:key,label,icon:Icon}) => <button type="button" id={`${id}-${key}`} key={key} role="tab" aria-selected={tab===key}
+    aria-controls={`${id}-content`} tabIndex={tab===key ? 0 : -1} onClick={() => setTab(key)}><Icon size={17}/><span>{label}</span></button>)}</div><small>As mudanças visuais aparecem em tempo real.</small></nav>;
+  return <DialogFrame title="Configurações" icon={Settings} className="pm-settings-dialog" navigation={navigation} onClose={close} onSubmit={() => void save()}
+    footer={<><button type="button" className="pm-text-action" disabled={saving} onClick={() => p.setAppearance({ ...DEFAULT_APPEARANCE })}><RotateCcw size={14}/><span>Restaurar visual</span></button><span className="pm-footer-spacer"/><button type="button" className="secondary" disabled={saving} onClick={close}>Cancelar</button><button type="submit" className="primary" disabled={saving}><Check size={15}/>{saving ? 'Salvando…' : 'Salvar configurações'}</button></>}>
+    <div role="tabpanel" id={`${id}-content`} aria-labelledby={`${id}-${tab}`} className="pm-preference-page" key={tab}>
+      {tab==='appearance' && <>
+        <DialogSection title="Identidade visual">
+          <div className="pm-theme-options">{THEMES.map(theme => <button type="button" key={theme.id} aria-pressed={p.appearance.theme===theme.id} onClick={() => appearance({theme:theme.id})} style={{'--pm-swatch':theme.color} as React.CSSProperties}><i/><span>{theme.name}</span>{p.appearance.theme===theme.id && <Check size={13}/>}</button>)}</div>
+        </DialogSection>
+        <DialogSection title="Gráficos">
+          <div className="pm-material-options"><button type="button" aria-pressed={p.appearance.graphicsMode==='flat'} onClick={() => appearance({graphicsMode:'flat'})}><Square size={21}/><strong>Flat</strong></button><button type="button" aria-pressed={p.appearance.graphicsMode==='acrylic'} onClick={() => appearance({graphicsMode:'acrylic'})}><Layers size={21}/><strong>Acrílico</strong></button></div>
+
+        </DialogSection>
+      </>}
+      {tab==='type' && <>
+        <DialogSection title="Fontes"><div className="pm-field-grid">
+          <label className="pm-field">Fonte da interface<select aria-label="Fonte da interface" value={p.appearance.uiFont} onChange={e => appearance({uiFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label className="pm-field">Fonte do editor<select aria-label="Fonte do editor" value={p.appearance.editorFont} onChange={e => appearance({editorFont:e.target.value})}>{FONT_OPTIONS.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          {p.appearance.uiFont==='custom' && <label className="pm-field wide">Fonte instalada da interface<input value={p.appearance.customUiFont} onChange={e => appearance({customUiFont:e.target.value})}/></label>}
+          {p.appearance.editorFont==='custom' && <label className="pm-field wide">Fonte instalada do editor<input value={p.appearance.customEditorFont} onChange={e => appearance({customEditorFont:e.target.value})}/></label>}
+        </div></DialogSection>
+        <DialogSection title="Escala e leitura" hint="Ajuste o tamanho sem mudar o conteúdo das notas.">
+          <label className="pm-range-field"><span>Escala do app<output>{Math.round(p.appearance.appScale*100)}%</output></span><input aria-label="Escala do app" type="range" min="0.8" max="1.6" step="0.05" value={p.appearance.appScale} onChange={e => appearance({appScale:Number(e.target.value)})}/></label>
+          <label className="pm-range-field"><span>Tamanho da interface<output>{p.appearance.uiSize}px</output></span><input aria-label="Tamanho da interface" type="range" min="10" max="20" value={p.appearance.uiSize} onChange={e => appearance({uiSize:Number(e.target.value)})}/></label>
+          <label className="pm-range-field"><span>Tamanho do editor<output>{p.appearance.editorSize}px</output></span><input aria-label="Tamanho do editor" type="range" min="11" max="32" value={p.appearance.editorSize} onChange={e => appearance({editorSize:Number(e.target.value)})}/></label>
+        </DialogSection>
+      </>}
+      {tab==='vault' && <>
+        <DialogSection title="Diretório do cofre">
+          {p.desktopVault ? <div className="pm-vault-location"><FolderOpen size={21}/><div><strong>{p.desktopVault.name}</strong><code>{p.desktopVault.path}</code></div><div className="pm-inline-actions"><button type="button" onClick={p.onShowVault}><ExternalLink size={14}/>Mostrar diretório</button><button type="button" onClick={p.onChooseVault}>Abrir outro cofre</button></div></div>
+            : <div className="pm-notice"><FolderOpen size={17}/><span>A troca de diretório está disponível no aplicativo Desktop do host.</span></div>}
+        </DialogSection>
+        <DialogSection title="Host local" hint="As opções de rede e inicialização podem exigir reiniciar o host.">
+          {p.config.isHost ? <div className="pm-field-grid">
+            <label className="pm-field wide">Nome do cofre<input value={draft.vaultName} maxLength={80} onChange={e => config({vaultName:e.target.value})}/></label>
+            <label className="pm-field">Porta<input type="number" min="1024" max="65535" value={draft.port} onChange={e => config({port:Number(e.target.value)})}/></label>
+            <label className="pm-field">Upload máximo (MB)<input type="number" min="1" max="16384" value={draft.maxUploadMB} onChange={e => config({maxUploadMB:Number(e.target.value)})}/></label>
+            {([['openBrowser','Abrir navegador ao iniciar','Abre a interface quando o host é iniciado.'],['lockEditedNotes','Bloquear edição simultânea','O primeiro editor recebe a trava; os demais entram em modo leitura.'],['cleanupUnusedAssets','Limpar assets sem uso','Após salvar, anexos sem referências vão para .trash/unused-assets.']] as const).map(([key,label,hint]) => <label key={key} className="pm-option-row wide"><span><strong>{label}</strong><small>{hint}</small></span><input role="switch" type="checkbox" checked={draft[key]} onChange={e => config({[key]:e.target.checked})}/></label>)}
+          </div> : <div className="pm-notice"><LockKeyhole size={17}/><span>Estas opções só podem ser alteradas no host deste cofre.</span></div>}
+        </DialogSection>
+      </>}
+      {tab==='mcp' && <McpSettings draft={draft} saved={p.config} onChange={config} urls={p.urls} onNotify={p.onNotify}/>}
     </div>
-    <div className="pm-settings-actions"><button className="secondary" onClick={() => props.setAppearance(DEFAULT_APPEARANCE)}><RotateCcw size={14} />Restaurar visual</button><button className="primary" onClick={props.onSave}><Check size={14} />Salvar configurações</button></div>
-  </div></div>;
+    {error && <p role="alert" className="pm-form-error">{error}</p>}
+  </DialogFrame>;
 }
