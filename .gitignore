@@ -21,3 +21,6 @@ pentamark.config.json
 Thumbs.db
 .idea/
 .vscode/
+*.jks
+*.keystore
+android-signing/

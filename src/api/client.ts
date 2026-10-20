@@ -1,3 +1,5 @@
+import { isAndroidLocal, nativeRequest } from '../platform/android';
+
 export class RequestError extends Error {
   status: number;
   data: Record<string, unknown>;
@@ -11,6 +13,10 @@ export class RequestError extends Error {
 }
 
 export function request<T>(url: string, init?: RequestInit): Promise<T> {
+  if (isAndroidLocal) return nativeRequest(url, init).then(({ status, data }) => {
+    if (status >= 400) throw new RequestError(status, data);
+    return data as T;
+  });
   const headers = new Headers(init?.headers);
   const clientId = localStorage.getItem("pentamark:client-id");
   if (clientId) headers.set("X-PentaMark-Client", clientId);

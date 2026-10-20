@@ -1,6 +1,12 @@
 # PentaMark no celular
 
-## Melhor configuração
+## Android local: APK
+
+Para usar arquivos no próprio celular, instale **PentaMark-2.13.17-Android.apk** da release. Ele funciona offline, sem PC, servidor ou Termux, com o mesmo editor e visual. Veja [instalação, importação, exportação e cuidados com os arquivos](ANDROID.md). Exporte uma cópia antes de desinstalar ou limpar os dados.
+
+Conectar este APK a outros dispositivos via Tailscale fica para a próxima etapa. As opções abaixo descrevem o acesso remoto pelo navegador/PWA e o host legado, não requisitos do APK local.
+
+## Acesso aos arquivos do PC pelo navegador/PWA
 
 Use o **PC como host** e o **celular como PWA**, conectados por Tailscale. Essa opção preserva os arquivos `.md` no computador, mantém o MCP funcionando e fornece um endereço HTTPS privado que pode ser instalado na tela inicial.
 

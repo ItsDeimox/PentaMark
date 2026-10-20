@@ -4,8 +4,9 @@ import type { AssetMeta, NoteMeta } from "../../domain/types";
 import { WorkspacePanel } from "./WorkspacePanel";
 
 type Entry = { path: string; label: string; kind: "note" | "asset" };
-export function QuickOpen({ open, query, onQuery, inputRef, notes, assets, onOpen, onClose }: {
+export function QuickOpen({ open, loading = false, query, onQuery, inputRef, notes, assets, onOpen, onClose }: {
   open: boolean; query: string; onQuery: (value: string) => void;
+  loading?: boolean;
   inputRef: RefObject<HTMLInputElement | null>; notes: NoteMeta[]; assets: AssetMeta[];
   onOpen: (entry: Entry) => void; onClose: () => void;
 }) {
@@ -20,6 +21,9 @@ export function QuickOpen({ open, query, onQuery, inputRef, notes, assets, onOpe
   }, [query, notes, assets]);
   const visible = entries.slice(0, 80);
   useEffect(() => setSelected(0), [query, open]);
+  useEffect(() => {
+    if (open && !loading) inputRef.current?.focus({ preventScroll: true });
+  }, [open, loading, inputRef]);
   useEffect(() => setSelected(index => Math.min(index, Math.max(0, visible.length - 1))), [visible.length]);
   useEffect(() => {
     document.getElementById(`pm-open-result-${selected}`)?.scrollIntoView({ block: "nearest" });
@@ -29,7 +33,7 @@ export function QuickOpen({ open, query, onQuery, inputRef, notes, assets, onOpe
     <div className="pm-quick-open-input"><Search size={18} /><input ref={inputRef} data-autofocus
       role="combobox" aria-label="Buscar arquivos" aria-expanded={open} aria-controls="pm-open-results"
       aria-activedescendant={visible[selected] ? `pm-open-result-${selected}` : undefined}
-      placeholder="Buscar notas e anexos..." value={query} onChange={event => onQuery(event.target.value)}
+      disabled={loading} placeholder={loading ? 'Carregando arquivos...' : 'Buscar notas e anexos...'} value={query} onChange={event => onQuery(event.target.value)}
       onKeyDown={event => {
         if (event.key === "ArrowDown") { event.preventDefault(); setSelected(i => Math.min(visible.length - 1, i + 1)); }
         if (event.key === "ArrowUp") { event.preventDefault(); setSelected(i => Math.max(0, i - 1)); }
@@ -40,7 +44,7 @@ export function QuickOpen({ open, query, onQuery, inputRef, notes, assets, onOpe
         aria-selected={index === selected} tabIndex={-1} onClick={() => choose(entry)}>
         {entry.kind === "note" ? <FileText size={18} /> : <File size={18} />}<span><strong>{entry.label || entry.path}</strong><small>{entry.path}</small></span>
       </button>)}
-      {!visible.length && <p>Nenhum arquivo encontrado.</p>}
+      {!visible.length && <p role="status">{loading ? 'Carregando o índice do cofre...' : 'Nenhum arquivo encontrado.'}</p>}
     </div>
     <footer>{entries.length > 80 ? `80 de ${entries.length} resultados. Refine a busca.` : `${entries.length} arquivo(s)`}<span>↑ ↓ navegar · Enter abrir</span></footer>
   </WorkspacePanel>;

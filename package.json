@@ -1,6 +1,6 @@
 {
   "name": "pentamark",
-  "version": "2.13.16",
+  "version": "2.13.17",
   "description": "Editor Markdown local e compartilhado",
   "author": "PentaMark",
   "private": true,
@@ -9,16 +9,19 @@
   "scripts": {
     "dev": "vite",
     "check": "npm run typecheck && npm run local:build",
-    "test:unit": "node --test tests/inline-source-map.test.mjs tests/live-block-scanner.test.mjs tests/table-source.test.mjs",
+    "test:unit": "node --test tests/inline-source-map.test.mjs tests/live-block-scanner.test.mjs tests/table-source.test.mjs tests/android-transport.test.mjs",
     "mcp:build": "esbuild ./local/mcp-bridge.source.mjs --bundle --platform=node --format=esm --outfile=./local/mcp-bridge.mjs",
     "local:build": "npm run mcp:build && vite build --outDir local-dist --emptyOutDir",
     "mobile:bundle": "npm run local:build && node ./scripts/build-mobile-host.mjs",
+    "android:sync": "npm run local:build && cap sync android",
     "typecheck": "tsc --noEmit",
     "desktop:dev": "npm run local:build && electron .",
     "desktop:build": "npm run local:build && electron-builder --win portable --x64",
     "desktop:dir": "npm run local:build && electron-builder --dir"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.4",
@@ -38,6 +41,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@playwright/test": "1.56.1",
     "@types/dompurify": "3.0.5",
     "@types/node": "22.10.5",

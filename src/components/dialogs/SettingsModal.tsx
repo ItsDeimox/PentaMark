@@ -4,6 +4,7 @@ import { DEFAULT_APPEARANCE } from '../../app/constants';
 import type { Appearance, DesktopVaultInfo, HostConfig } from '../../domain/types';
 import { DialogFrame, DialogSection } from './DialogFrame';
 import { McpSettings } from './McpSettings';
+import { exportAndroidVault, importAndroidDocuments, isAndroidLocal } from '../../platform/android';
 
 const THEMES = [
   { id:'pentagory', name:'PentaMark', color:'#79d2dc' },
@@ -28,6 +29,17 @@ export function SettingsModal(p: {
   const [initialAppearance] = useState(p.appearance), [baseline] = useState(p.config), [draft, setDraft] = useState(p.config);
   const [tab, setTab] = useState<string>('appearance');
   const [saving, setSaving] = useState(false), [error, setError] = useState('');
+  const [transferring, setTransferring] = useState(false);
+  const tabs = isAndroidLocal ? TABS.filter(item => item.id !== 'mcp') : TABS;
+  const transfer = async (mode: 'import' | 'export') => {
+    if (transferring) return;
+    setTransferring(true); setError('');
+    try {
+      const result = mode === 'import' ? await importAndroidDocuments() : await exportAndroidVault();
+      if (!result.cancelled) p.onNotify(mode === 'import' ? 'Arquivos importados para o aparelho.' : 'Cópia do cofre exportada.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível transferir os arquivos.'); }
+    finally { setTransferring(false); }
+  };
   const id = useId();
   const appearance = (patch: Partial<Appearance>) => p.setAppearance(current => ({ ...current, ...patch }));
   const config = (patch: Partial<HostConfig>) => setDraft(current => ({ ...current, ...patch }));
@@ -40,12 +52,12 @@ export function SettingsModal(p: {
   const navigation = <nav className="pm-preferences-nav" aria-label="Categorias das configurações"><span>PREFERÊNCIAS</span><div role="tablist" aria-label="Categorias das configurações" onKeyDown={event => {
     if (!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
     event.preventDefault();
-    const index = TABS.findIndex(t => t.id === tab);
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length-1 : (index + (['ArrowDown','ArrowRight'].includes(event.key) ? 1 : -1) + TABS.length) % TABS.length;
-    setTab(TABS[next].id);
-    document.getElementById(`${id}-${TABS[next].id}`)?.focus();
-  }}>{TABS.map(({id:key,label,icon:Icon}) => <button type="button" id={`${id}-${key}`} key={key} role="tab" aria-selected={tab===key}
-    aria-controls={`${id}-content`} tabIndex={tab===key ? 0 : -1} onClick={() => setTab(key)}><Icon size={17}/><span>{label}</span></button>)}</div><small>As mudanças visuais aparecem em tempo real.</small></nav>;
+    const index = tabs.findIndex(t => t.id === tab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 : (index + (['ArrowDown','ArrowRight'].includes(event.key) ? 1 : -1) + tabs.length) % tabs.length;
+    setTab(tabs[next].id);
+    document.getElementById(`${id}-${tabs[next].id}`)?.focus();
+  }}>{tabs.map(({id:key,label,icon:Icon}) => <button type="button" id={`${id}-${key}`} key={key} role="tab" aria-selected={tab===key}
+    aria-controls={`${id}-content`} tabIndex={tab===key ? 0 : -1} onClick={() => setTab(key)}><Icon size={17}/><span>{isAndroidLocal && key === 'vault' ? 'Arquivos locais' : label}</span></button>)}</div><small>As mudanças visuais aparecem em tempo real.</small></nav>;
   return <DialogFrame title="Configurações" icon={Settings} className="pm-settings-dialog" navigation={navigation} onClose={close} onSubmit={() => void save()}
     footer={<><button type="button" className="pm-text-action" disabled={saving} onClick={() => p.setAppearance({ ...DEFAULT_APPEARANCE })}><RotateCcw size={14}/><span>Restaurar visual</span></button><span className="pm-footer-spacer"/><button type="button" className="secondary" disabled={saving} onClick={close}>Cancelar</button><button type="submit" className="primary" disabled={saving}><Check size={15}/>{saving ? 'Salvando…' : 'Salvar configurações'}</button></>}>
     <div role="tabpanel" id={`${id}-content`} aria-labelledby={`${id}-${tab}`} className="pm-preference-page" key={tab}>
@@ -76,6 +88,11 @@ export function SettingsModal(p: {
         </DialogSection>
       </>}
       {tab==='vault' && <>
+        {isAndroidLocal ? <DialogSection title="Cofre neste aparelho" hint="Notas Markdown e anexos ficam salvos no armazenamento privado do PentaMark, sem internet e sem computador.">
+          <div className="pm-inline-actions"><button type="button" disabled={transferring} onClick={() => void transfer('import')}>Importar arquivos</button><button type="button" disabled={transferring} onClick={() => void transfer('export')}>Exportar cofre (ZIP)</button></div>
+          <p className="pm-notice">Exporte uma cópia antes de desinstalar ou limpar os dados do aplicativo. Importar copia os arquivos, sem alterar os originais. Anexos: até 32 MB por arquivo.</p>
+          <p className="pm-notice">A conexão com outros dispositivos via Tailscale será adicionada depois. Este APK trabalha somente com arquivos locais.</p>
+        </DialogSection> : <>
         <DialogSection title="Diretório do cofre">
           {p.desktopVault ? <div className="pm-vault-location"><FolderOpen size={21}/><div><strong>{p.desktopVault.name}</strong><code>{p.desktopVault.path}</code></div><div className="pm-inline-actions"><button type="button" onClick={p.onShowVault}><ExternalLink size={14}/>Mostrar diretório</button><button type="button" onClick={p.onChooseVault}>Abrir outro cofre</button></div></div>
             : <div className="pm-notice"><FolderOpen size={17}/><span>A troca de diretório está disponível no aplicativo Desktop do host.</span></div>}
@@ -88,8 +105,9 @@ export function SettingsModal(p: {
             {([['openBrowser','Abrir navegador ao iniciar','Abre a interface quando o host é iniciado.'],['lockEditedNotes','Bloquear edição simultânea','O primeiro editor recebe a trava; os demais entram em modo leitura.'],['cleanupUnusedAssets','Limpar assets sem uso','Após salvar, anexos sem referências vão para .trash/unused-assets.']] as const).map(([key,label,hint]) => <label key={key} className="pm-option-row wide"><span><strong>{label}</strong><small>{hint}</small></span><input role="switch" type="checkbox" checked={draft[key]} onChange={e => config({[key]:e.target.checked})}/></label>)}
           </div> : <div className="pm-notice"><LockKeyhole size={17}/><span>Estas opções só podem ser alteradas no host deste cofre.</span></div>}
         </DialogSection>
+        </>}
       </>}
-      {tab==='mcp' && <McpSettings draft={draft} saved={p.config} onChange={config} urls={p.urls} onNotify={p.onNotify}/>}
+      {tab==='mcp' && !isAndroidLocal && <McpSettings draft={draft} saved={p.config} onChange={config} urls={p.urls} onNotify={p.onNotify}/>}
     </div>
     {error && <p role="alert" className="pm-form-error">{error}</p>}
   </DialogFrame>;
