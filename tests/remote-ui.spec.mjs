@@ -1,7 +1,8 @@
 import {test,expect} from '@playwright/test';
 
-async function bridge(page,{remote=false,offline=false}={}) {
-  await page.addInitScript(({remote,offline})=>{
+async function bridge(page,{remote=false,offline=false,invitation=false}={}) {
+  await page.addInitScript(({remote,offline,invitation})=>{
+    let pendingInvite=invitation?'pentamark://join?v=1&host=http%3A%2F%2F100.100.1.2%3A3417&invite=https%3A%2F%2Flogin.tailscale.com%2Fadmin%2Finvite%2Foffline_test&name=Convite%20offline':null;
     if(!localStorage.getItem('test:remote-setup')) {
       localStorage.setItem('test:remote-setup','1');
       if(remote) localStorage.setItem('pentamark:android:remote-profile',JSON.stringify({origin:'http://100.100.1.2:3417'}));
@@ -10,9 +11,11 @@ async function bridge(page,{remote=false,offline=false}={}) {
     const config={vaultName:'Aparelho',port:3417,isHost:false,openBrowser:false,maxUploadMB:32,lockEditedNotes:false,cleanupUnusedAssets:false,aiBridgeEnabled:false,aiBridgeToken:''};
     window.androidBridge={};
     window.Capacitor={
-      PluginHeaders:['LocalVault','RemoteVault'].map(name=>({name,methods:['info','request','configure','disconnect','startEvents','stopEvents','removeListener'].map(name=>({name,rtype:'promise'})).concat({name:'addListener',rtype:'callback'})})),
+      PluginHeaders:['LocalVault','RemoteVault','VaultInvitation'].map(name=>({name,methods:['info','request','configure','disconnect','startEvents','stopEvents','removeListener','getLaunchInvitation','acknowledge','openOfficialInvite'].map(name=>({name,rtype:'promise'})).concat({name:'addListener',rtype:'callback'})})),
       nativeCallback:()=> 'listener',
       nativePromise:async(plugin,method,options)=>{
+        if(plugin==='VaultInvitation'&&method==='getLaunchInvitation')return {url:pendingInvite};
+        if(plugin==='VaultInvitation'&&method==='acknowledge'){pendingInvite=null;localStorage.setItem('test:invite-ack','1');return {};}
         if(method==='info') return {root:'/vault'};
         if(method==='disconnect') {localStorage.setItem('test:disconnected','1');return {};}
         if(plugin==='RemoteVault' && (offline || localStorage.getItem('test:offline')==='1')) throw new Error('PC indisponível');
@@ -32,8 +35,16 @@ async function bridge(page,{remote=false,offline=false}={}) {
         return {status:200,data:{ok:true}};
       }
     };
-  },{remote,offline});
+  },{remote,offline,invitation});
 }
+
+test('Android invitation opens through the native plugin and acknowledges only a received link',async({page})=>{
+  await bridge(page,{invitation:true});await page.goto('/');
+  await expect(page.getByRole('dialog',{name:'Entrar no cofre',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Conectar ao cofre',exact:true})).toBeDisabled();
+  await expect.poll(()=>page.evaluate(()=>localStorage.getItem('test:invite-ack'))).toBe('1');
+  expect(await page.evaluate(()=>localStorage.getItem('pentamark:android:remote-profile'))).toBeNull();
+});
 test('unreachable PC offers return to local that opens notes without touching the PC draft',async({page})=>{
   await bridge(page,{remote:true,offline:true});
   await page.addInitScript(()=>localStorage.setItem('pentamark:android:remote:http%3A%2F%2F100.100.1.2%3A3417:draft:Mesma.md',JSON.stringify({content:'Rascunho PC',revision:'r1'})));

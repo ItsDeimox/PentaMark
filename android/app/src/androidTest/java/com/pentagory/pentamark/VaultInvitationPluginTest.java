@@ -32,7 +32,7 @@ public class VaultInvitationPluginTest {
     private void await(ActivityScenario<MainActivity> scenario,String expression)throws Exception{
         long until=SystemClock.elapsedRealtime()+30000;
         while(SystemClock.elapsedRealtime()<until){if(Boolean.TRUE.equals(evaluate(scenario,expression)))return;SystemClock.sleep(100);}
-        fail("Timed out: "+expression+" page="+evaluate(scenario,"document.body.innerText.slice(0,1200)"));
+        fail("Timed out: "+expression+" page="+evaluate(scenario,"document.body.innerText.slice(0,1200)")+" diagnostics="+evaluate(scenario,"JSON.stringify({url:location.href,dialogs:Array.from(document.querySelectorAll('dialog')).map(d=>({open:d.open,text:d.innerText,display:getComputedStyle(d).display})),toast:document.querySelector('.pm-toast')?.textContent,parse:(()=>{try{const u=new URL('pentamark://join?v=1&host=http%3A%2F%2F100.100.10.20%3A3417&invite=https%3A%2F%2Flogin.tailscale.com%2Fadmin%2Finvite%2Foffline_test&name=Convite%20offline');return {protocol:u.protocol,host:u.hostname,path:u.pathname,keys:Array.from(u.searchParams.keys())};}catch(e){return String(e);}})()})"));
     }
     @Test public void realNativeIntentOpensGuidedDialogWithoutConnectingOrNetwork()throws Exception{
         Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(invite("http://100.100.10.20:3417")),InstrumentationRegistry.getInstrumentation().getTargetContext(),MainActivity.class);

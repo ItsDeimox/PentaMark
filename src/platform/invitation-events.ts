@@ -4,16 +4,18 @@ import { parseInvitation, type VaultInvitation } from './invitation';
 
 interface InvitationPlugin {
   getLaunchInvitation():Promise<{url?:string}>;
+  acknowledge(options:{url:string}):Promise<void>;
   addListener(event:'invitation',listener:(event:{url:string})=>void):Promise<{remove():Promise<void>}>;
   openOfficialInvite(options:{url:string}):Promise<void>;
 }
 const plugin=registerPlugin<InvitationPlugin>('VaultInvitation');
 export async function receiveInvitations(onInvite:(value:VaultInvitation)=>void,onError:(message:string)=>void,signal:AbortSignal):Promise<()=>void> {
-  const receive=(url:string)=>{try {onInvite(parseInvitation(url));} catch {onError('O link de convite não é válido.');}};
+  const receive=(url:string)=>{if(signal.aborted)return false;try {onInvite(parseInvitation(url));return true;} catch(error) {console.warn('Falha ao receber convite PentaMark:',error instanceof Error?error.message:'Formato inválido');onError('O link de convite não é válido.');return false;}};
   if(isAndroidLocal) {
-    const listener=await plugin.addListener('invitation',({url})=>receive(url));
+    const deliver=(url:string)=>{if(receive(url))void plugin.acknowledge({url}).catch(()=>{});};
+    const listener=await plugin.addListener('invitation',({url})=>deliver(url));
     if(signal.aborted){await listener.remove();return ()=>{};}
-    const launch=await plugin.getLaunchInvitation();if(launch.url) receive(launch.url);
+    const launch=await plugin.getLaunchInvitation();if(launch.url) deliver(launch.url);
     return ()=>{void listener.remove();};
   }
   const desktop=window.pentaMarkDesktop;
