@@ -5,12 +5,15 @@ const { join } = require('node:path');
 const root = join(__dirname, '..');
 async function build() {
   const svg = readFileSync(join(root, 'public/pentamark-brand.svg'));
+  const badge = Buffer.from(svg.toString('utf8').replace(/(<svg[^>]*>)/, '$1<rect width="512" height="512" rx="112" fill="#0b1015"/>'));
+  writeFileSync(join(root, 'public/pentamark-brand-badge.svg'), badge);
   writeFileSync(join(root, 'public/pentamark-icon.svg'), svg);
+  await sharp(svg).resize(512, 512).png().toFile(join(root, 'public/pentamark-window-icon.png'));
   for (const size of [192, 512]) {
-    await sharp(svg).resize(size, size).png().toFile(join(root, `public/pentamark-icon-${size}.png`));
+    await sharp(badge).resize(size, size).png().toFile(join(root, `public/pentamark-icon-${size}.png`));
   }
   const sizes = [16, 24, 32, 48, 64, 128, 256];
-  const images = await Promise.all(sizes.map(size => sharp(svg).resize(size, size).png().toBuffer()));
+  const images = await Promise.all(sizes.map(size => sharp(badge).resize(size, size).png().toBuffer()));
   const header = Buffer.alloc(6 + 16 * images.length);
   header.writeUInt16LE(1, 2);
   header.writeUInt16LE(images.length, 4);
@@ -27,7 +30,7 @@ async function build() {
   });
   writeFileSync(join(root, 'build/pentamark.ico'), Buffer.concat([header, ...images]));
   // NSIS mostra este bitmap antes do Electron iniciar, durante a extração.
-  const splashSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="460" height="320"><rect width="460" height="320" fill="#090c0f"/><image x="184" y="52" width="92" height="92" href="data:image/svg+xml;base64,${svg.toString('base64')}"/><text x="230" y="193" text-anchor="middle" font-family="sans-serif" font-size="26" fill="#edf4f5">PentaMark</text><text x="230" y="224" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#93a5ab">Iniciando seu espaço de escrita…</text><rect x="150" y="252" width="160" height="2" fill="#67e7ef"/></svg>`);
+  const splashSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="460" height="320"><rect width="460" height="320" fill="#090c0f"/><image x="184" y="52" width="92" height="92" href="data:image/svg+xml;base64,${badge.toString('base64')}"/><text x="230" y="193" text-anchor="middle" font-family="sans-serif" font-size="26" fill="#edf4f5">PentaMark</text><text x="230" y="224" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#93a5ab">Iniciando seu espaço de escrita…</text><rect x="150" y="252" width="160" height="2" fill="#67e7ef"/></svg>`);
   const pixels = await sharp(splashSvg).removeAlpha().raw().toBuffer();
   const stride = Math.ceil(460 * 3 / 4) * 4;
   const bmp = Buffer.alloc(54 + stride * 320);
