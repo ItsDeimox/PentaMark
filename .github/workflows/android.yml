@@ -33,30 +33,49 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Resolve package version
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install and bundle the local React application
         run: |
           npm ci
-          npm run local:build
+          npm run check
+          npm run test:unit
           npx cap sync android
       - name: Build APKs and run vault JVM tests
         working-directory: android
         run: bash gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Collect unsigned APK and signing tool for local signing
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p android-artifacts
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk android-artifacts/PentaMark-2.13.19-unsigned.apk
+          apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          test -n "$aapt"
+          "$aapt" dump badging "$apk" > android-artifacts/apk-metadata.txt
+          package=$(head -n 1 android-artifacts/apk-metadata.txt)
+          expected_code=$(node -p "const [a,b,c]=require('./package.json').version.split('.').map(Number);a*10000+b*100+c")
+          echo "$package" | grep -F "name='com.pentagory.pentamark'"
+          echo "$package" | grep -F "versionName='$RELEASE_VERSION'"
+          echo "$package" | grep -F "versionCode='$expected_code'"
+          unzip -p "$apk" assets/public/pentamark-brand.svg | cmp - public/pentamark-brand.svg
+          cp "$apk" "android-artifacts/PentaMark-$RELEASE_VERSION-unsigned.apk"
+          git rev-parse HEAD > android-artifacts/source-commit.txt
           signer=$(find "$ANDROID_HOME/build-tools" -path '*/lib/apksigner.jar' | sort -V | tail -n 1)
           test -n "$signer"
           cp "$signer" android-artifacts/apksigner.jar
           (cd android-artifacts && sha256sum *.apk *.jar > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: PentaMark-2.13.19-unsigned-and-local-signing-tool
+          name: PentaMark-${{ steps.version.outputs.version }}-unsigned-and-local-signing-tool
           path: android-artifacts/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: PentaMark-2.13.19-debug
+          name: PentaMark-${{ steps.version.outputs.version }}-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Enable emulator acceleration
