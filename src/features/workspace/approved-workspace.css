@@ -42,6 +42,9 @@
 .pm-shell[data-theme] .pm-mark:before { width: 32px; height: 32px; background: var(--pm-text); }
 .pm-shell[data-theme] .pm-mark:after { width: 26px; height: 26px; background: var(--pm-panel); }
 .pm-shell[data-theme] .pm-mark span { display: none; }
+.pm-brand-logo { flex: 0 0 36px; border-radius: 8px; transition: transform .25s ease, filter .25s ease; }
+.pm-brand:hover .pm-brand-logo { transform: rotate(-5deg) scale(1.06); filter: drop-shadow(0 0 5px #65dfdb50); }
+@media (prefers-reduced-motion: reduce) { .pm-brand-logo { transition: none; } .pm-brand:hover .pm-brand-logo { transform: none; } }
 .pm-shell[data-theme] .pm-sidebar-collapse { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: auto; color: var(--pm-muted); font-size: .82em; padding: 8px 0 8px 8px; background: transparent; cursor: pointer; }
 .pm-shell[data-theme] .pm-sidebar-collapse:hover { color: var(--pm-text); }
 .pm-shell[data-theme] .pm-library-head { height: 52px; padding: 0 22px; gap: 10px; color: var(--pm-text); border: 0; }

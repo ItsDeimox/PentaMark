@@ -64,6 +64,9 @@
     "files": [
       "desktop/main.cjs",
       "desktop/preload.cjs",
+      "desktop/updates.cjs",
+      "desktop/splash.html",
+      "public/pentamark-brand.svg",
       "package.json",
       "!**/node_modules/**"
     ],
@@ -88,6 +91,7 @@
         }
       ],
       "artifactName": "PentaMark-Desktop-${version}-Windows.${ext}"
-    }
+    },
+    "portable": { "splashImage": "build/splash.bmp" }
   }
 }

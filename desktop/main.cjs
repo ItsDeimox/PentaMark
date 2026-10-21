@@ -3,9 +3,11 @@ const { spawn } = require("node:child_process");
 const { existsSync, readFileSync, statSync, writeFileSync } = require("node:fs");
 const { get } = require("node:http");
 const { basename, dirname, join, resolve } = require("node:path");
+const { checkForUpdates } = require("./updates.cjs");
 
 let serverProcess = null;
 let mainWindow = null;
+let splashWindow = null;
 let activeVaultPath = "";
 let activeVaultIsCustom = false;
 
@@ -116,6 +118,16 @@ function startServer(directory, vaultDirectory, customVault) {
 }
 
 async function createWindow() {
+  splashWindow = new BrowserWindow({
+    width: 460, height: 320, frame: false, resizable: false, show: false,
+    backgroundColor: "#090c0f", title: "Abrindo PentaMark",
+    icon: join(appRoot(), "local-dist", "pentamark-icon-512.png"),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  splashWindow.once("ready-to-show", () => splashWindow?.show());
+  splashWindow.on("closed", () => { splashWindow = null; });
+  await splashWindow.loadFile(join(__dirname, "splash.html"));
+  const updateCheck = checkForUpdates(app.getVersion());
   const directory = dataRoot();
   const selectedVault = savedVaultDirectory();
   activeVaultIsCustom = Boolean(selectedVault);
@@ -132,6 +144,7 @@ async function createWindow() {
     show: false,
     backgroundColor: "#090c0f",
     title: "PentaMark",
+    icon: join(appRoot(), "local-dist", "pentamark-icon-512.png"),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -145,7 +158,20 @@ async function createWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+    splashWindow?.destroy();
+    void updateCheck.then(async (update) => {
+      if (update.status !== "available" || !mainWindow || mainWindow.isDestroyed()) return;
+      const choice = await dialog.showMessageBox(mainWindow, {
+        type: "info", title: "Atualização do PentaMark",
+        message: `PentaMark ${update.version} disponível`,
+        detail: "Abra a página da versão para baixar o novo aplicativo. Seu cofre permanece na pasta atual.",
+        buttons: ["Abrir download", "Mais tarde"], defaultId: 1, cancelId: 1,
+      });
+      if (choice.response === 0) await shell.openExternal(update.url);
+    }).catch(error => console.warn("Não foi possível mostrar a atualização:", error.message));
+  });
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
 }
 
@@ -227,11 +253,12 @@ ipcMain.handle("pentamark:show-item", async (event, kind, relativePath) => {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 app.on("second-instance", () => {
-  if (!mainWindow) return;
+  if (!mainWindow) { splashWindow?.focus(); return; }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.focus();
 });
-app.whenReady().then(createWindow).catch((error) => {
+if (hasSingleInstanceLock) app.whenReady().then(createWindow).catch((error) => {
+  splashWindow?.destroy();
   dialog.showErrorBox("PentaMark não iniciou", error instanceof Error ? error.message : String(error));
   app.quit();
 });

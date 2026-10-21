@@ -1220,7 +1220,7 @@ export default function PentaMarkApp() {
         onContextMenu={(event) => { if ((event.target as HTMLElement).closest("button,input")) return; openContext(event, { type: "blank", x: event.clientX, y: event.clientY }); }}
       >
         <div className="pm-brand">
-          <div className="pm-mark"><span /></div>
+          <img className="pm-brand-logo" src="/pentamark-brand.svg" alt="" width={36} height={36} />
           <div className="pm-brand-copy"><strong>PentaMark</strong></div>
           <button className="pm-sidebar-collapse" aria-label="Mostrar ou ocultar arquivos" onClick={() => navigation.setVisible(false)} title="Recolher arquivos"><ChevronRight size={15} /><span>Recolher</span></button>
         </div>
