@@ -9,6 +9,7 @@ const { basename, dirname, join, resolve } = require("node:path");
 
 let serverProcess = null;
 let mainWindow = null;
+let splashWindow = null;
 let activeVaultPath = "";
 let activeVaultIsCustom = false;
 let localOrigin = '';
@@ -136,6 +137,15 @@ function startServer(directory, vaultDirectory, customVault) {
 }
 
 async function createWindow() {
+  splashWindow = new BrowserWindow({
+    width: 460, height: 320, frame: false, resizable: false, show: false,
+    backgroundColor: "#090c0f", title: "Abrindo PentaMark",
+    icon: join(appRoot(), "local-dist", "pentamark-icon-512.png"),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  splashWindow.once("ready-to-show", () => splashWindow?.show());
+  splashWindow.on("closed", () => { splashWindow = null; });
+  await splashWindow.loadFile(join(__dirname, "splash.html"));
   const directory = dataRoot();
   const selectedVault = savedVaultDirectory();
   activeVaultIsCustom = Boolean(selectedVault);
@@ -159,6 +169,7 @@ async function createWindow() {
     show: false,
     backgroundColor: "#090c0f",
     title: "PentaMark",
+    icon: join(appRoot(), "local-dist", "pentamark-icon-512.png"),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -172,7 +183,10 @@ async function createWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+    splashWindow?.destroy();
+  });
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
 }
 
@@ -278,13 +292,14 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 app.on("second-instance", (_event,argv) => {
   deliverInvitation(argv);
-  if (!mainWindow) return;
+  if (!mainWindow) { splashWindow?.focus(); return; }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.focus();
 });
 app.on('open-url',(event,url)=>{event.preventDefault();deliverInvitation([url]);});
 if(app.isPackaged&&process.platform==='win32') app.setAsDefaultProtocolClient('pentamark',process.env.PORTABLE_EXECUTABLE_FILE||process.execPath);
-app.whenReady().then(createWindow).catch((error) => {
+if (hasSingleInstanceLock) app.whenReady().then(createWindow).catch((error) => {
+  splashWindow?.destroy();
   dialog.showErrorBox("PentaMark não iniciou", error instanceof Error ? error.message : String(error));
   app.quit();
 });
