@@ -37,7 +37,7 @@ public class VaultInvitationPluginTest {
     @Test public void realNativeIntentOpensGuidedDialogWithoutConnectingOrNetwork()throws Exception{
         Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(invite("http://100.100.10.20:3417")),InstrumentationRegistry.getInstrumentation().getTargetContext(),MainActivity.class);
         try(ActivityScenario<MainActivity> scenario=ActivityScenario.launch(intent)){
-            await(scenario,"!!document.querySelector('dialog[open]') && document.body.innerText.includes('Convite offline')");
+            await(scenario,"Array.from(document.querySelectorAll('dialog[open]')).some(d=>d.innerText.includes('Convite offline')&&d.getBoundingClientRect().width>0&&d.getBoundingClientRect().height>0&&getComputedStyle(d).visibility==='visible')");
             assertEquals(Boolean.TRUE,evaluate(scenario,"Array.from(document.querySelectorAll('dialog[open] button')).some(b=>b.textContent==='Conectar ao cofre'&&b.disabled)"));
             assertEquals(Boolean.TRUE,evaluate(scenario,"!localStorage.getItem('pentamark:android:remote-profile')"));
             scenario.onActivity(activity->assertTrue(activity.getBridge().getWebView().getSettings().getBlockNetworkLoads()));
