@@ -69,5 +69,5 @@ jobs:
           $exe = "desktop-dist/PentaMark-Desktop-$version-Windows.exe"
           $ready = "release-packages/PentaMark-$version-Pronto.zip"
           $android = "release-packages/PentaMark-$version-Mobile-Host-Android.zip"
-          gh release create $tag $exe $ready $android --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "PentaMark $tag - Interface aprovada Pentagory" --notes-file "RELEASE_NOTES_2.8.0.md" --latest
+          gh release create $tag $exe $ready $android --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "PentaMark $tag" --notes-file "RELEASE_NOTES_$version.md" --latest
           if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar $tag" }
