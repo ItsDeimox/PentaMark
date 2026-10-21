@@ -18,6 +18,8 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(LocalVaultPlugin.class);
         registerPlugin(RemoteVaultPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(VaultInvitationPlugin.class);
         super.onCreate(savedInstanceState);
         if (bridge == null) return;
         // Native transport is the only network path; bundled assets still use Capacitor interception.

@@ -1,4 +1,7 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, safeStorage } = require("electron");
+const { createTailscaleSharing } = require('./tailscale.cjs');
+const { createUpdater } = require('./updater.cjs');
+const { invitationFromArgs, validInviteUrl } = require('./invitations.cjs');
 const { spawn } = require("node:child_process");
 const { existsSync, readFileSync, statSync, writeFileSync } = require("node:fs");
 const { get } = require("node:http");
@@ -8,6 +11,23 @@ let serverProcess = null;
 let mainWindow = null;
 let activeVaultPath = "";
 let activeVaultIsCustom = false;
+let localOrigin = '';
+let pendingInvitation=invitationFromArgs(process.argv);
+let sharing=null, updater=null;
+
+function trustedFrame(event) {
+  return Boolean(mainWindow && event.sender===mainWindow.webContents && event.senderFrame===mainWindow.webContents.mainFrame && localOrigin && new URL(event.senderFrame.url).origin===localOrigin);
+}
+function localHandle(channel,handler){ipcMain.handle(channel,async(event,...args)=>{if(!trustedFrame(event))throw new Error('Disponível somente no PentaMark deste PC.');return handler(...args);});}
+function deliverInvitation(args) {
+  const value=invitationFromArgs(args);if(!value)return;
+  pendingInvitation=value;
+  if(mainWindow&&!mainWindow.webContents.isLoading()&&mainWindow.webContents.getURL().startsWith(localOrigin+'/')){
+    // Keep it until the renderer consumes it: the document can be loaded before
+    // React has installed its listener.
+    mainWindow.webContents.send('pentamark:invitation',value);
+  }
+}
 
 function appRoot() {
   return app.isPackaged ? process.resourcesPath : resolve(__dirname, "..");
@@ -121,6 +141,13 @@ async function createWindow() {
   activeVaultIsCustom = Boolean(selectedVault);
   activeVaultPath = selectedVault || defaultVaultDirectory();
   const port = configuredPort(directory);
+  localOrigin=`http://127.0.0.1:${port}`;
+  sharing=createTailscaleSharing({app,safeStorage,shell,getPort:()=>port});
+  updater=createUpdater({app,dataRoot,stopServer:async()=>{
+    if(!serverProcess||serverProcess.exitCode!==null)return;
+    const child=serverProcess;
+    await new Promise(resolveStop=>{const timer=setTimeout(resolveStop,3000);child.once('exit',()=>{clearTimeout(timer);resolveStop();});child.kill();});
+  }});
   startServer(directory, activeVaultPath, activeVaultIsCustom);
   await waitForServer(port);
 
@@ -150,6 +177,17 @@ async function createWindow() {
 }
 
 app.setName("PentaMark");
+localHandle('pentamark:tailscale-status',()=>sharing.status());
+localHandle('pentamark:tailscale-save-key',key=>sharing.saveKey(key));
+localHandle('pentamark:tailscale-forget-key',()=>sharing.forgetKey());
+localHandle('pentamark:tailscale-invite',()=>sharing.createInvite());
+localHandle('pentamark:tailscale-setup',step=>sharing.openSetup(step));
+localHandle('pentamark:invitation-consume',()=>{const value=pendingInvitation;pendingInvitation=null;return value;});
+localHandle('pentamark:invitation-open',async url=>{if(!validInviteUrl(url))throw new Error('Convite inválido.');await shell.openExternal(url);});
+localHandle('pentamark:update-status',()=>updater.getStatus());
+localHandle('pentamark:update-check',()=>updater.check());
+localHandle('pentamark:update-download',()=>updater.download());
+localHandle('pentamark:update-install',()=>updater.install());
 ipcMain.handle("pentamark:get-profile", () => {
   try {
     const profile = JSON.parse(readFileSync(join(dataRoot(), "pentamark.profile.json"), "utf8"));
@@ -238,11 +276,14 @@ ipcMain.handle("pentamark:show-item", async (event, kind, relativePath) => {
 });
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
-app.on("second-instance", () => {
+app.on("second-instance", (_event,argv) => {
+  deliverInvitation(argv);
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.focus();
 });
+app.on('open-url',(event,url)=>{event.preventDefault();deliverInvitation([url]);});
+if(app.isPackaged&&process.platform==='win32') app.setAsDefaultProtocolClient('pentamark',process.env.PORTABLE_EXECUTABLE_FILE||process.execPath);
 app.whenReady().then(createWindow).catch((error) => {
   dialog.showErrorBox("PentaMark não iniciou", error instanceof Error ? error.message : String(error));
   app.quit();

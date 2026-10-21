@@ -69,7 +69,11 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from 'react-dom';
-import { androidDrafts, androidLastNoteKey, isAndroidLocal, isRemoteVault, remoteOrigin, returnToAndroidLocal, vaultEvents } from '../platform/android';
+import { androidDrafts, androidLastNoteKey, isAndroidLocal, isRemoteVault, remoteOrigin, returnToAndroidLocal, vaultEvents, connectAndroidPc } from '../platform/android';
+import { parseInvitation, isInvitation, type VaultInvitation } from '../platform/invitation';
+import { receiveInvitations } from '../platform/invitation-events';
+import { InvitationDialog } from '../components/dialogs/InvitationDialog';
+import { checkForUpdates, getUpdateStatus, isUpdateSupported } from '../platform/updates';
 import type {
   Appearance,
   AssetMeta,
@@ -188,6 +192,7 @@ export default function PentaMarkApp() {
   const [historyVersion, setHistoryVersion] = useState(0);
   const previewsRef = useRef<LinkPreviewHandle>(null);
   const [connectionAddress, setConnectionAddress] = useState("");
+  const [invitation,setInvitation]=useState<VaultInvitation|null>(null);
   const [deviceName, setDeviceName] = useState(initialDeviceName);
   const [deviceAvatar, setDeviceAvatar] = useState(() => localStorage.getItem("pentamark:avatar") || "");
   const [clientId] = useState(() => {
@@ -199,6 +204,7 @@ export default function PentaMarkApp() {
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('appearance');
+  const [updateVersion,setUpdateVersion]=useState('');
   const [moreOpen, setMoreOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -584,10 +590,58 @@ export default function PentaMarkApp() {
     }
   }, [clientId, conflict, notify, refreshState]);
 
-  const connectToVault = useCallback(() => {
+  const prepareToLeave = useCallback(async () => {
+    const deadline=Date.now()+10000;
+    while(savingRef.current&&Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,50));
+    if(savingRef.current)throw new Error('Aguarde o salvamento terminar.');
+    if(saveStateRef.current==='conflict')throw new Error('Resolva o conflito da nota antes de continuar.');
+    await saveNow();
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    if(saveStateRef.current!=='saved')throw new Error('Não foi possível salvar a nota. Suas alterações continuam no editor.');
+  },[saveNow]);
+
+  useEffect(()=>{
+    let disposed=false,cleanup:(()=>void)|undefined;
+    const controller=new AbortController();
+    void receiveInvitations(value=>{if(!disposed){setConnectOpen(false);setSettingsOpen(false);setShareOpen(false);setInvitation(value);}},message=>{if(!disposed)notify(message);},controller.signal)
+      .then(remove=>{if(disposed)remove();else cleanup=remove;}).catch(()=>{});
+    return()=>{disposed=true;controller.abort();cleanup?.();};
+  },[notify]);
+
+  useEffect(()=>{
+    if(!isUpdateSupported)return;
+    let disposed=false;
+    const timer=window.setTimeout(()=>{
+      const previous=Number(localStorage.getItem('pentamark:update-checked-at')||0);
+      if(Date.now()-previous<6*60*60*1000)return;
+      void (async()=>{
+        let status=await checkForUpdates();
+        const deadline=Date.now()+60000;
+        while(!disposed&&status.phase==='checking'&&Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,650));if(!disposed)status=await getUpdateStatus();}
+        if(disposed)return;
+        if(['available','ready','current'].includes(status.phase))localStorage.setItem('pentamark:update-checked-at',String(Date.now()));
+        if(['available','ready'].includes(status.phase))setUpdateVersion(status.version||'nova');
+      })().catch(()=>{});
+    },5000);
+    return()=>{disposed=true;clearTimeout(timer);};
+  },[]);
+
+  const connectInvitation = useCallback(async(address:string)=>{
+    await prepareToLeave();
+    if(isAndroidLocal){connectAndroidPc(address);return;}
+    const target=normalizeConnectionAddress(address);
+    target.searchParams.set('device',deviceName.trim().slice(0,60)||defaultDeviceName());
+    window.location.assign(target.href);
+  },[prepareToLeave,deviceName]);
+
+  const connectToVault = useCallback(async () => {
+    if(isInvitation(connectionAddress)) {
+      try{setInvitation(parseInvitation(connectionAddress));setConnectOpen(false);}catch{notify('O link de convite não é válido.');}return;
+    }
     if (isAndroidLocal) { setSettingsTab('connection'); setSettingsOpen(true); return; }
     try {
       const target = normalizeConnectionAddress(connectionAddress);
+      await prepareToLeave();
       const cleanName = deviceName.trim().slice(0, 60) || defaultDeviceName();
       localStorage.setItem("pentamark:device-name", cleanName);
       target.searchParams.set("device", cleanName);
@@ -595,7 +649,7 @@ export default function PentaMarkApp() {
     } catch (error) {
       notify(error instanceof Error ? error.message : "Endereço inválido");
     }
-  }, [connectionAddress, deviceName, notify]);
+  }, [connectionAddress, deviceName, notify,prepareToLeave]);
 
   const saveProfile = useCallback((name: string, avatar: string) => {
     setDeviceName(name);
@@ -1255,6 +1309,7 @@ export default function PentaMarkApp() {
         <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 12 24 28H8L3 12Z" /><path d="M16 9 23 14 20 22H12L9 14Z" /></svg><span>PentaMark</span>
       </button>
       <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
+        {updateVersion&&<button type="button" className="pm-update-available" onClick={()=>{setSettingsTab('updates');setSettingsOpen(true);}}>Atualização {updateVersion}</button>}
         {isRemoteVault && <button type="button" aria-label="Usar arquivos locais" title={`${remoteOnline ? 'PC conectado' : 'PC desconectado'} · ${remoteOrigin}. Voltar ao cofre deste aparelho.`} onClick={returnToAndroidLocal}><ArrowLeft size={16}/><span>Local</span></button>}
         {saveState === "conflict" && <button className="pm-conflict-button" onClick={() => setConflictOpen(true)}>Conflito · Ver diff</button>}
         {saveState !== "saved" && saveState !== "conflict" && <span role="status">{saveState === "saving" ? "Salvando..." : "Alterado"}</span>}
@@ -1381,12 +1436,13 @@ export default function PentaMarkApp() {
       <DialogPresence open={mcpOpen}><McpModal config={hostConfig} urls={shareUrls} onClose={() => setMcpOpen(false)} onNotify={notify} onSave={async (draft, baseline) => { await commitHostConfig(draft, baseline); notify("Configuração MCP salva"); }}/></DialogPresence>
 
       <DialogPresence open={connectOpen}><ConnectModal address={connectionAddress} setAddress={setConnectionAddress} deviceName={deviceName} setDeviceName={setDeviceName} onClose={() => setConnectOpen(false)} onConnect={connectToVault} /></DialogPresence>
+      <DialogPresence open={!!invitation}>{invitation&&<InvitationDialog invitation={invitation} onClose={()=>setInvitation(null)} onConnect={connectInvitation}/>}</DialogPresence>
       <DialogPresence open={clientsOpen}><ClientsModal vault={vault} currentClientId={clientId} isHost={hostConfig.isHost} onPermission={(targetId, permission) => { void request("/api/permission", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: targetId, permission }) }).then(() => refreshState()).catch((error) => notify(error instanceof Error ? error.message : "Não deu para alterar a permissão")); }} onClose={() => setClientsOpen(false)} onConnect={() => { setClientsOpen(false); setConnectOpen(true); }} onRefresh={() => void refreshState()} /></DialogPresence>
       <DialogPresence open={profileOpen}><ProfileModal name={deviceName} avatar={deviceAvatar} color={colorForClient(clientId)} onClose={() => setProfileOpen(false)} onSave={saveProfile} onError={notify} /></DialogPresence>
       <DialogPresence open={conflictOpen && !!conflict}>{conflict && <ConflictModal conflict={conflict} onClose={() => setConflictOpen(false)} onUseServer={useServerVersion} onResolve={(value) => void resolveConflict(value)} />}</DialogPresence>
       <DialogPresence open={!!kanbanDialog}>{kanbanDialog && <KanbanEditorDialog dialog={kanbanDialog} onClose={() => setKanbanDialog(null)} />}</DialogPresence>
       <DialogPresence open={mobileSetupOpen}><MobileSetupModal urls={shareUrls} canInstall={Boolean(installPrompt)} installed={installedApp} onInstall={() => void installApp()} onClose={() => setMobileSetupOpen(false)} onNotify={notify} /></DialogPresence>
-      <DialogPresence open={settingsOpen}><SettingsModal initialTab={settingsTab} appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} /></DialogPresence>
+      <DialogPresence open={settingsOpen}><SettingsModal initialTab={settingsTab} appearance={appearance} setAppearance={setAppearance} config={hostConfig} urls={shareUrls} desktopVault={desktopVault} onChooseVault={() => void chooseVault()} onShowVault={() => void showVault()} onClose={() => setSettingsOpen(false)} onSave={saveSettings} onNotify={notify} beforeInstall={prepareToLeave}/></DialogPresence>
       <TooltipLayer />
       {toast && <div className="pm-toast">{toast}</div>}
     </main></GraphicsMotionProvider>
