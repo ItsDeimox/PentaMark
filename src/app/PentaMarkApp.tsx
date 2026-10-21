@@ -612,17 +612,14 @@ export default function PentaMarkApp() {
     if(!isUpdateSupported)return;
     let disposed=false;
     const timer=window.setTimeout(()=>{
-      const previous=Number(localStorage.getItem('pentamark:update-checked-at')||0);
-      if(Date.now()-previous<6*60*60*1000)return;
       void (async()=>{
         let status=await checkForUpdates();
         const deadline=Date.now()+60000;
         while(!disposed&&status.phase==='checking'&&Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,650));if(!disposed)status=await getUpdateStatus();}
         if(disposed)return;
-        if(['available','ready','current'].includes(status.phase))localStorage.setItem('pentamark:update-checked-at',String(Date.now()));
         if(['available','ready'].includes(status.phase))setUpdateVersion(status.version||'nova');
       })().catch(()=>{});
-    },5000);
+    },0);
     return()=>{disposed=true;clearTimeout(timer);};
   },[]);
 
@@ -1306,7 +1303,7 @@ export default function PentaMarkApp() {
       <button ref={navigation.openerRef} className="pm-brand-anchor" data-open={navigation.visible}
         onClick={() => navigation.setVisible(!navigation.visible)} aria-expanded={navigation.visible}
         aria-label="Mostrar ou ocultar arquivos" title={navigation.visible ? "Recolher arquivos" : "Abrir arquivos"}>
-        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 12 24 28H8L3 12Z" /><path d="M16 9 23 14 20 22H12L9 14Z" /></svg><span>PentaMark</span>
+        <img className="pm-brand-logo" src="/pentamark-brand.svg" width={36} height={36} alt="" /><span>PentaMark</span>
       </button>
       <nav className="pm-command-bar" aria-label="Ações do espaço de trabalho">
         {updateVersion&&<button type="button" className="pm-update-available" onClick={()=>{setSettingsTab('updates');setSettingsOpen(true);}}>Atualização {updateVersion}</button>}

@@ -1,6 +1,6 @@
 {
   "name": "pentamark",
-  "version": "2.13.19",
+  "version": "2.13.20",
   "description": "Editor Markdown local e compartilhado",
   "author": "PentaMark",
   "private": true,
@@ -69,6 +69,8 @@
     "files": [
       "desktop/main.cjs",
       "desktop/preload.cjs",
+      "desktop/splash.html",
+      "public/pentamark-brand.svg",
       "desktop/tailscale.cjs",
       "desktop/updater.cjs",
       "desktop/invitations.cjs",
@@ -97,6 +99,7 @@
         }
       ],
       "artifactName": "PentaMark-Desktop-${version}-Windows.${ext}"
-    }
+    },
+    "portable": { "splashImage": "build/splash.bmp" }
   }
 }
