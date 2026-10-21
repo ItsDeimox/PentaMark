@@ -1,6 +1,6 @@
 {
   "name": "pentamark",
-  "version": "2.13.20",
+  "version": "2.13.21",
   "description": "Editor Markdown local e compartilhado",
   "author": "PentaMark",
   "private": true,
@@ -71,6 +71,7 @@
       "desktop/preload.cjs",
       "desktop/splash.html",
       "public/pentamark-brand.svg",
+      "public/pentamark-brand-badge.svg",
       "desktop/tailscale.cjs",
       "desktop/updater.cjs",
       "desktop/invitations.cjs",

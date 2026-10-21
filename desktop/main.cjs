@@ -140,7 +140,7 @@ async function createWindow() {
   splashWindow = new BrowserWindow({
     width: 460, height: 320, frame: false, resizable: false, show: false,
     backgroundColor: "#090c0f", title: "Abrindo PentaMark",
-    icon: join(appRoot(), "local-dist", "pentamark-icon-512.png"),
+    icon: join(appRoot(), "local-dist", "pentamark-window-icon.png"),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   splashWindow.once("ready-to-show", () => splashWindow?.show());
@@ -169,7 +169,7 @@ async function createWindow() {
     show: false,
     backgroundColor: "#090c0f",
     title: "PentaMark",
-    icon: join(appRoot(), "local-dist", "pentamark-icon-512.png"),
+    icon: join(appRoot(), "local-dist", "pentamark-window-icon.png"),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
