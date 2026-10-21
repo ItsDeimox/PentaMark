@@ -79,7 +79,7 @@ export function DialogFrame({ title, subtitle, icon: Icon, children, footer, nav
 export function SettingsHeading({ title, titleId, help }: { title: string; titleId?: string; help: ReactNode }) {
   const helpId = useId();
   const [expanded, setExpanded] = useState(false);
-  return <div className="pm-settings-heading">
+  return <div className="pm-section-heading">
     <div className="pm-settings-heading-row"><h3 id={titleId}>{title}</h3>
       <button type="button" className="pm-info-toggle" aria-label={`Informações sobre ${title}`} aria-expanded={expanded} aria-controls={helpId}
         onClick={() => setExpanded(value => !value)}><Info size={16} aria-hidden="true"/></button>

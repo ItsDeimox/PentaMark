@@ -100,8 +100,8 @@ test('themed select and range retain keyboard selection and value updates', asyn
   const dialog = await settings(page);
   await dialog.getByRole('tab', { name: 'Tipografia', exact: true }).click();
   const select = dialog.getByRole('combobox', { name: 'Fonte da interface', exact: true });
-  expect(await select.evaluate(el => getComputedStyle(el).appearance)).toBe('none');
-  expect(await select.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
+  expect(await select.evaluate(el => getComputedStyle(el).appearance)).toBe('base-select');
+  expect(await select.evaluate(el => getComputedStyle(el,'::picker(select)').borderRadius)).toBe('9px');
   await select.focus();
   await page.keyboard.press('m');
   await page.keyboard.press('Enter');
