@@ -26,11 +26,7 @@ export function GraphicsSettings({ appearance, setAppearance, capabilities }: {
   const resolved = resolveGraphics(appearance);
   const recommendation = recommendGraphicsPreset(capabilities ?? detectGraphicsCapabilities());
   const update = (patch: Partial<Appearance>) => setAppearance(current => ({ ...current, ...patch, graphicsPreset: 'custom' }));
-  return <section className="pm-graphics-settings" aria-labelledby={`${id}-title`}>
-    <SettingsHeading title="Gráficos" titleId={`${id}-title`} help={<>
-      <ul>{PRESETS.map(preset => <li key={preset.id}><strong>{preset.label}:</strong> {preset.description}</li>)}</ul>
-      <ul>{TOGGLES.map(([key, , label, hint]) => <li key={key}><strong>{label}:</strong> {hint}</li>)}</ul>
-    </>}/>
+  return <section className="pm-graphics-settings" aria-label="Gráficos">
     <label className="pm-graphics-preset">Perfil gráfico
       <select value={appearance.graphicsPreset || 'custom'} onChange={event => {
         const preset = event.target.value as GraphicsPreset;
@@ -51,5 +47,9 @@ export function GraphicsSettings({ appearance, setAppearance, capabilities }: {
     <div className="pm-graphics-recommendation"><p>Recomendado: <strong>{recommendation === 'economical' ? 'Econômico' : 'Equilibrado'}</strong></p>
       <button type="button" onClick={() => setAppearance(current => applyGraphicsPreset(current, recommendation))}>Aplicar recomendação</button>
     </div>
+    <SettingsHeading title="Sobre os efeitos" help={<>
+      <ul>{PRESETS.map(preset => <li key={preset.id}><strong>{preset.label}:</strong> {preset.description}</li>)}</ul>
+      <ul>{TOGGLES.map(([key, , label, hint]) => <li key={key}><strong>{label}:</strong> {hint}</li>)}</ul>
+    </>}/>
   </section>;
 }

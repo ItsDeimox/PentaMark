@@ -92,6 +92,38 @@
 }
 .pm-shell[data-theme] select option { background-color: var(--pm-panel-2); color: var(--pm-text); }
 
+/* Customizable native pickers retain keyboard, touch and screen-reader behavior.
+   Older WebViews keep the functional native picker through this feature gate. */
+@supports (appearance: base-select) {
+  .pm-shell[data-theme] .pm-dialog select,
+  .pm-shell[data-theme] .pm-dialog select::picker(select) {
+    appearance: base-select;
+  }
+  .pm-shell[data-theme] .pm-dialog select:not([multiple]):is(:not([size]),[size="1"]) {
+    appearance:base-select;
+    -webkit-appearance:base-select;
+    background-image:none;
+    padding-inline-end:12px;
+    align-items:center;
+  }
+  .pm-shell[data-theme] .pm-dialog select::picker-icon { color:var(--pm-muted); }
+  .pm-shell[data-theme] .pm-dialog select::picker(select) {
+    font-family:var(--pm-ui-font); font-size:max(14px,1em);
+    color:var(--pm-text); background:var(--pm-panel-2);
+    border:1px solid var(--pm-border-bright); border-radius:9px;
+    padding:5px; margin-block:5px; max-height:260px;
+    box-shadow:0 8px 24px #0005; scrollbar-width:thin;
+  }
+  .pm-shell[data-theme] .pm-dialog select option {
+    min-height:36px; padding:8px 10px; border-radius:5px; gap:10px;
+    font:inherit; cursor:pointer;
+  }
+  .pm-shell[data-theme] .pm-dialog select option:is(:hover,:focus-visible,:checked) {
+    background:var(--pm-cyan-soft); color:var(--pm-text); outline:none;
+  }
+  .pm-shell[data-theme] .pm-dialog select option::checkmark { color:var(--pm-cyan); }
+}
+
 .pm-shell[data-theme] input[type="range"],
 .pm-shell[data-theme] .pm-dialog input[type="range"] {
   appearance: none;
@@ -137,8 +169,8 @@
   box-shadow: 0 0 0 1px var(--pm-panel);
 }
 .pm-shell[data-theme] input[type="range"]::-moz-range-progress { height: 4px; border-radius: 3px; background: var(--pm-cyan); }
-.pm-shell[data-theme] input[type="range"]:hover:not(:disabled)::-webkit-slider-thumb { background: var(--pm-cyan-soft); }
-.pm-shell[data-theme] input[type="range"]:hover:not(:disabled)::-moz-range-thumb { background: var(--pm-cyan-soft); }
+.pm-shell[data-theme] input[type="range"]:hover:not(:disabled)::-webkit-slider-thumb { background: color-mix(in srgb,var(--pm-cyan) 24%,var(--pm-panel)); }
+.pm-shell[data-theme] input[type="range"]:hover:not(:disabled)::-moz-range-thumb { background: color-mix(in srgb,var(--pm-cyan) 24%,var(--pm-panel)); }
 
 .pm-shell[data-theme] :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):focus-visible,
 .pm-shell[data-theme] .pm-dialog :is(input[type="checkbox"],input[type="radio"],input[type="range"],select):focus-visible {
