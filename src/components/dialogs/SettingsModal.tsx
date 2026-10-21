@@ -1,4 +1,4 @@
-import { Bot, Check, ExternalLink, FolderOpen, Layers, LockKeyhole, Palette, RotateCcw, Settings, Square, Type } from 'lucide-react';
+import { Bot, Check, ExternalLink, FolderOpen, Layers, LockKeyhole, Palette, RotateCcw, Settings, Square, Type, Download } from 'lucide-react';
 import { useId, useState, type Dispatch, type SetStateAction } from 'react';
 import { DEFAULT_APPEARANCE } from '../../app/constants';
 import type { Appearance, DesktopVaultInfo, HostConfig } from '../../domain/types';
@@ -7,6 +7,7 @@ import { McpSettings } from './McpSettings';
 import { exportAndroidVault, importAndroidDocuments, isAndroidLocal, isRemoteVault } from '../../platform/android';
 import { RemoteConnectionPanel } from './RemoteConnectionPanel';
 import { GraphicsSettings } from '../../features/workspace/GraphicsSettings';
+import { UpdateSettings } from './UpdateSettings';
 
 const THEMES = [
   { id:'pentagory', name:'PentaMark', color:'#79d2dc' },
@@ -22,6 +23,7 @@ const TABS = [
   { id:'vault', label:'Cofre e host', icon:FolderOpen },
   { id:'connection', label:'Conectar ao PC', icon:ExternalLink },
   { id:'mcp', label:'MCP', icon:Bot },
+  { id:'updates', label:'Atualizações', icon:Download },
 ] as const;
 const FONT_OPTIONS = [['technical','Técnica · PentaMark'],['modern','Moderna'],['rounded','Arredondada'],['mono','Monoespaçada'],['serif','Serifada'],['custom','Personalizada']];
 export function SettingsModal(p: {
@@ -30,6 +32,7 @@ export function SettingsModal(p: {
   config: HostConfig; urls: string[]; desktopVault: DesktopVaultInfo | null;
   onChooseVault: () => void; onShowVault: () => void; onClose: () => void;
   onSave: (draft: HostConfig, baseline: HostConfig) => Promise<void>; onNotify: (message: string) => void;
+  beforeInstall:()=>Promise<void>;
 }) {
   const [initialAppearance] = useState(p.appearance), [baseline] = useState(p.config), [draft, setDraft] = useState(p.config);
   const [tab, setTab] = useState<string>(p.initialTab || 'appearance');
@@ -107,6 +110,7 @@ export function SettingsModal(p: {
       </>}
       {tab==='connection' && isAndroidLocal && <RemoteConnectionPanel/>}
       {tab==='mcp' && !isAndroidLocal && <McpSettings draft={draft} saved={p.config} onChange={config} urls={p.urls} onNotify={p.onNotify}/>}
+      {tab==='updates' && <UpdateSettings beforeInstall={async()=>{if(JSON.stringify(draft)!==JSON.stringify(baseline))throw new Error('Salve as configurações antes de instalar a atualização.');await p.beforeInstall();}}/>}
     </div>
     {error && <p role="alert" className="pm-form-error">{error}</p>}
   </DialogFrame>;

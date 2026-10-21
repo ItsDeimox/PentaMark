@@ -1,0 +1,9 @@
+.pm-sharing-setup,.pm-sharing-link,.pm-invite-steps { display:grid;gap:12px;min-width:0;font-size:max(14px,.9em); }
+.pm-sharing-setup p,.pm-invite-steps p { margin:0;line-height:1.6;color:var(--pm-muted); }
+.pm-sharing-setup .pm-field { font-size:1em; }
+.pm-sharing-setup .pm-section-heading { border-top:1px solid var(--pm-border);padding-top:10px; }
+.pm-shell .pm-sharing-setup .pm-settings-heading-row h3 {font-size:1em;color:var(--pm-muted);}
+.pm-sharing-link { margin-top:6px; }
+.pm-shell .pm-sharing-link textarea { font-size:13px;resize:vertical;overflow-wrap:anywhere; }
+.pm-sharing-status,.pm-invite-address { overflow-wrap:anywhere; }
+.pm-invite-address { color:var(--pm-cyan);font-size:14px; }
