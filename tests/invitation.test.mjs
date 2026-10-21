@@ -18,3 +18,16 @@ test('arbitrary destinations and credential-bearing links cannot enter the privi
 test('malformed, duplicate, oversized and unknown invitation fields are rejected',()=>{
   for(const value of ['pentamark://join?v=2',createInvitation(invite)+'&host=http://100.100.1.2',createInvitation(invite)+'&token=secret',createInvitation(invite)+'#test','pentamark://other','x'.repeat(4097)])assert.throws(()=>parseInvitation(value));
 });
+
+test('legacy Android opaque custom-scheme URL behavior cannot lose a valid invitation',()=>{
+  const NativeURL=globalThis.URL;
+  globalThis.URL=class extends NativeURL {
+    constructor(value,...args){super(value,...args);if(this.protocol==='pentamark:')Object.defineProperties(this,{hostname:{value:''},pathname:{value:'//join'}});}
+  };
+  try{assert.deepEqual(parseInvitation(createInvitation(invite)),invite);}
+  finally{globalThis.URL=NativeURL;}
+});
+test('explicit custom authority validation rejects lookalikes, credentials, ports and extra paths',()=>{
+  const query=createInvitation(invite).split('?')[1];
+  for(const authority of ['join.evil.test','user@join','join:99','join/path','join\\evil'])assert.throws(()=>parseInvitation(`pentamark://${authority}?${query}`));
+});
