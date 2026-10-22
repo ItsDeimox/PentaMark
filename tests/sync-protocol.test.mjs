@@ -153,3 +153,92 @@ test('live configuration reductions constrain hello, apply and uploads; advertis
   assert.equal(upload.status, 413);
   assert.equal((await f.host.openSnapshot()).entries.length, 0);
 });
+
+for (const policy of ['permission', 'lock', 'limit']) test(`queued apply rechecks ${policy} at the host mutation boundary`, async t => {
+  let role = 'admin', unlocked = true, maximum = 10, armed = false;
+  const f = await fixture(t, { permission: () => role, authorizeOperation: () => unlocked, maxFileBytes: () => maximum,
+    hostOptions: { interrupt: async point => {
+      if (armed && point === 'after-intent') {
+        armed = false;
+        if (policy === 'permission') role = 'viewer';
+        if (policy === 'lock') unlocked = false;
+        if (policy === 'limit') maximum = 1;
+      }
+    } } });
+  const op = await operation(f);
+  armed = true;
+  const denied = (await f.request('/apply', { operations: [op] })).data[0];
+  assert.equal(denied.status, 'blocked');
+  assert.equal(denied.errorCode, policy === 'permission' ? 'permission-denied' : policy === 'lock' ? 'locked' : 'file-too-large');
+  assert.equal(existsSync(join(f.root, 'vault/a.md')), false);
+  role = 'admin'; unlocked = true; maximum = 10;
+  assert.equal((await f.request('/apply', { operations: [op] })).data[0].status, 'applied');
+});
+
+for (const policy of ['permission', 'lock', 'limit']) test(`lost ACK replay survives changed ${policy} without another mutation`, async t => {
+  let role = 'admin', unlocked = true, maximum = 10;
+  const f = await fixture(t, { permission: () => role, authorizeOperation: () => unlocked,
+    maxFileBytes: () => maximum, hostOptions: { getMaxFileBytes: () => maximum } });
+  const op = await operation(f);
+  // Commit succeeds, but the client has not persisted the ACK and retries later.
+  const first = (await f.request('/apply', { operations: [op] })).data[0];
+  assert.equal(first.status, 'applied');
+  if (policy === 'permission') role = 'viewer';
+  if (policy === 'lock') unlocked = false;
+  if (policy === 'limit') maximum = 1;
+  const replay = (await f.request('/apply', { operations: [op] })).data[0];
+  assert.equal(replay.status, 'already-applied');
+  assert.deepEqual(replay.confirmed, first.confirmed);
+  assert.equal(f.host.history(op.entryId).length, 1);
+});
+
+for (const kind of ['delete', 'rmdir']) test(`queued ${kind} rechecks admin downgrade to editor`, async t => {
+  let role = 'admin', armed = false;
+  const f = await fixture(t, { permission: () => role, hostOptions: { interrupt: async point => {
+    if (armed && point === 'after-intent') { armed = false; role = 'editor'; }
+  } } });
+  const create = await operation(f);
+  if (kind === 'rmdir') { create.kind = 'mkdir'; create.after = { path: 'folder', kind: 'directory', blobHash: null, byteLength: 0 }; }
+  const initial = (await f.request('/apply', { operations: [create] })).data[0];
+  const op = { ...create, opId: randomUUID(), kind, after: null, baseRevision: initial.confirmed.revision };
+  armed = true;
+  const denied = (await f.request('/apply', { operations: [op] })).data[0];
+  assert.equal(denied.errorCode, 'permission-denied');
+  assert.equal(existsSync(join(f.root, 'vault', create.after.path)), true);
+  role = 'admin';
+  assert.equal((await f.request('/apply', { operations: [op] })).data[0].status, 'applied');
+});
+
+test('raised host and route limits take effect without losing existing snapshot tokens', async t => {
+  let maximum = 2;
+  const f = await fixture(t, { maxFileBytes: () => maximum, hostOptions: { getMaxFileBytes: () => maximum } });
+  const snapshot = (await f.request('/snapshot', {})).data;
+  maximum = 8;
+  assert.equal((await f.request('/hello')).data.maxFileBytes, 8);
+  const op = await operation(f, 'raised.md', 'four');
+  assert.equal((await f.request('/apply', { operations: [op] })).data[0].status, 'applied');
+  assert.equal((await fetch(f.base + '/blobs/' + op.after.blobHash + '?offset=0', {
+    method: 'PUT', headers: { 'x-sync-byte-length': '4' }, body: 'four' })).status, 200);
+  assert.equal((await f.request(`/snapshot?snapshotToken=${snapshot.snapshotToken}&cursor=0`)).status, 200);
+});
+
+test('snapshot slots are reserved before awaiting the host and released on failure', async t => {
+  const f = await fixture(t, { maxSnapshots: 1 });
+  const original = f.host.openSnapshot;
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  let calls = 0;
+  f.host.openSnapshot = async () => {
+    if (++calls === 1) { entered.resolve(); await release.promise; throw new Error('snapshot-fixture-failure'); }
+    release.resolve();
+    return original();
+  };
+  const first = f.request('/snapshot', {});
+  await entered.promise;
+  let second;
+  try { second = await f.request('/snapshot', {}); }
+  finally { release.resolve(); }
+  assert.equal((await first).status, 503);
+  assert.equal(second.status, 429);
+  f.host.openSnapshot = original;
+  assert.equal((await f.request('/snapshot', {})).status, 200);
+});

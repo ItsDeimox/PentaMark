@@ -36,26 +36,32 @@ async function equalSegment(path, offset, bytes) {
   } finally { await handle.close(); }
 }
 
-export async function createTransfers({ host, maxFileBytes }) {
+export async function createTransfers({ host, maxFileBytes, maxConcurrentUploads = 4 }) {
+  if (!Number.isSafeInteger(maxConcurrentUploads) || maxConcurrentUploads < 1) throw new Error('invalid-transfer-capacity');
   const root = join(host.root, 'transfers');
   await mkdir(root, { recursive: true });
   let queue = Promise.resolve();
+  let admitted = 0;
   return async function upload(req, hash, offsetValue) {
-    const offset = integer(offsetValue);
-    const range = req.headers['content-range'];
-    const match = range === undefined ? null : /^bytes (\d+)-(\d+)\/(\d+)$/.exec(range);
-    if (range !== undefined && !match && range !== 'bytes */0') throw failure(400, 'invalid-content-range');
-    const total = range === undefined ? integer(req.headers['x-sync-byte-length']) : match ? integer(match[3]) : 0;
-    if (range !== undefined && req.headers['x-sync-byte-length'] !== undefined && integer(req.headers['x-sync-byte-length']) !== total)
-      throw failure(400, 'invalid-content-range');
-    if (range !== undefined && (match ? integer(match[1]) !== offset || integer(match[2]) !== offset + Math.min(CHUNK_BYTES, total - offset) - 1 : offset !== 0))
-      throw failure(400, 'invalid-content-range');
-    if (total > maxFileBytes()) throw failure(413, 'file-too-large');
-    if (offset > total || offset % CHUNK_BYTES !== 0) throw failure(409, 'invalid-offset');
-    const bytes = await readBounded(req, CHUNK_BYTES);
-    if (bytes.length !== Math.min(CHUNK_BYTES, total - offset)) throw failure(400, 'invalid-length');
+    // Reserve before any await or body read. The bounded queue leaves waiting
+    // request streams paused; only its current request allocates a segment.
+    if (admitted >= maxConcurrentUploads) throw failure(429, 'transfer-capacity');
+    admitted++;
     const work = async () => {
-      if (total > maxFileBytes()) throw failure(413, 'file-too-large');
+      const offset = integer(offsetValue);
+      const range = req.headers['content-range'];
+      const match = range === undefined ? null : /^bytes (\d+)-(\d+)\/(\d+)$/.exec(range);
+      if (range !== undefined && !match && range !== 'bytes */0') throw failure(400, 'invalid-content-range');
+      const total = range === undefined ? integer(req.headers['x-sync-byte-length']) : match ? integer(match[3]) : 0;
+      if (range !== undefined && req.headers['x-sync-byte-length'] !== undefined && integer(req.headers['x-sync-byte-length']) !== total)
+        throw failure(400, 'invalid-content-range');
+      if (range !== undefined && (match ? integer(match[1]) !== offset || integer(match[2]) !== offset + Math.min(CHUNK_BYTES, total - offset) - 1 : offset !== 0))
+        throw failure(400, 'invalid-content-range');
+      if (total > await maxFileBytes()) throw failure(413, 'file-too-large');
+      if (offset > total || offset % CHUNK_BYTES !== 0) throw failure(409, 'invalid-offset');
+      const bytes = await readBounded(req, CHUNK_BYTES);
+      if (bytes.length !== Math.min(CHUNK_BYTES, total - offset)) throw failure(400, 'invalid-length');
+      if (total > await maxFileBytes()) throw failure(413, 'file-too-large');
       const published = host.objects.path(hash);
       const existing = await size(published);
       if (existing !== null) {
@@ -92,13 +98,16 @@ export async function createTransfers({ host, maxFileBytes }) {
           await unlink(path);
           throw failure(422, 'hash-mismatch');
         }
-        if (total > maxFileBytes()) throw failure(413, 'file-too-large');
+        if (total > await maxFileBytes()) throw failure(413, 'file-too-large');
         // Verification precedes publication; put consumes a stream, never the full file.
         await host.objects.put(createReadStream(path));
         await unlink(path);
       }
       return { blobHash: hash, verifiedBytes, complete: verifiedBytes === total };
     };
-    const next = queue.then(work); queue = next.catch(() => {}); return next;
+    const next = queue.then(work);
+    queue = next.catch(() => {});
+    try { return await next; }
+    finally { admitted--; }
   };
 }

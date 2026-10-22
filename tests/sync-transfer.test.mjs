@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createHostService } from '../local/sync/host-service.mjs';
+import { createTransfers } from '../local/sync/transfer.mjs';
 
 const CHUNK = 1048576;
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -115,4 +116,25 @@ test('Android Content-Range upload framing validates offset, length and total', 
   assert.equal((await valid.json()).verifiedBytes, 6);
   const empty = await fetch(f.base + hash('') + '?offset=0', { method: 'PUT', headers: { 'Content-Range': 'bytes */0' }, body: '' });
   assert.equal(empty.status, 200);
+});
+
+test('upload admission rejects excess concurrency before consuming bodies and releases slots on failure', async t => {
+  const f = await fixture(t);
+  const upload = await createTransfers({ host: f.host, maxFileBytes: () => CHUNK, maxConcurrentUploads: 1 });
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const bytes = Buffer.alloc(CHUNK, 9), digest = hash(bytes);
+  const first = { headers: { 'x-sync-byte-length': String(CHUNK) }, async *[Symbol.asyncIterator]() {
+    entered.resolve(); await release.promise; yield bytes;
+  } };
+  const pending = upload(first, digest, '0');
+  await entered.promise;
+  let consumed = false;
+  const excess = { headers: first.headers, async *[Symbol.asyncIterator]() { consumed = true; yield bytes; } };
+  try {
+    await assert.rejects(upload(excess, digest, '0'), error => error.statusCode === 429 && error.errorCode === 'transfer-capacity');
+    assert.equal(consumed, false, 'capacity rejection must happen before allocating a segment body');
+  } finally { release.resolve(); await pending; }
+  const bad = { headers: { 'x-sync-byte-length': '3' }, async *[Symbol.asyncIterator]() { yield Buffer.from('bad'); } };
+  await assert.rejects(upload(bad, hash('yes'), '0'), error => error.statusCode === 422);
+  assert.equal((await upload(excess, digest, '0')).complete, true);
 });
