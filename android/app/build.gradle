@@ -35,6 +35,9 @@ android {
     sourceSets {
         test.resources.srcDir '../../tests/fixtures'
         androidTest.assets.srcDir '../../tests/fixtures'
+        // Shared real-HTTP helper, not Android classes, is compiled by both test targets.
+        test.java.srcDir 'src/sharedTest/java'
+        androidTest.java.srcDir 'src/sharedTest/java'
     }
 }
 

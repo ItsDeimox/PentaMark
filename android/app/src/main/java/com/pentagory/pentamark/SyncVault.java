@@ -38,7 +38,7 @@ public final class SyncVault implements AutoCloseable {
         JSONObject v = copy(value); identifier(v.getString("entryId"));
         if (v.getString("revision").isEmpty()) throw new IOException("invalid-revision");
         v.put("path", SyncPaths.path(v.getString("path")));
-        if (!Arrays.asList("note", "asset", "directory").contains(v.getString("kind")) throw new IOException("invalid-kind");
+        if (!Arrays.asList("note", "asset", "directory").contains(v.getString("kind"))) throw new IOException("invalid-kind");
         if (!(v.get("deleted") instanceof Boolean)) throw new IOException("invalid-deleted");
         long length = size(v);
         if (v.getBoolean("deleted") || v.getString("kind").equals("directory")) {
@@ -93,7 +93,7 @@ public final class SyncVault implements AutoCloseable {
     public synchronized JSONObject configure(JSONObject config) throws Exception {
         ready(); validateConfig(config); JSONObject next = copy(meta), p = next.getJSONObject("profile");
         p.put("offlineEnabled", config.getBoolean("offlineEnabled")).put("mode", config.getString("mode"));
-        database.put("vaults", "meta", next); meta = next; return status();
+        next.put("cycleComplete",false);database.put("vaults", "meta", next); meta = next; return status();
     }
     public synchronized JSONObject status() throws Exception {
         ready(); int dirty = 0;
@@ -101,7 +101,8 @@ public final class SyncVault implements AutoCloseable {
         for (int i=0; i<entries.length(); i++) if (entries.getJSONObject(i).getBoolean("dirty")) dirty++;
         int pending = Math.max(dirty, database.count("pending_ops")), conflicts = database.count("conflicts");
         String phase = !meta.isNull("errorCode") ? "blocked" : conflicts > 0 ? "conflicts" : !meta.getBoolean("snapshotComplete") ? "initial-copy"
-            : pending > 0 && meta.getJSONObject("profile").getString("mode").equals("manual") ? "waiting-manual" : "offline";
+            : pending > 0 && meta.getJSONObject("profile").getString("mode").equals("manual") ? "waiting-manual"
+            : pending==0 && meta.getJSONObject("profile").getBoolean("offlineEnabled") && meta.optBoolean("cycleComplete",false) && !meta.isNull("lastSuccessfulSync") ? "idle" : "offline";
         return obj("phase", phase, "localSaved", true, "pendingCount", pending, "conflictCount", conflicts,
             "snapshotComplete", meta.getBoolean("snapshotComplete"), "lastSuccessfulSync", meta.get("lastSuccessfulSync"), "errorCode", meta.get("errorCode"));
     }
@@ -111,14 +112,31 @@ public final class SyncVault implements AutoCloseable {
             JSONObject row = entries.getJSONObject(i); output.put(obj("base", row.get("base"), "local", row.get("local"), "localHead", row.get("localHead")));
         }
         return obj("profile", copy(meta.getJSONObject("profile")), "cursor", meta.get("cursor"), "entries", output,
-            "status", status(), "epoch", meta.get("epoch"), "initialCopy", meta.get("initialCopy"), "conflicts", database.all("conflicts"));
+            "status", status(), "epoch", meta.get("epoch"), "initialCopy", meta.get("initialCopy"), "conflicts", database.all("conflicts"),"preparedOperations",preparedOperations());
+    }
+    private JSONArray preparedOperations()throws Exception {
+        JSONArray rows=database.all("pending_ops"),operations=new JSONArray();for(int i=0;i<rows.length();i++)operations.put(rows.getJSONObject(i).getJSONObject("operation"));return operations;
+    }
+    public synchronized JSONObject completeCycle(JSONObject input)throws Exception {
+        ready();final JSONObject next=copy(meta);
+        database.transaction(() -> {
+            JSONObject current=database.get("vaults","meta");
+            boolean valid=current.getJSONObject("profile").getBoolean("offlineEnabled") && current.getBoolean("snapshotComplete")
+                && current.isNull("initialCopy") && !current.isNull("cursor") && !current.isNull("epoch")
+                && current.getString("cursor").equals(input.optString("expectedCursor",null)) && current.getString("epoch").equals(input.optString("expectedEpoch",null))
+                && database.count("pending_ops")==0 && database.count("conflicts")==0 && database.count("file_intents")==0;
+            JSONArray entries=database.all("entries");for(int i=0;i<entries.length();i++)if(entries.getJSONObject(i).getBoolean("dirty"))valid=false;
+            if(!valid)throw new IOException("stale-local-head");
+            java.text.SimpleDateFormat clock=new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",Locale.ROOT);clock.setTimeZone(TimeZone.getTimeZone("UTC"));
+            next.put("lastSuccessfulSync",clock.format(new Date())).put("cycleComplete",true).put("errorCode",JSONObject.NULL);database.put("vaults","meta",next);
+        });meta=next;return status();
     }
     private JSONObject empty(String entryId) throws Exception { return obj("entryId", entryId, "base", null, "local", null, "localHead", "", "dirty", false, "approved", false); }
     private void retain(JSONObject v) throws Exception { if (v != null) database.put("versions", id(), v); }
     private void require(JSONObject v) throws Exception {
         if (v != null && !v.getBoolean("deleted") && !v.getString("kind").equals("directory")) files.require(v.getString("blobHash"), size(v));
     }
-    private JSONObject plan() throws Exception { return obj("id", id(), "rows", new JSONArray(), "conflicts", new JSONArray(), "removeConflicts", new JSONArray(), "removePending", new JSONArray(), "applied", new JSONArray(), "meta", copy(meta)); }
+    private JSONObject plan() throws Exception { return obj("id", id(), "rows", new JSONArray(), "conflicts", new JSONArray(), "removeConflicts", new JSONArray(), "removePending", new JSONArray(), "applied", new JSONArray(), "meta", copy(meta).put("cycleComplete",false)); }
     private void rowChange(JSONObject plan, JSONObject before, JSONObject after) throws Exception {
         plan.getJSONArray("rows").put(obj("before", before, "after", after));
     }
@@ -206,6 +224,8 @@ public final class SyncVault implements AutoCloseable {
             JSONArray remove = plan.getJSONArray("removeConflicts"); for (int i=0; i<remove.length(); i++) database.remove("conflicts", remove.getString(i));
             remove = plan.getJSONArray("removePending"); for (int i=0; i<remove.length(); i++) database.remove("pending_ops", remove.getString(i));
             JSONArray applied = plan.getJSONArray("applied"); for (int i=0; i<applied.length(); i++) database.put("applied_ops", applied.getJSONObject(i).getString("opId"), applied.getJSONObject(i));
+            JSONObject migration=plan.optJSONObject("migrationReceipt");
+            if(migration!=null)database.put("vaults","migration:"+migration.getString("migrationId"),migration);
             database.put("vaults", "meta", plan.getJSONObject("meta")); database.remove("file_intents", plan.getString("id"));
         });
         meta = copy(plan.getJSONObject("meta"));
@@ -493,6 +513,61 @@ public final class SyncVault implements AutoCloseable {
         }
     }
     public synchronized JSONArray transferProgress() throws Exception { ready(); return database.all("transfer_progress"); }
+
+    /** Persist a native hello association without accepting a renderer assertion of identity. */
+    public synchronized void verifyAssociation(RemoteConnection.VerifiedHello proof)throws Exception {
+        ready();JSONObject profile=meta.getJSONObject("profile");checkHello(profile,proof);
+        if(!profile.getString("origin").equals(proof.origin))throw new IOException("replica-identity-mismatch");
+        JSONObject next=copy(meta).put("verifiedAssociation",association(proof));database.put("vaults","meta",next);meta=next;
+    }
+    private static void checkHello(JSONObject profile,RemoteConnection.VerifiedHello proof)throws Exception {
+        JSONObject hello=proof.data();
+        if(!profile.getString("vaultId").equals(hello.getString("vaultId")) || !profile.getString("serverId").equals(hello.getString("serverId")))throw new IOException("replica-identity-mismatch");
+    }
+    private static JSONObject association(RemoteConnection.VerifiedHello proof)throws Exception {
+        JSONObject hello=proof.data();return obj("origin",proof.origin,"vaultId",hello.getString("vaultId"),"serverId",hello.getString("serverId"));
+    }
+    /** Explicit rebind only. Cursor, epoch, versions and prepared operations are unchanged. */
+    public synchronized JSONObject rebind(RemoteConnection.VerifiedHello proof)throws Exception {
+        ready();checkHello(meta.getJSONObject("profile"),proof);JSONObject next=copy(meta);
+        next.getJSONObject("profile").put("origin",proof.origin);next.put("verifiedAssociation",association(proof)).put("cycleComplete",false);
+        database.put("vaults","meta",next);meta=next;return copy(next.getJSONObject("profile"));
+    }
+    public synchronized JSONObject importDraft(JSONObject input)throws Exception {
+        ready();input=copy(input);JSONObject profile=meta.getJSONObject("profile"), verified=meta.optJSONObject("verifiedAssociation");
+        for(String field:new String[]{"origin","vaultId","serverId"})if(!profile.getString(field).equals(input.getString(field)))throw new IOException("replica-identity-mismatch");
+        if(verified==null)throw new IOException("handshake-required");
+        for(String field:new String[]{"origin","vaultId","serverId"})if(!profile.getString(field).equals(verified.getString(field)))throw new IOException("handshake-required");
+        String migrationId=input.getString("migrationId"), content=input.getString("content"), legacy=input.getString("legacyRevision"), sourcePath=input.getString("path");
+        if(!migrationId.matches("[0-9a-f]{64}"))throw new IOException("invalid-migration-id");
+        byte[] bytes=content.getBytes(StandardCharsets.UTF_8);if(bytes.length>MAX_TEXT)throw new IOException("file-too-large");
+        // Fingerprint every payload field, not only the caller's stable ID. Store no note bytes in SQLite.
+        JSONArray fields=new JSONArray();for(String field:new String[]{"vaultId","serverId","origin","path","content","legacyRevision"})fields.put(input.getString(field));
+        byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(fields.toString().getBytes(StandardCharsets.UTF_8));
+        StringBuilder hex=new StringBuilder();for(byte b:digest)hex.append(String.format(Locale.ROOT,"%02x",b&255));String fingerprint=hex.toString();
+        JSONObject oldReceipt=database.get("vaults","migration:"+migrationId);
+        if(oldReceipt!=null) {
+            if(!oldReceipt.getString("fingerprint").equals(fingerprint))throw new IOException("migration-id-conflict");
+            require(oldReceipt.getJSONObject("version"));return obj("durable",true,"migrationId",migrationId);
+        }
+        String path=SyncPaths.path(sourcePath);if(!path.toLowerCase(Locale.ROOT).endsWith(".md"))throw new IOException("invalid-draft-path");
+        JSONObject existing=findPath(path), base=existing==null?null:existing.optJSONObject("base");
+        boolean known=base!=null && !base.getBoolean("deleted") && base.getString("kind").equals("note")
+            && base.getString("revision").equals(legacy) && !existing.getBoolean("dirty") && pending(existing.getString("entryId"))==null
+            && !conflicted(existing.getString("entryId")) && sameVersion(base,existing.optJSONObject("local"));
+        JSONObject before=known?existing:empty(id());
+        if(!known && (existing!=null || files.target(path).exists())) {
+            String stem=path.substring(0,path.length()-3);
+            do{path=stem+".migrated-"+id()+".md";}while(findPath(path)!=null || files.target(path).exists());
+        }
+        JSONObject blob=files.store(new ByteArrayInputStream(bytes),MAX_TEXT);
+        JSONObject imported=obj("entryId",before.getString("entryId"),"kind","note","path",path,"revision",id(),"blobHash",blob.getString("blobHash"),"byteLength",blob.getLong("byteLength"),"deleted",false);
+        JSONObject after=copy(before).put("local",imported).put("localHead",id()).put("dirty",true).put("approved",known),plan=plan();
+        rowChange(plan,before,after);
+        if(!known)plan.getJSONArray("conflicts").put(obj("conflictId",id(),"entryId",imported.getString("entryId"),"base",null,"local",imported,"remote",base,"reason","unknown-legacy-base"));
+        plan.put("migrationReceipt",obj("migrationId",migrationId,"fingerprint",fingerprint,"sourcePath",sourcePath,"legacyRevision",legacy,"version",imported));
+        commit(plan);return obj("durable",true,"migrationId",migrationId);
+    }
     public synchronized JSONArray history(String entryId)throws Exception {
         ready();identifier(entryId);JSONArray all=database.all("versions"),result=new JSONArray();Set<String> seen=new HashSet<>();
         for(int i=0;i<all.length();i++){JSONObject v=all.getJSONObject(i);if(v.getString("entryId").equals(entryId)&&seen.add(v.toString()))result.put(v);}

@@ -99,6 +99,32 @@ public final class RemoteConnection {
         return requestJson(url, method, body == null ? null : body.toString(), null, null);
     }
 
+    /** Only native HTTP discovery can create this proof; renderer-supplied hello JSON is never accepted. */
+    public static final class VerifiedHello {
+        public final String origin;
+        public final long maximum;
+        private final String json;
+        private VerifiedHello(String origin, JSONObject hello, long maximum) {
+            this.origin=origin;this.maximum=maximum;this.json=hello.toString();
+        }
+        public JSONObject data() throws Exception { return new JSONObject(json); }
+    }
+
+    public VerifiedHello discover() throws Exception {
+        JSONObject response=syncRequest("/api/sync/v1/hello","GET",null), hello=response.getJSONObject("data");
+        try {
+            String uuid="(?i)[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}";
+            Object protocol=hello.get("protocol"),chunk=hello.get("chunkBytes"),limit=hello.get("maxFileBytes");
+            if(response.getInt("status")!=200 || !(protocol instanceof Number) || ((Number)protocol).doubleValue()!=1
+                || !(chunk instanceof Number) || ((Number)chunk).doubleValue()!=SYNC_CHUNK_BYTES
+                || !hello.getString("vaultId").matches(uuid) || !hello.getString("serverId").matches(uuid)
+                || hello.getString("epoch").isEmpty() || !(limit instanceof Number))throw new IOException("incompatible-host");
+            double n=((Number)limit).doubleValue();
+            if(!Double.isFinite(n) || n<=0 || n>9007199254740991L || n!=Math.floor(n))throw new IOException("incompatible-host");
+            return new VerifiedHello(origin,hello,(long)n);
+        } catch(org.json.JSONException error) { throw new IOException("incompatible-host",error); }
+    }
+
     private JSONObject requestJson(String url, String method, String body, String base64, String clientId) throws Exception {
         if (clientId != null && !clientId.matches("[a-zA-Z0-9_-]{1,80}")) throw new IllegalArgumentException("Invalid clientId");
         boolean upload = relative(url).getPath().equals("/api/upload");

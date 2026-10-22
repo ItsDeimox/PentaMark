@@ -12,6 +12,21 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class SyncBridgeInstrumentedTest {
+    @Test public void completionAndMigrationUseExactCapacitorEnvelopes()throws Exception {
+        JSONObject profile=SyncVault.obj("vaultId",UUID.randomUUID().toString(),"replicaId",UUID.randomUUID().toString(),"serverId",UUID.randomUUID().toString(),"origin","http://100.64.0.1:3000","offlineEnabled",true,"mode","manual");
+        JSONObject hello=SyncVault.obj("protocol",1,"vaultId",profile.getString("vaultId"),"serverId",profile.getString("serverId"),"epoch","e","maxFileBytes",104857600,"chunkBytes",1048576);
+        Context context=ApplicationProvider.getApplicationContext();
+        try(SyncVault seed=new SyncVault(context,profile)){seed.verifyAssociation(SyncDiscoveryTestServer.discover(profile.getString("origin"),hello));}
+        try(ActivityScenario<MainActivity> activity=ActivityScenario.launch(MainActivity.class)) {
+            await(activity,"typeof window.Capacitor?.nativePromise==='function'");call(activity,"open",SyncVault.obj("profile",profile));
+            call(activity,"persistIncoming",SyncVault.obj("batch",SyncVault.obj("epoch","e","nextCursor","S","initialCopy",SyncVault.obj("snapshotToken","t","atCursor","S","pageCursor",null),"items",new JSONArray())));
+            assertEquals("idle",call(activity,"completeCycle",SyncVault.obj("input",SyncVault.obj("expectedCursor","S","expectedEpoch","e"))).getString("phase"));
+            JSONObject draft=SyncVault.obj("migrationId","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","vaultId",profile.getString("vaultId"),"serverId",profile.getString("serverId"),"origin",profile.getString("origin"),"path","Legacy.md","content","retained","legacyRevision","legacy");
+            JSONObject receipt=call(activity,"importDraft",SyncVault.obj("input",draft));assertTrue(receipt.getBoolean("durable"));assertEquals(draft.getString("migrationId"),receipt.getString("migrationId"));
+            assertEquals(receipt.toString(),call(activity,"importDraft",SyncVault.obj("input",draft)).toString());
+            JSONObject snapshot=call(activity,"snapshot",new JSONObject());assertEquals(0,snapshot.getJSONArray("preparedOperations").length());assertEquals(1,snapshot.getJSONArray("conflicts").length());assertNotEquals("idle",snapshot.getJSONObject("status").getString("phase"));
+        }
+    }
     private static Object evaluate(ActivityScenario<MainActivity> activity,String script)throws Exception {
         java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.atomic.AtomicReference<String> value=new java.util.concurrent.atomic.AtomicReference<>();

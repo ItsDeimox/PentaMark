@@ -24,33 +24,48 @@ public final class SyncVaultPlugin extends Plugin {
     private String importPath;
     private SyncVault exporting;
     private JSONObject exportBlob;
+    private final java.util.Set<RemoteConnection> probes=new java.util.HashSet<>();
+    private RemoteConnection.VerifiedHello discovery;
+    private long bindingGeneration;
+    private final ThreadLocal<Long> executingGeneration=new ThreadLocal<>();
     private static JSObject js(JSONObject object) throws Exception { return new JSObject(object.toString()); }
     interface Task { JSONObject run(SyncVault target) throws Exception; }
     private void run(PluginCall call, Task task) {
         try {
-            final SyncVault target;
-            synchronized(lock) { target=vault; if(target==null || opening)throw new IOException("replica-not-open"); }
-            work.execute(() -> { try { call.resolve(js(task.run(target))); } catch(Exception e){call.reject(e.getMessage(),e.getMessage(),e);} });
+            final SyncVault target;final long generation;
+            synchronized(lock) { target=vault; if(target==null || opening)throw new IOException("replica-not-open");generation=bindingGeneration; }
+            work.execute(() -> { try {
+                synchronized(lock){if(target!=vault || generation!=bindingGeneration || opening)throw new IOException("replica-changed");}
+                executingGeneration.set(generation);
+                call.resolve(js(task.run(target)));
+            } catch(Exception e){call.reject(e.getMessage(),e.getMessage(),e);}finally{executingGeneration.remove();} });
         } catch(Exception e){call.reject(e.getMessage(),e.getMessage(),e);}
     }
     @PluginMethod public void open(PluginCall call) {
-        boolean claimed=false;
+        boolean claimed=false;long claim=-1;
         try {
             final JSONObject profile = new JSONObject(call.getObject("profile").toString());
-            synchronized(lock) { if(opening)throw new IOException("replica-busy"); opening=true; claimed=true; if(remote!=null)remote.close(); remote=null; }
+            synchronized(lock) { if(opening || paused)throw new IOException("replica-busy"); opening=true; claimed=true;claim=++bindingGeneration;cancelProbes(); if(remote!=null)remote.close(); remote=null; }
+            final long generation=claim;
             work.execute(() -> {
                 try {
                     synchronized(lock) {
+                        if(paused || generation!=bindingGeneration)throw new IOException("replica-changed");
                         if(vault!=null) { vault.close(); vault=null; }
-                        vault=new SyncVault(getContext(),profile); call.resolve(js(vault.status()));
+                        SyncVault next=new SyncVault(getContext(),profile);
+                        try {
+                            if(discovery!=null && discovery.origin.equals(profile.getString("origin")))next.verifyAssociation(discovery);
+                            vault=next;call.resolve(js(vault.status()));
+                        }catch(Exception e){next.close();throw e;}
                     }
                 } catch(Exception e){call.reject(e.getMessage(),e.getMessage(),e);}
-                finally{synchronized(lock){opening=false;}}
+                finally{synchronized(lock){if(generation==bindingGeneration)opening=false;}}
             });
-        } catch(Exception e){if(claimed)synchronized(lock){opening=false;}call.reject(e.getMessage(),e.getMessage(),e);}
+        } catch(Exception e){if(claimed)synchronized(lock){if(claim==bindingGeneration)opening=false;}call.reject(e.getMessage(),e.getMessage(),e);}
     }
     @PluginMethod public void configure(PluginCall c){run(c,v -> v.configure(c.getObject("config")));}
     @PluginMethod public void snapshot(PluginCall c){run(c,SyncVault::snapshot);}
+    @PluginMethod public void completeCycle(PluginCall c){run(c,v -> v.completeCycle(c.getObject("input")));}
     @PluginMethod public void request(PluginCall c){run(c,v -> {
         Object raw=c.getData().opt("body"); JSONObject body=raw instanceof JSONObject?(JSONObject)raw:raw instanceof String?new JSONObject((String)raw):null;
         return v.request(c.getString("url"),c.getString("method","GET"),body);
@@ -62,23 +77,61 @@ public final class SyncVaultPlugin extends Plugin {
     @PluginMethod public void transferProgress(PluginCall c){run(c,v -> SyncVault.obj("transfers",v.transferProgress()));}
     @PluginMethod public void history(PluginCall c){run(c,v -> SyncVault.obj("versions",v.history(c.getString("entryId"))));}
     @PluginMethod public void readVersion(PluginCall c){run(c,v -> v.readVersion(c.getObject("version")));}
+    @PluginMethod public void importDraft(PluginCall c){run(c,v -> v.importDraft(c.getObject("input")));}
+
+    /** No profile, replica writes, or caller-selected endpoint: this always requests only hello. */
+    @PluginMethod public void discover(PluginCall c) {
+        RemoteConnection candidate=null;
+        try {
+            candidate=new RemoteConnection(c.getString("origin"));final RemoteConnection target=candidate;final long generation;
+            synchronized(lock){if(paused || opening)throw new IOException("replica-paused");generation=bindingGeneration;probes.add(target);}
+            work.execute(() -> {
+                try {
+                    RemoteConnection.VerifiedHello proof=target.discover();
+                    synchronized(lock){if(paused || generation!=bindingGeneration)throw new IOException("replica-changed");discovery=proof;}
+                    c.resolve(js(proof.data()));
+                }catch(Exception e){c.reject(e.getMessage(),e.getMessage(),e);}
+                finally{synchronized(lock){probes.remove(target);}target.close();}
+            });
+        }catch(Exception e){if(candidate!=null){synchronized(lock){probes.remove(candidate);}candidate.close();}c.reject(e.getMessage(),e.getMessage(),e);}
+    }
+
+    /** The user explicitly requests a new validated origin; identical host identities are mandatory. */
+    @PluginMethod public void rebind(PluginCall c){run(c,v -> {
+        RemoteConnection candidate=new RemoteConnection(c.getString("origin"));long generation;
+        synchronized(lock){
+            if(paused || opening || v!=vault || !currentCall()){candidate.close();throw new IOException("replica-paused");}
+            opening=true;generation=++bindingGeneration;cancelProbes();probes.add(candidate);
+            if(remote!=null)remote.close();remote=null;maximum=0;
+        }
+        boolean adopted=false;
+        try {
+            RemoteConnection.VerifiedHello proof=candidate.discover();JSONObject profile;
+            synchronized(lock){
+                if(paused || generation!=bindingGeneration || v!=vault)throw new IOException("replica-changed");
+                profile=v.rebind(proof);remote=candidate;maximum=proof.maximum;discovery=proof;adopted=true;
+            }
+            return SyncVault.obj("profile",profile,"hello",proof.data());
+        } finally {
+            synchronized(lock){probes.remove(candidate);if(generation==bindingGeneration)opening=false;}
+            if(!adopted)candidate.close();
+        }
+    });}
 
     @PluginMethod public void handshake(PluginCall c){run(c,v -> {
         JSONObject profile=v.snapshot().getJSONObject("profile");
         RemoteConnection candidate=new RemoteConnection(profile.getString("origin"));
         try {
-            synchronized(lock){if(paused || v!=vault)throw new IOException("replica-paused");if(remote!=null)remote.close();remote=candidate;maximum=0;}
-            JSONObject response=candidate.syncRequest("/api/sync/v1/hello","GET",null), hello=response.getJSONObject("data");
-            if(response.getInt("status")!=200 || hello.getInt("protocol")!=1 || hello.getInt("chunkBytes")!=RemoteConnection.SYNC_CHUNK_BYTES
-                || !profile.getString("vaultId").equals(hello.getString("vaultId")) || !profile.getString("serverId").equals(hello.getString("serverId"))) throw new IOException("incompatible-host");
-            long max=SyncVault.size(SyncVault.obj("byteLength",hello.get("maxFileBytes"))); hello.getString("epoch");
-            synchronized(lock){if(paused || v!=vault || candidate!=remote)throw new IOException("replica-paused");maximum=max;}
-            return hello;
+            synchronized(lock){if(paused || opening || v!=vault || !currentCall())throw new IOException("replica-paused");if(remote!=null)remote.close();remote=candidate;maximum=0;}
+            RemoteConnection.VerifiedHello proof=candidate.discover();
+            synchronized(lock){if(paused || opening || v!=vault || candidate!=remote)throw new IOException("replica-paused");v.verifyAssociation(proof);maximum=proof.maximum;}
+            return proof.data();
         } catch(Exception e){candidate.close();synchronized(lock){if(remote==candidate){remote=null;maximum=0;}}throw e;}
     });}
     private RemoteConnection connection(SyncVault target) throws Exception {
-        synchronized(lock){if(paused || target!=vault || remote==null || maximum<=0)throw new IOException("handshake-required");return remote;}
+        synchronized(lock){if(paused || opening || target!=vault || remote==null || maximum<=0 || !currentCall())throw new IOException("handshake-required");return remote;}
     }
+    private boolean currentCall(){Long generation=executingGeneration.get();return generation!=null && generation==bindingGeneration;}
     @PluginMethod public void remoteSnapshot(PluginCall c){run(c,v -> {
         String token=c.getString("snapshotToken"), cursor=c.getString("cursor");
         String route="/api/sync/v1/snapshot";
@@ -89,7 +142,7 @@ public final class SyncVaultPlugin extends Plugin {
     @PluginMethod public void apply(PluginCall c){run(c,v -> {
         JSONArray operations=c.getArray("operations");if(operations==null || operations.length()>100)throw new IOException("invalid-limit");
         // Only byte-for-byte durable prepared operations may be transmitted.
-        JSONArray prepared=v.preparePending(100);
+        JSONArray prepared=v.snapshot().getJSONArray("preparedOperations");
         for(int i=0;i<operations.length();i++) {boolean found=false;for(int j=0;j<prepared.length();j++)if(operations.getJSONObject(i).toString().equals(prepared.getJSONObject(j).toString()))found=true;if(!found)throw new IOException("operation-not-prepared");}
         return data(connection(v).syncRequest("/api/sync/v1/apply","POST",SyncVault.obj("operations",operations)));
     });}
@@ -139,7 +192,8 @@ public final class SyncVaultPlugin extends Plugin {
         });}catch(Exception e){c.reject(e.getMessage(),e);}
     }
     RemoteConnection.Media openMedia(String path,String range)throws Exception {SyncVault target;synchronized(lock){target=vault;}if(target==null)throw new IOException("replica-not-open");return target.openMedia(path,range);}
-    @Override protected void handleOnPause(){synchronized(lock){paused=true;if(remote!=null)remote.close();remote=null;maximum=0;}super.handleOnPause();}
+    private void cancelProbes(){for(RemoteConnection probe:probes)probe.close();probes.clear();}
+    @Override protected void handleOnPause(){synchronized(lock){paused=true;bindingGeneration++;opening=false;cancelProbes();if(remote!=null)remote.close();remote=null;maximum=0;}super.handleOnPause();}
     @Override protected void handleOnResume(){synchronized(lock){paused=false;}super.handleOnResume();}
-    @Override protected void handleOnDestroy(){synchronized(lock){paused=true;if(remote!=null)remote.close();remote=null;if(vault!=null)vault.close();vault=null;}work.shutdown();super.handleOnDestroy();}
+    @Override protected void handleOnDestroy(){synchronized(lock){paused=true;bindingGeneration++;opening=false;cancelProbes();discovery=null;if(remote!=null)remote.close();remote=null;if(vault!=null)vault.close();vault=null;}work.shutdown();super.handleOnDestroy();}
 }
