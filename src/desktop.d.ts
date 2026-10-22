@@ -15,6 +15,7 @@ type DesktopSyncPayloads = {
   mediaUrl: { entryId: string };
   exportVersion: { blob: import('./features/sync/contracts').BlobRef };
   exportReplica: Record<string, never>;
+  exportRecovery: { profile: import('./features/sync/contracts').ReplicaProfile };
   importDocument: { path: string };
   handshake: { profile: import('./features/sync/contracts').ReplicaProfile };
   remoteSnapshot: { snapshotToken?: string; cursor?: string };

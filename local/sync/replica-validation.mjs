@@ -100,6 +100,7 @@ export function commandValue(c) {
   record(c, ['requestId', 'replicaId', 'method', 'payload']); check(uuid(c.requestId) && uuid(c.replicaId));
   switch (c.method) {
     case 'open': profileValue(c.payload); check(c.payload.replicaId === c.replicaId, 'wrong-replica'); break;
+    case 'exportRecovery': record(c.payload, ['profile']); profileValue(c.payload.profile); check(c.payload.profile.replicaId === c.replicaId, 'wrong-replica'); break;
     case 'configure': configValue(c.payload); break;
     case 'snapshot': case 'exportReplica': record(c.payload, []); break;
     case 'preparePending': record(c.payload, ['limit']); check(Number.isInteger(c.payload.limit) && c.payload.limit > 0 && c.payload.limit <= 100); break;

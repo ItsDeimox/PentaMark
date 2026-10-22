@@ -5,6 +5,7 @@ import { open, rename, unlink } from 'node:fs/promises';
 import { join, dirname, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createReplicaService } from './replica-service.mjs';
+import { exportRecoveryDirectory } from './replica-recovery.mjs';
 import { commandValue, check, uuid, helloValue } from './replica-validation.mjs';
 
 /** Install only on the Electron-spawned process IPC channel. No HTTP management API. */
@@ -13,6 +14,7 @@ export function installReplicaIpc({ channel, userData, mediaCapability = randomB
   check(typeof userData === 'string' && userData.length > 0, 'user-data-required');
   check(/^[a-f0-9]{64}$/.test(mediaCapability), 'invalid-capability');
   const services = new Map(), remotes = new Map(), discoveries = new Map(); let queue = Promise.resolve(), closed = false;
+  const failedProfiles = new Map(), recovering = new Set();
   async function discover(origin) {
     const discovery = discoverOrigin ?? (await import('./transport.mjs')).discoverNativeSyncOrigin;
     check(typeof discovery === 'function', 'native-discovery-unavailable');
@@ -30,10 +32,22 @@ export function installReplicaIpc({ channel, userData, mediaCapability = randomB
     commandValue(command); check(!closed, 'ipc-closed');
     if (command.method === 'discover') return discover(command.payload.origin);
     let service = services.get(command.replicaId);
+    if (command.method === 'exportRecovery') {
+      const profile = command.payload.profile, failed = failedProfiles.get(command.replicaId);
+      check(!service && failed && Object.keys(profile).every(k => profile[k] === failed[k]) && !recovering.has(command.replicaId), 'recovery-not-authorized');
+      recovering.add(command.replicaId);
+      try { return await exportRecoveryDirectory({ userData, profile, directory: native.exportDirectory }); }
+      finally { recovering.delete(command.replicaId); }
+    }
     if (command.method === 'open') {
+      check(!recovering.has(command.replicaId), 'recovery-in-progress');
+      failedProfiles.delete(command.replicaId);
       const proof = discoveries.get(command.payload.origin);
       if (proof) check(proof.vaultId === command.payload.vaultId && proof.serverId === command.payload.serverId, 'replica-identity-mismatch');
-      if (!service) { service = await createReplicaService({ userData, profile: command.payload }); services.set(command.replicaId, service); }
+      if (!service) {
+        try { service = await createReplicaService({ userData, profile: command.payload }); services.set(command.replicaId, service); }
+        catch (error) { if (error.message === 'unsupported-schema') failedProfiles.set(command.replicaId, structuredClone(command.payload)); throw error; }
+      }
       return service.open(command.payload);
     }
     check(service, 'replica-not-open');

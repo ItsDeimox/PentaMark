@@ -24,9 +24,9 @@ function createSyncBridge({ getChild, trustedFrame, validationPath = join(__dirn
     if (current !== child) { detach(); child = current; child.on('message', receive); child.on('exit', failAll); child.on('disconnect', failAll); }
     if (pending.has(command.requestId) || picking.has(command.requestId)) throw new Error('duplicate-request-id');
     const native = {};
-    if (['importDocument', 'exportVersion', 'exportReplica'].includes(command.method)) {
+    if (['importDocument', 'exportVersion', 'exportReplica', 'exportRecovery'].includes(command.method)) {
       const importing = command.method === 'importDocument';
-      const directory = command.method === 'exportReplica';
+      const directory = ['exportReplica', 'exportRecovery'].includes(command.method);
       const picker = importing ? pickImportFile : directory ? pickExportDirectory : pickExportFile;
       if (!picker) throw new Error('native-picker-unavailable');
       picking.add(command.requestId);
@@ -37,7 +37,7 @@ function createSyncBridge({ getChild, trustedFrame, validationPath = join(__dirn
       native[importing ? 'importPath' : directory ? 'exportDirectory' : 'exportPath'] = path;
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(command.requestId); reject(new Error('sync-timeout')); }, timeoutMs);
+      const timer = setTimeout(() => { pending.delete(command.requestId); reject(new Error('sync-timeout')); }, command.method === 'exportRecovery' ? Math.max(timeoutMs, 11 * 60 * 1000) : timeoutMs);
       pending.set(command.requestId, { resolve, reject, timer, replicaId: command.replicaId });
       try { current.send({ type: 'pentamark:sync:command', command, native }, error => { if (error && pending.has(command.requestId)) { pending.delete(command.requestId); clearTimeout(timer); reject(error); } }); }
       catch (error) { pending.delete(command.requestId); clearTimeout(timer); reject(error); }
