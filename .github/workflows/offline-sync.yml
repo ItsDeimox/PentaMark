@@ -1,0 +1,145 @@
+name: Validate Windows and Android offline sync together
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/offline-sync-pc-android]
+permissions:
+  contents: read
+concurrency:
+  group: offline-sync-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
+      - name: Offline storage and protocol regressions
+        run: node --test tests/sync-*.test.mjs
+      - run: npm run desktop:build -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: ./scripts/verify-windows-app.ps1
+        shell: pwsh
+      - name: Record exact source and hashes
+        shell: pwsh
+        run: |
+          git rev-parse HEAD | Set-Content desktop-dist/source-commit.txt
+          Get-FileHash desktop-dist/*.exe -Algorithm SHA256 | Select-Object Hash,Path | ConvertTo-Json | Set-Content desktop-dist/windows-hashes.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-sync-windows-${{ github.sha }}
+          path: |
+            desktop-dist/*.exe
+            desktop-dist/source-commit.txt
+            desktop-dist/windows-hashes.json
+          if-no-files-found: error
+  android-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
+      - run: node --test tests/sync-*.test.mjs
+      - run: npx cap sync android
+      - name: Build native apps and JVM tests
+        working-directory: android
+        run: bash gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Collect unsigned release and instrumented APKs
+        run: |
+          mkdir -p offline-android
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk offline-android/
+          cp android/app/build/outputs/apk/debug/app-debug.apk offline-android/
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk offline-android/
+          signer=$(find "$ANDROID_HOME/build-tools" -path '*/lib/apksigner.jar' | sort -V | tail -n 1)
+          test -n "$signer"
+          cp "$signer" offline-android/apksigner.jar
+          git rev-parse HEAD > offline-android/source-commit.txt
+          (cd offline-android && sha256sum *.apk *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-sync-android-${{ github.sha }}
+          path: offline-android/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-sync-jvm-evidence-${{ github.sha }}
+          path: |
+            android/app/build/reports/
+            android/app/build/test-results/
+  android-device:
+    needs: android-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [24, 35]
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-sync-android-${{ github.sha }}
+          path: offline-android
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise real SQLite and WebView on API ${{ matrix.api }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            mkdir -p device-evidence
+            adb install -r offline-android/app-debug.apk
+            adb install -r offline-android/app-debug-androidTest.apk
+            adb shell svc wifi disable
+            adb shell svc data disable
+            adb shell am instrument -w -r com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/instrumentation.txt
+            adb logcat -d > device-evidence/logcat.txt
+            cat device-evidence/instrumentation.txt
+            grep -Eq 'OK \([1-9][0-9]* tests?\)' device-evidence/instrumentation.txt
+            ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|shortMsg=Process crashed' device-evidence/instrumentation.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-sync-api-${{ matrix.api }}-evidence-${{ github.sha }}
+          path: device-evidence/
+  validated-pair:
+    needs: [windows, android-build, android-device]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Both platforms passed for ${{ github.sha }}. Android release still requires local signature verification. No release is published by this workflow.'
