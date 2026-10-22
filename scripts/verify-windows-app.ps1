@@ -23,12 +23,16 @@ $previousEnvironment = @{}
 foreach ($name in $environmentNames) { $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
 $app = $null
 try {
-    foreach ($name in $environmentNames) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+    # Current .NET preserves a null assignment as an empty environment variable.
+    # Electron treats presence of ELECTRON_RUN_AS_NODE differently from absence:
+    # an empty value can abort its native snapshot bootstrap before main.cjs.
+    foreach ($name in $environmentNames) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
     $env:PENTAMARK_DATA_DIR = $data
     $env:PENTAMARK_USER_DATA_DIR = $profile
     $env:PENTAMARK_VAULT_DIR = $vault
     $env:PENTAMARK_NO_BROWSER = '1'
-    $app = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+    Write-Host "Isolated smoke fixture: $data"
+    $app = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $data 'stdout.log') -RedirectStandardError (Join-Path $data 'stderr.log')
     $deadline = (Get-Date).AddSeconds(60)
     $state = $null
     while ((Get-Date) -lt $deadline) {
@@ -50,7 +54,18 @@ try {
     $saved = Invoke-RestMethod -Uri "$baseUrl/api/note?path=Windows-smoke.md"
     if ($saved.content -ne '# Packaged application verification') { throw 'Fixture note did not round-trip.' }
     Write-Host ("PentaMark {0}: isolated profile/vault, bundled UI and fixture note round-trip verified. Fixture: {1}" -f $version,$data)
+} catch {
+    Write-Host "Smoke failure evidence (fixture only): $data"
+    if ($app) { $app.Refresh(); Write-Host "Launcher PID=$($app.Id) exited=$($app.HasExited)" }
+    foreach ($logName in @('stdout.log','stderr.log')) {
+        $logPath = Join-Path $data $logName
+        if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Tail 80 }
+    }
+    throw
 } finally {
     if ($app -and !$app.HasExited) { Start-Process -FilePath 'taskkill.exe' -ArgumentList @('/PID', [string]$app.Id, '/T', '/F') -Wait -WindowStyle Hidden -ErrorAction SilentlyContinue }
-    foreach ($name in $environmentNames) { [Environment]::SetEnvironmentVariable($name,$previousEnvironment[$name],'Process') }
+    foreach ($name in $environmentNames) {
+        if ($null -eq $previousEnvironment[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($name,$previousEnvironment[$name],'Process') }
+    }
 }
