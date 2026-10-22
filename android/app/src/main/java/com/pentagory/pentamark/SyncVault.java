@@ -252,9 +252,9 @@ public final class SyncVault implements AutoCloseable {
                 JSONObject local = row.optJSONObject("local"), base = row.optJSONObject("base"); if (local == null) continue;
                 if (base == null && local.getBoolean("deleted")) { row.put("dirty", false); database.put("entries", row.getString("entryId"), row); continue; }
                 require(local); JSONObject profile = meta.getJSONObject("profile");
+                JSONObject preparedVersion=SyncOperationDraft.version(base,local);require(preparedVersion);
                 String kind = local.getBoolean("deleted") ? (local.getString("kind").equals("directory") ? "rmdir" : "delete")
-                    : base != null && !local.getString("path").equals(base.getString("path"))
-                    && Objects.equals(local.optString("blobHash"), base.optString("blobHash")) ? "move" : local.getString("kind").equals("directory") ? "mkdir" : "put";
+                    : base != null && !local.getString("path").equals(base.getString("path")) ? "move" : local.getString("kind").equals("directory") ? "mkdir" : "put";
                 JSONArray dependencies=new JSONArray(); boolean wait=false;
                 for(JSONObject other:rows) {
                     if(other==row)continue;JSONObject child=other.optJSONObject("local");if(child==null)continue;
@@ -269,8 +269,8 @@ public final class SyncVault implements AutoCloseable {
                 if(wait)continue;
                 JSONObject operation = obj("vaultId", profile.getString("vaultId"), "replicaId", profile.getString("replicaId"), "opId", id(), "entryId", row.getString("entryId"),
                     "kind", kind, "baseRevision", base == null ? null : base.getString("revision"), "after", local.getBoolean("deleted") ? null :
-                        obj("path", local.getString("path"), "kind", local.getString("kind"), "blobHash", local.get("blobHash"), "byteLength", size(local)), "dependsOn", dependencies);
-                database.put("pending_ops", operation.getString("opId"), obj("operation", operation, "localHead", row.getString("localHead"), "local", local));
+                        obj("path", preparedVersion.getString("path"), "kind", preparedVersion.getString("kind"), "blobHash", preparedVersion.get("blobHash"), "byteLength", size(preparedVersion)), "dependsOn", dependencies);
+                database.put("pending_ops", operation.getString("opId"), obj("operation", operation, "localHead", row.getString("localHead"), "local", preparedVersion,"intermediate",!sameVersion(preparedVersion,local)));
                 result.put(operation);
             }
         }); return result;
@@ -348,7 +348,7 @@ public final class SyncVault implements AutoCloseable {
             JSONObject prepared = pending.getJSONObject("local");
             for (String field : new String[]{"entryId", "kind", "path", "blobHash", "byteLength", "deleted"}) if (!Objects.equals(confirmed.get(field), prepared.get(field))) throw new IOException("invalid-confirmation");
             next.put("base", confirmed);
-            if (row.getString("localHead").equals(pending.getString("localHead"))) next.put("local", confirmed).put("dirty", false);
+            if (!pending.optBoolean("intermediate",false) && row.getString("localHead").equals(pending.getString("localHead"))) next.put("local", confirmed).put("dirty", false);
             // New edits still compare against the confirmed base, never mutate an in-flight op.
             next.put("approved", true);
         } else throw new IOException("invalid-result");
@@ -392,12 +392,16 @@ public final class SyncVault implements AutoCloseable {
     private void resolveIdentityConflict(JSONObject input,String choice,JSONObject row,JSONObject remote)throws Exception {
         if(!choice.equals("keep-both")&&!choice.equals("remote"))throw new IOException("identity-conflict-needs-rename");
         JSONObject local=row.optJSONObject("local");if(!SyncFileJournal.live(local)||local.getString("kind").equals("directory"))throw new IOException("identity-conflict-needs-rename");
-        require(remote);JSONObject other=database.get("entries",remote.getString("entryId"));if(other==null)other=empty(remote.getString("entryId"));
-        if(other.getBoolean("dirty") || pending(other.getString("entryId"))!=null)throw new IOException("stale-local-head");
+        require(remote);JSONObject other=database.get("entries",remote.getString("entryId"));boolean known=other!=null;
+        // Input conditions A's head and the conflict's B revision. Without a second expected head,
+        // accept an existing B only if both its current versions still equal that exact remote.
+        if(known && (other.getBoolean("dirty") || pending(other.getString("entryId"))!=null || conflicted(other.getString("entryId"))
+            || !sameVersion(other.optJSONObject("base"),remote) || !sameVersion(other.optJSONObject("local"),remote)))throw new IOException("stale-local-head");
+        if(!known)other=empty(remote.getString("entryId"));
         JSONObject relocated=copy(local).put("path",local.getString("path")+".conflict-"+id()).put("revision",id());
         JSONObject next=copy(row).put("local",relocated).put("localHead",id()).put("dirty",true).put("approved",true);
         JSONObject received=copy(other).put("base",remote).put("local",remote).put("localHead",id()).put("dirty",false).put("approved",false);
-        JSONObject plan=plan();rowChange(plan,row,next);rowChange(plan,other,received);plan.getJSONArray("removeConflicts").put(input.getString("conflictId"));commit(plan);
+        JSONObject plan=plan();rowChange(plan,row,next);if(!known)rowChange(plan,other,received);plan.getJSONArray("removeConflicts").put(input.getString("conflictId"));commit(plan);
     }
     private JSONObject findPath(String path) throws Exception {
         JSONArray entries = database.all("entries"); String key = SyncPaths.key(path);

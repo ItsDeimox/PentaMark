@@ -63,6 +63,16 @@ public class SyncDatabaseInstrumentedTest {
         assertEquals("host-one", next.getString("baseRevision"));
         assertNotEquals(op.getString("opId"), next.getString("opId"));
     }
+    @Test public void editThenRenameConfirmsMoveWithoutLosingPendingContentUpdate()throws Exception {
+        write("old");JSONObject create=vault.preparePending(100).getJSONObject(0),base=new JSONObject(row().getJSONObject("local").toString()).put("revision","host-base");
+        vault.confirm(SyncVault.obj("opId",create.getString("opId"),"status","applied","confirmed",base));write("edited");
+        vault.request("/api/note?path=A.md","PATCH",SyncVault.obj("newPath","B.md"));JSONObject move=vault.preparePending(100).getJSONObject(0);
+        assertEquals("move",move.getString("kind"));assertEquals(base.getString("blobHash"),move.getJSONObject("after").getString("blobHash"));
+        vault.close();vault=new SyncVault(context,profile);assertEquals(move.toString(),vault.preparePending(100).getJSONObject(0).toString());
+        JSONObject moved=new JSONObject(base.toString()).put("path","B.md").put("revision","host-moved");vault.confirm(SyncVault.obj("opId",move.getString("opId"),"status","applied","confirmed",moved));
+        assertEquals("edited",vault.request("/api/note?path=B.md","GET",null).getJSONObject("data").getString("content"));assertEquals(1,vault.status().getInt("pendingCount"));
+        JSONObject put=vault.preparePending(100).getJSONObject(0);assertEquals("put",put.getString("kind"));assertEquals("B.md",put.getJSONObject("after").getString("path"));assertEquals("host-moved",put.getString("baseRevision"));assertNotEquals(move.getString("opId"),put.getString("opId"));
+    }
     @Test public void stalePageRejectsEntireBatchAndCursor() throws Exception {
         write("first"); JSONObject before = row(); write("newer");
         JSONObject batch = new JSONObject().put("nextCursor", "must-not-advance").put("items", new JSONArray()
@@ -189,6 +199,22 @@ public class SyncDatabaseInstrumentedTest {
         assertEquals("remote",vault.request("/api/note?path=A.md","GET",null).getJSONObject("data").getString("content"));
         JSONObject op=vault.preparePending(100).getJSONObject(0);assertEquals(before.getJSONObject("local").getString("entryId"),op.getString("entryId"));
         assertTrue(op.getJSONObject("after").getString("path").startsWith("A.md.conflict-"));
+    }
+    @Test public void crossIdentityResolutionNeverOverwritesOtherDirtyPreparedOrNewerHead()throws Exception {
+        write("A bytes");JSONObject a=row();vault.request("/api/note","PUT",SyncVault.obj("path","B.md","content","B bytes"));
+        JSONObject b=vault.database.all("entries").getJSONObject(1),remote=new JSONObject(b.getJSONObject("local").toString()).put("path","A.md").put("revision","remote-old");
+        vault.persistIncoming(SyncVault.obj("nextCursor","c","items",new JSONArray().put(decision("conflict",a,remote))));
+        String conflictId=vault.snapshot().getJSONArray("conflicts").getJSONObject(0).getString("conflictId");
+        JSONObject input=SyncVault.obj("conflictId",conflictId,"expectedLocalHead",a.getString("localHead"),"expectedRemoteRevision","remote-old","choice","keep-both");
+        for(int scenario=0;scenario<3;scenario++) {
+            if(scenario==1)vault.preparePending(100);
+            if(scenario==2) {
+                JSONArray pending=vault.database.all("pending_ops");for(int i=0;i<pending.length();i++)vault.database.remove("pending_ops",pending.getJSONObject(i).getJSONObject("operation").getString("opId"));
+                JSONObject newer=new JSONObject(b.getJSONObject("local").toString()).put("revision","newer-confirmed");b.put("base",newer).put("local",newer).put("dirty",false).put("localHead","newer-head");vault.database.put("entries",b.getString("entryId"),b);
+            }
+            String before=vault.snapshot().toString();try{vault.resolve(input);fail("other identity overwritten, case "+scenario);}catch(IOException expected){assertEquals("stale-local-head",expected.getMessage());}
+            assertEquals(before,vault.snapshot().toString());assertEquals("B bytes",vault.request("/api/note?path=B.md","GET",null).getJSONObject("data").getString("content"));
+        }
     }
     @Test public void retainedHistoryCanBeReadAfterReopen()throws Exception {
         write("old bytes");JSONObject old=row().getJSONObject("local");write("new bytes");
