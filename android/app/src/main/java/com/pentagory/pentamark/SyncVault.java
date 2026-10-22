@@ -379,6 +379,8 @@ public final class SyncVault implements AutoCloseable {
     }
     public synchronized JSONObject request(String url, String method, JSONObject body) throws Exception {
         ready(); RemoteConnection.validateRequest(url, method); URI uri = new URI(url); String route = uri.getPath();
+        if(route.equals("/api/config") && method.equals("GET"))return obj("status",200,"data",obj("vaultName",meta.getJSONObject("profile").getString("vaultId"),
+            "port",0,"openBrowser",false,"maxUploadMB",2048,"lockEditedNotes",false,"cleanupUnusedAssets",false,"aiBridgeEnabled",false,"aiBridgeToken","","userPermissions",new JSONObject(),"isHost",false));
         if (route.equals("/api/state") && method.equals("GET")) {
             JSONArray entries = database.all("entries"), notes = new JSONArray(), assets=new JSONArray(), folders = new JSONArray(), paths=new JSONArray();
             for (int i=0; i<entries.length(); i++) { JSONObject v = entries.getJSONObject(i).optJSONObject("local"); if (SyncFileJournal.live(v)) {

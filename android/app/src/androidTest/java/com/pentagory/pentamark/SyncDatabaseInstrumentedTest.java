@@ -176,5 +176,46 @@ public class SyncDatabaseInstrumentedTest {
         assertEquals("A",state.getJSONArray("notes").getJSONObject(0).getString("title"));
         assertEquals("image",state.getJSONArray("assets").getJSONObject(0).getString("kind"));
         assertEquals("Notes",state.getJSONArray("folders").getString(0));assertEquals(2,state.getJSONArray("assetPaths").length());
+        assertEquals(0,state.getJSONArray("locks").length());
+        JSONObject config=vault.request("/api/config","GET",null).getJSONObject("data");
+        assertFalse(config.getBoolean("isHost"));assertFalse(config.getBoolean("cleanupUnusedAssets"));
+        assertFalse(config.getBoolean("aiBridgeEnabled"));assertEquals("",config.getString("aiBridgeToken"));
+    }
+    @Test public void nativeDownloadAllowsEditsAndResumesDurableOffsetAfterReopen()throws Exception {
+        write("initial");JSONObject prepared=vault.preparePending(100).getJSONObject(0);
+        File source=File.createTempFile("sync-source-",".bin",context.getCacheDir());long total=2097152;
+        try(RandomAccessFile file=new RandomAccessFile(source,"rw")){file.setLength(total);file.getFD().sync();}
+        String hash=SyncFileJournal.hash(source);JSONObject blob=SyncVault.obj("blobHash",hash,"byteLength",total);
+        java.util.concurrent.CountDownLatch started=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure=new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.ExecutorService executor=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try(java.net.ServerSocket server=new java.net.ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))) {
+            server.setSoTimeout(10000);Thread worker=new Thread(() -> {
+                try {
+                    for(int chunk=0;chunk<2;chunk++)try(java.net.Socket socket=server.accept()) {
+                        socket.setSoTimeout(10000);BufferedReader reader=new BufferedReader(new InputStreamReader(socket.getInputStream(),"US-ASCII"));String line;
+                        while((line=reader.readLine())!=null&&!line.isEmpty()){}
+                        if(chunk==0){started.countDown();if(!release.await(10,java.util.concurrent.TimeUnit.SECONDS))throw new IOException("edit blocked by transfer");}
+                        long start=(long)chunk*1048576;OutputStream out=socket.getOutputStream();
+                        out.write(("HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Length: 1048576\r\nContent-Range: bytes "+start+"-"+(start+1048575)+"/2097152\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));
+                        byte[] zeros=new byte[65536];for(int i=0;i<16;i++)out.write(zeros);
+                    }
+                }catch(Throwable error){failure.set(error);}
+            });worker.setDaemon(true);worker.start();
+            RemoteConnection connection=new RemoteConnection("http://100.64.0.1:3000",url -> (java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:"+server.getLocalPort()+url.getFile()).openConnection(java.net.Proxy.NO_PROXY));
+            try {
+                final SyncVault active=vault;
+                java.util.concurrent.Future<JSONObject> transfer=executor.submit(() -> active.transfer(connection,blob,0,total,false));
+                assertTrue(started.await(10,java.util.concurrent.TimeUnit.SECONDS));write("edited during network");release.countDown();
+                assertEquals(1048576,transfer.get(10,java.util.concurrent.TimeUnit.SECONDS).getLong("verifiedBytes"));
+                vault.close();vault=new SyncVault(context,profile);
+                assertEquals(1048576,vault.transferProgress().getJSONObject(0).getLong("verifiedBytes"));
+                assertTrue(vault.transfer(connection,blob,1048576,total,false).getBoolean("complete"));
+                vault.files.require(hash,total);
+                assertEquals("edited during network",vault.request("/api/note?path=A.md","GET",null).getJSONObject("data").getString("content"));
+                assertEquals(prepared.toString(),vault.preparePending(100).getJSONObject(0).toString());
+                worker.join(10000);assertFalse(worker.isAlive());if(failure.get()!=null)throw new AssertionError(failure.get());
+            }finally{release.countDown();connection.close();}
+        }finally{executor.shutdownNow();}
     }
 }
