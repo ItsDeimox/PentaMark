@@ -137,3 +137,20 @@ Real SQLite and temporary Windows filesystem fixtures; no personal vaults or net
 Remaining limits: process-crash recovery is tested, not physical power-loss certification; directory fsync platform restrictions and hardlink filesystem requirements remain. Native path checks are not a hostile-process handle-relative sandbox. Scanning still streams the vault and retains history/staging/trash without silent pruning. Ownership ambiguity can require conflict resolution rather than automatic adoption. Parallel feature-wide integration and Task 3 server handover remain controller work.
 
 Round-1 changed files: local/server.mjs; local/sync/{file-journal.mjs,host-service.mjs,paths.mjs,scan.mjs,schema.sql}; tests/sync-host-store.test.mjs; this report. No Task 7, route, replica, Android, shared-contract, or package files included.
+
+## Fix round 2 — policy ordering and ambiguous destination ancestors
+
+Both reported findings fixed, scoped to host-service.mjs, sync-host-store.test.mjs and this report. No journal structural changes, route edits, server edits, or other workers' files.
+
+- Durable operation replay remains first: an already-applied operation or recorded conflict returns its original result without invoking a newly denying policy callback. New operations invoke the in-queue precondition before object/dependency/scan/conflict processing, so denied stale deletes cannot persist a conflict, applied operation, or intent. The initial callback receives the currently recorded head. The existing transition callback remains in place after scanning, with the then-current head, to check fresh permission/lock/limit policy again. Callbacks must tolerate repeated evaluation. Initial authorization does not mark an intent as transition-authorized; the interruption regression now permits the initial check, interrupts after intent creation, and verifies startup still cannot publish without transition authorization.
+- Destination collision checks use the existing shared-equivalent folded path key and segment boundaries. A collision at the destination or any ancestor conflicts before native destination selection. Legacy put/mkdir/move checks run before parent creation or folder-plan creation, including a destination beneath a colliding NFC/NFD directory. Native destination selection also refuses ambiguous diagnostics defensively. Both native trees, original source files, and unrelated access are preserved.
+
+RED/GREEN evidence:
+
+- Policy regressions: **0/2 pass before fix**. Stale delete returned/persisted `conflict` instead of permission-denied; the missing-dependency variant bypassed policy with dependency-not-applied. Both now pass, directly inspecting real SQLite counts for conflicts/applied_ops/file_intents. Authorized retry creates exactly one stale-base conflict; denied conflict replay after reopen and denied successful lost-ACK replay return durable results unchanged.
+- Destination regressions: **0/3 pass before fix**. Remote put and move returned applied under an ambiguous parent; legacy folder move unexpectedly succeeded. All three now pass, including no destination scaffolding/plan, unchanged source/native contents and successful unrelated write.
+- Final `node --test tests/sync-host-store.test.mjs tests/sync-reconcile.test.mjs`: **128 pass, 0 fail, 0 skip** (61 host + 67 shared).
+- Existing `pnpm test:unit`: **181 pass, 0 fail, 0 skip**, run once this round after the policy fix. The subsequently requested destination-only fix was verified by the complete focused run above.
+- Host syntax and scoped whitespace checks pass. Tests use temporary real SQLite/filesystem fixtures; no HTTP test file was edited and no listener opened.
+
+The review-feedback and TDD skills guided reproducing both findings before implementation. Existing platform/power-loss and parallel integration qualifications from round 1 remain; this narrow checkpoint makes no new feature-wide CI claim.

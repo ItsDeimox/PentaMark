@@ -84,7 +84,12 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
   const nativeRecord = entry => db.prepare('SELECT native_path,identity FROM native_entries WHERE entry_id=?').get(entry.entryId);
   const nativeFor = entry => nativeRecord(entry)?.native_path ?? entry.path;
   const scanDiagnostics = () => db.prepare('SELECT diagnostic FROM scan_diagnostics').all().map(row => JSON.parse(row.diagnostic));
+  const destinationCollision = path => {
+    const key = publicPath(path).pathKey;
+    return scanDiagnostics().find(d => d.code === 'path-collision' && (key === d.pathKey || key.startsWith(d.pathKey + '/')));
+  };
   const nativeDestination = path => {
+    if (destinationCollision(path)) throw new Error('path-collision');
     const parents = entries().filter(e => !e.deleted && e.kind === 'directory' && path.startsWith(e.path + '/')).sort((a,b) => b.path.length - a.path.length);
     return parents.length ? nativeFor(parents[0]) + path.slice(parents[0].path.length) : path;
   };
@@ -143,15 +148,19 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
     });
     return result;
   }
+  async function checkPrecondition(operation, precondition) {
+    if (!precondition) return;
+    try {
+      const verdict = await precondition({ operation: structuredClone(operation), current: head(operation.entryId) });
+      if (verdict === false || typeof verdict === 'string' || verdict?.errorCode || verdict?.allowed === false)
+        throw new Error(typeof verdict === 'string' ? verdict : verdict?.errorCode || 'precondition-denied');
+    } catch (error) { error.preconditionDenied = true; throw error; }
+  }
   async function finish(intent, precondition) {
     await applyFileIntent({ vaultRoot, objects, intent, interrupt, beforeTransition: async () => {
       try {
         if (intent.desired.byteLength > currentLimit()) throw new Error('file-too-large');
-        if (precondition) {
-          const verdict = await precondition({ operation: structuredClone(intent.operation), current: head(intent.operation.entryId) });
-          if (verdict === false || typeof verdict === 'string' || verdict?.errorCode || verdict?.allowed === false)
-            throw new Error(typeof verdict === 'string' ? verdict : verdict?.errorCode || 'precondition-denied');
-        }
+        await checkPrecondition(intent.operation, precondition);
         if (intent.requiresAuthorization) {
           intent.authorized = true;
           db.prepare('UPDATE file_intents SET intent=? WHERE intent_id=?').run(JSON.stringify(intent), intent.intentId);
@@ -210,6 +219,9 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
         const result = JSON.parse(prior.result);
         return result.status === 'applied' ? { ...result, status: 'already-applied' } : result;
       }
+      // Replay is unconditional, but every new operation must pass policy before
+      // scan/dependency/conflict handling can persist new durable state.
+      await checkPrecondition(op, precondition);
       if (op.after?.byteLength > currentLimit()) throw new Error('file-too-large');
       if (op.after?.blobHash) await objects.verify(op.after);
       await interrupt('after-object');
@@ -233,6 +245,7 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
       const desired = op.after ? { ...op.after, entryId: op.entryId, revision: randomUUID(), deleted: false }
         : { ...current, revision: randomUUID(), deleted: true, blobHash: null, byteLength: 0 };
       if (!desired.deleted) {
+        if (destinationCollision(desired.path)) return conflict(op, current, 'path-collision');
         const collision = entries().find(e => !e.deleted && e.entryId !== op.entryId && publicPath(e.path).pathKey === publicPath(desired.path).pathKey);
         if (collision) return conflict(op, collision, 'path-collision');
       }
@@ -306,6 +319,9 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
     path = publicPath(path).path;
     if (newPath) newPath = publicPath(newPath).path;
     await recoverInternal(); await scan();
+    const destination = kind === 'move' ? newPath : ['put', 'mkdir'].includes(kind) ? path : null;
+    if (destination && destinationCollision(destination))
+      throw Object.assign(new Error('Conflict: path-collision'), { statusCode: 409 });
     const previousPlan = plans().find(p => p.kind === kind && p.path === path && p.newPath === (newPath ?? null)
       && (p.status !== 'completed' || !entries().some(e => !e.deleted && e.path === path)));
     if (previousPlan) return requireApplied(await resumePlan(previousPlan));

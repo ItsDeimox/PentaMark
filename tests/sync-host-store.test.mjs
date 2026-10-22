@@ -26,6 +26,67 @@ async function put(f, content, base = null, path = 'a.md') {
   return { vaultId: f.host.vaultId, replicaId: 'test-replica', opId: randomUUID(), entryId: base?.entryId ?? randomUUID(),
     kind: 'put', baseRevision: base?.revision ?? null, after: { path, kind: 'note', ...blob }, dependsOn: [] };
 }
+for (const mode of ['remote-put', 'remote-move', 'legacy-folder-move']) test(`round2 ambiguous destination ancestor blocks ${mode}`, async t => {
+  const f = await fixture(t);
+  await mkdir(join(f.vaultRoot, 'cafe\u0301')); await mkdir(join(f.vaultRoot, 'café'));
+  await writeFile(join(f.vaultRoot, 'cafe\u0301/keep.md'), 'NFD');
+  await writeFile(join(f.vaultRoot, 'café/keep.md'), 'NFC');
+  const source = await f.host.mutate({ kind: 'put', path: 'source/a.md', content: 'source' });
+  if (mode === 'legacy-folder-move') {
+    await assert.rejects(f.host.mutate({ kind: 'move', path: 'source', newPath: 'café/nested/dest' }), /path-collision/);
+    assert.equal(f.host.pendingPlans().length, 0);
+  } else {
+    const op = mode === 'remote-put' ? await put(f, 'incoming', null, 'café/new.md')
+      : { vaultId: f.host.vaultId, replicaId: 'test', opId: randomUUID(), entryId: source.confirmed.entryId,
+        kind: 'move', baseRevision: source.confirmed.revision, after: { ...source.confirmed, path: 'café/new.md' }, dependsOn: [] };
+    const result = await f.host.apply(op);
+    assert.equal(result.status, 'conflict');
+    assert.equal(result.conflict.reason, 'path-collision');
+  }
+  for (const native of ['cafe\u0301', 'café']) {
+    assert.equal(existsSync(join(f.vaultRoot, native, 'new.md')), false);
+    assert.equal(existsSync(join(f.vaultRoot, native, 'nested')), false);
+  }
+  assert.equal(await readFile(join(f.vaultRoot, 'source/a.md'), 'utf8'), 'source');
+  assert.equal(await readFile(join(f.vaultRoot, 'cafe\u0301/keep.md'), 'utf8'), 'NFD');
+  assert.equal(await readFile(join(f.vaultRoot, 'café/keep.md'), 'utf8'), 'NFC');
+  assert.equal((await f.host.apply(await put(f, 'unrelated', null, 'unrelated.md'))).status, 'applied');
+});
+
+for (const dependency of [false, true]) test(`round2 denied stale delete cannot persist or consume op ID (dependency=${dependency})`, async t => {
+  const f = await fixture(t);
+  const creation = await put(f, 'base');
+  const first = await f.host.apply(creation);
+  const updated = await f.host.apply(await put(f, 'current', first.confirmed));
+  const op = { ...creation, opId: randomUUID(), kind: 'delete', after: null,
+    baseRevision: first.confirmed.revision, dependsOn: dependency ? ['missing-dependency'] : [] };
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(f.host.root, 'store.sqlite'), { readOnly: true });
+  try {
+    const counts = () => ['conflicts', 'applied_ops', 'file_intents'].map(table => db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n);
+    const before = counts();
+    const denied = await f.host.apply(op, { precondition: ({ current }) => {
+      assert.equal(current.revision, updated.confirmed.revision);
+      return { errorCode: 'permission-denied' };
+    } });
+    assert.deepEqual(denied, { opId: op.opId, status: 'blocked', errorCode: 'permission-denied' });
+    assert.deepEqual(counts(), before);
+    assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'current');
+    const allowed = await f.host.apply(op, { precondition: () => true });
+    assert.equal(allowed.status, dependency ? 'blocked' : 'conflict');
+    if (dependency) {
+      assert.equal(allowed.errorCode, 'dependency-not-applied');
+      assert.deepEqual(counts(), before);
+    } else {
+      assert.equal(allowed.conflict.reason, 'base-diverged');
+      assert.deepEqual(counts(), [before[0] + 1, before[1] + 1, before[2]]);
+      await f.reopen();
+      assert.deepEqual(await f.host.apply(op, { precondition: () => { throw new Error('must replay conflict first'); } }), allowed);
+    }
+    assert.equal((await f.host.apply(creation, { precondition: () => { throw new Error('must replay lost ACK first'); } })).status, 'already-applied');
+  } finally { db.close(); }
+});
+
 test('conditional writes preserve incoming, previous and external versions; replay is durable', async t => {
   const f = await fixture(t);
   const op = await put(f, 'base');
@@ -562,12 +623,12 @@ test('round1 process exit mid-folder-plan resumes at startup with original ident
   assert.equal(f.host.history(a.confirmed.entryId).at(-1).path, 'dest/a.md');
   assert.equal(f.host.pendingPlans().length, 0);
 });
-test('round1 precondition never becomes implicit startup authorization', async t => {
+test('round1 early precondition never becomes implicit startup transition authorization', async t => {
   let armed = false;
   const f = await fixture(t, { interrupt: async name => { if (armed && name === 'after-intent') throw new Error('interrupted:unauthorized'); } });
   const first = await f.host.apply(await put(f, 'old'));
   const op = await put(f, 'new', first.confirmed); armed = true;
-  await assert.rejects(f.host.apply(op, { precondition: () => false }), /interrupted/);
+  await assert.rejects(f.host.apply(op, { precondition: () => true }), /interrupted/);
   await f.reopen();
   assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'old');
   assert.equal((await f.host.apply(op, { precondition: () => true })).status, 'applied');
