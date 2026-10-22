@@ -558,34 +558,51 @@ export default function PentaMarkApp() {
     return () => document.removeEventListener('pentamark:back', back);
   }, [toolsOpen, quickOpen, context, assetPreview, mobileSidebar, saveNow]);
 
-  const useServerVersion = useCallback(() => {
-    if (!conflict) return;
-    if (isAndroidLocal) androidDrafts.remove(conflict.path);
-    setContent(conflict.remoteContent);
-    setRevision(conflict.remoteRevision);
-    setSaveState("saved");
-    setConflict(null);
-    setConflictOpen(false);
-    notify("Versão do servidor aplicada");
-  }, [conflict, notify]);
+  const retainRecoveredConflict = useCallback(async (item:ConflictData) => {
+    if(!isOfflineReplica)return;
+    // A recovered browser draft may never have reached native version history.
+    // Retain it as a new, collision-resistant note before accepting another text.
+    const parent=item.path.includes('/')?item.path.slice(0,item.path.lastIndexOf('/')+1):'';
+    const name=item.path.slice(parent.length).replace(/\.md$/i,'').slice(0,64);
+    await request('/api/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:parent+name+'.conflito-'+crypto.randomUUID()+'.md',content:item.localContent})});
+  },[]);
+  const useServerVersion = useCallback(async () => {
+    if (!conflict||savingRef.current) return;
+    savingRef.current=true;
+    try{
+      await retainRecoveredConflict(conflict);
+      if(activePathRef.current!==conflict.path||contentRef.current!==conflict.localContent)throw new Error('O texto mudou. A cópia foi preservada; revise a nota novamente.');
+      if (isAndroidLocal || isOfflineReplica) androidDrafts.remove(conflict.path);
+      contentRef.current=conflict.remoteContent;revisionRef.current=conflict.remoteRevision;
+      setContent(conflict.remoteContent);setRevision(conflict.remoteRevision);setSaveState('saved');
+      setConflict(null);setConflictOpen(false);
+      notify(isOfflineReplica?'Versão escolhida aplicada; rascunho preservado em uma nota de conflito.':'Versão do servidor aplicada');
+    }catch(error){notify(error instanceof Error?error.message:'Não foi possível preservar o rascunho.');}
+    finally{savingRef.current=false;}
+  }, [conflict, notify,retainRecoveredConflict]);
 
   const resolveConflict = useCallback(async (resolvedContent: string) => {
-    if (!conflict) return;
+    if (!conflict||savingRef.current) return;
+    savingRef.current=true;
     setSaveState("saving");
     try {
+      await retainRecoveredConflict(conflict);
+      if(isOfflineReplica&&(activePathRef.current!==conflict.path||contentRef.current!==conflict.localContent))throw new Error('O texto mudou. Revise a nota antes de aplicar a mesclagem.');
       const result = await request<{ revision: string }>(`/api/note?path=${encodeURIComponent(conflict.path)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: resolvedContent, baseRevision: conflict.remoteRevision, clientId }),
       });
+      if(isOfflineReplica&&(activePathRef.current!==conflict.path||contentRef.current!==conflict.localContent))throw new Error('Mesclagem salva localmente; o rascunho mais novo continua preservado.');
+      contentRef.current=resolvedContent;revisionRef.current=result.revision;
       setContent(resolvedContent);
-      if (isAndroidLocal) androidDrafts.remove(conflict.path);
+      if (isAndroidLocal || isOfflineReplica) androidDrafts.remove(conflict.path);
       setRevision(result.revision);
       setSaveState("saved");
       setConflict(null);
       setConflictOpen(false);
       await refreshState();
-      notify("Conflito resolvido e sincronizado");
+      notify(isOfflineReplica?'Conflito resolvido localmente; rascunho original preservado.':'Conflito resolvido e sincronizado');
     } catch (error) {
       if (error instanceof RequestError && error.status === 409) {
         const remote = await request<OpenNote>(`/api/note?path=${encodeURIComponent(conflict.path)}`).catch(() => null);
@@ -596,8 +613,8 @@ export default function PentaMarkApp() {
       }
       setSaveState("conflict");
       notify(error instanceof Error ? error.message : "Não deu para resolver o conflito");
-    }
-  }, [clientId, conflict, notify, refreshState]);
+    }finally{savingRef.current=false;}
+  }, [clientId, conflict, notify, refreshState,retainRecoveredConflict]);
 
   const prepareToLeave = useCallback(async () => {
     const deadline=Date.now()+10000;

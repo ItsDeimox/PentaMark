@@ -151,6 +151,13 @@ export function wikiLinkHtml(embed: boolean, body: string, context: MarkdownCont
 }
 
 export function markdownLinkHtml(image: boolean, label: string, target: string, context: MarkdownContext, original: string) {
+  if(isOfflineReplica&&/^\/(?:uploads\/|assets\/|api\/)/i.test(target)){
+    const legacy=new URL(target,'http://offline.invalid');
+    if(legacy.pathname==='/api/file')target=(legacy.searchParams.get('path')||'')+legacy.hash;
+    else if(legacy.pathname.startsWith('/uploads/'))target='assets/'+legacy.pathname.slice('/uploads/'.length)+legacy.hash;
+    else if(legacy.pathname.startsWith('/assets/'))target=legacy.pathname.slice(1)+legacy.hash;
+    else target=''; // An unknown API URL must not escape to the independent host.
+  }
   if (/^(?:https?:|mailto:|data:|#|\/uploads\/|\/assets\/|\/api\/)/i.test(target)) return original;
   const extension = extensionOfLink(target);
   const fileUrl = escapeAttribute(vaultFileUrl(target, context.activePath));

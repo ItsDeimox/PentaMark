@@ -137,8 +137,12 @@ jobs:
             mkdir -p device-evidence
             adb install -r offline-android/app-debug.apk
             adb install -r offline-android/app-debug-androidTest.apk
-            adb shell svc wifi disable
-            adb shell svc data disable
+            # Some API24 images terminate svc after applying the setting (137).
+            # Accept that exit only if independent readback proves radios off.
+            adb shell svc wifi disable || echo 'wifi svc exited; checking actual setting'
+            test "$(adb shell settings get global wifi_on | tr -d '\r')" = '0'
+            adb shell svc data disable || echo 'data svc exited; checking actual setting'
+            test "$(adb shell settings get global mobile_data | tr -d '\r')" = '0'
             adb shell am instrument -w -r com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/instrumentation.txt
             adb logcat -d > device-evidence/logcat.txt
             cat device-evidence/instrumentation.txt

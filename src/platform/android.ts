@@ -35,7 +35,12 @@ let files: string[] = [];
 
 export async function initializeAndroid() {
   if (!isAndroidLocal) return;
-  if(isOfflineReplica){document.documentElement.dataset.platform='android';return;}
+  if(isOfflineReplica){
+    // Native plugins survive WebView reloads: stop the prior live session before
+    // declaring the offline/manual context ready, without asking it for content.
+    if(Capacitor.isPluginAvailable('RemoteVault'))await remote.disconnect();
+    document.documentElement.dataset.platform='android';return;
+  }
   root = (await plugin.info()).root;
   if (!root.startsWith('/')) throw new Error('O Android não retornou um diretório de arquivos válido.');
   document.documentElement.dataset.platform = 'android';

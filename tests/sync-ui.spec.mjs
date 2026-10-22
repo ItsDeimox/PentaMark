@@ -18,6 +18,7 @@ async function offlineBridge(page,platform) {
    if(args.url==='/api/state')return{status:200,data:{notes:['Alpha.md','Beta.md'].map(meta),assets:[],folders:[],connections:[],locks:[],clients:1,urls:[],vaultName:'Cópia offline'}};
    if(args.url==='/api/config')return{status:200,data:{vaultName:'Cópia offline',port:3417,isHost:false,openBrowser:false,maxUploadMB:32,lockEditedNotes:false,cleanupUnusedAssets:false,aiBridgeEnabled:false,aiBridgeToken:''}};
    if(args.url.startsWith('/api/note')){
+    if(args.method==='POST'){localStorage.setItem('test:preserved-conflict',JSON.stringify(args.body));return{status:201,data:{path:args.body.path,revision:'copy-head'}};}
     const path=new URL(args.url,'http://local').searchParams.get('path');const key='test:replica:'+path;
     if(args.method==='PUT')localStorage.setItem(key,args.body.content);
     return{status:200,data:{...meta(path),content:localStorage.getItem(key)||'Conteúdo local '+path,revision:'local-head'}};
@@ -28,7 +29,7 @@ async function offlineBridge(page,platform) {
    localStorage.setItem('pentamark:android:remote-profile',JSON.stringify({origin:p.origin}));window.androidBridge={};
    window.Capacitor={PluginHeaders:['SyncVault','LocalVault','RemoteVault'].map(name=>({name,methods:['open','configure','request','snapshot','preparePending','handshake','remoteSnapshot','changes','apply','downloadBlob','uploadBlob','importDocument','exportReplica','info','disconnect','startEvents','stopEvents'].map(name=>({name,rtype:'promise'})).concat({name:'addListener',rtype:'callback'})})),nativeCallback:()=> 'listener',nativePromise:async(plugin,method,args)=>{
     if(plugin==='SyncVault')return handler(method,args);
-    if(plugin==='RemoteVault'){localStorage.setItem('test:legacy-network','1');throw Error('host offline');}
+    if(plugin==='RemoteVault'){if(method==='disconnect'){localStorage.setItem('test:legacy-disconnected','1');return{};}localStorage.setItem('test:legacy-network','1');throw Error('host offline');}
     return method==='info'?{root:'/independent'}:{};
    }};
   }else{
@@ -49,6 +50,13 @@ for(const platform of ['pc','android'])test(`${platform}: known manual replica o
  await page.reload();await expect(editor).toBeVisible();
  expect(await page.evaluate(()=>localStorage.getItem('test:network-called'))).toBeNull();
  expect(await page.evaluate(()=>localStorage.getItem('test:legacy-network'))).toBeNull();
+ if(platform==='android')expect(await page.evaluate(()=>localStorage.getItem('test:legacy-disconnected'))).toBe('1');
+});
+for(const choice of ['Usar servidor','Manter minha versão'])test(`pc: recovered draft resolution ${choice} retains original and does not return after reload`,async({page})=>{
+ await offlineBridge(page,'pc');await page.addInitScript(()=>{if(!localStorage.getItem('test:draft-seeded')){localStorage.setItem('test:draft-seeded','1');localStorage.setItem('pentamark:sync:11111111-1111-4111-8111-111111111111:33333333-3333-4333-8333-333333333333:draft:Alpha.md',JSON.stringify({content:'Rascunho divergente',revision:'old-head'}));}});await page.goto('/');
+ await page.getByRole('button',{name:choice,exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>localStorage.getItem('test:preserved-conflict'))).toContain('Rascunho divergente');
+ await page.reload();await expect(page.locator('.cm-content')).toBeVisible();await expect(page.getByRole('button',{name:'Usar servidor',exact:true})).toHaveCount(0);
 });
 for(const platform of ['pc','android'])test(`${platform}: offline attachment uses native picker, settings export stays native`,async({page})=>{
  await offlineBridge(page,platform);await page.goto('/');
