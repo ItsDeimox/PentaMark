@@ -80,7 +80,7 @@ public final class SyncFileJournal {
         return current;
     }
     static boolean live(JSONObject v) throws Exception { return v != null && !v.getBoolean("deleted"); }
-    private boolean matches(File file, JSONObject v) throws Exception {
+    boolean matches(File file, JSONObject v) throws Exception {
         return live(v) && (v.getString("kind").equals("directory") ? file.isDirectory()
             : file.isFile() && file.length() == v.getLong("byteLength") && hash(file).equals(v.getString("blobHash")));
     }

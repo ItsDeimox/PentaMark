@@ -12,6 +12,35 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class SyncBridgeInstrumentedTest {
+    private static Object evaluate(ActivityScenario<MainActivity> activity,String script)throws Exception {
+        java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<String> value=new java.util.concurrent.atomic.AtomicReference<>();
+        activity.onActivity(a -> a.getBridge().getWebView().evaluateJavascript(script,result -> {value.set(result);done.countDown();}));
+        assertTrue(done.await(10,java.util.concurrent.TimeUnit.SECONDS));return new JSONTokener(value.get()).nextValue();
+    }
+    private static void await(ActivityScenario<MainActivity> activity,String expression)throws Exception {
+        long end=android.os.SystemClock.elapsedRealtime()+30000;
+        while(android.os.SystemClock.elapsedRealtime()<end){if(Boolean.TRUE.equals(evaluate(activity,expression)))return;android.os.SystemClock.sleep(100);}fail("Timed out: "+expression);
+    }
+    private static JSONObject call(ActivityScenario<MainActivity> activity,String method,JSONObject options)throws Exception {
+        evaluate(activity,"window.__syncTest=null;Capacitor.nativePromise('SyncVault',"+JSONObject.quote(method)+","+options+").then(v=>window.__syncTest={value:v}).catch(e=>window.__syncTest={error:String(e)});true");
+        await(activity,"window.__syncTest!==null");JSONObject result=new JSONObject((String)evaluate(activity,"JSON.stringify(window.__syncTest)"));
+        assertFalse(result.toString(),result.has("error"));return result.getJSONObject("value");
+    }
+    @Test public void realCapacitorDtoAndPreparedQueueSurviveActivityRecreation()throws Exception {
+        JSONObject profile=SyncVault.obj("vaultId",UUID.randomUUID().toString(),"replicaId",UUID.randomUUID().toString(),"serverId","bridge-test","origin","http://100.64.0.1:3000","offlineEnabled",true,"mode","manual");
+        try(ActivityScenario<MainActivity> activity=ActivityScenario.launch(MainActivity.class)) {
+            await(activity,"typeof window.Capacitor?.nativePromise==='function'");
+            call(activity,"open",SyncVault.obj("profile",profile));
+            call(activity,"request",SyncVault.obj("url","/api/note","method","POST","body",SyncVault.obj("path","Bridge.md","content","durable 🌍")));
+            JSONObject operation=call(activity,"preparePending",SyncVault.obj("limit",100)).getJSONArray("operations").getJSONObject(0);
+            activity.recreate();await(activity,"typeof window.Capacitor?.nativePromise==='function'");
+            call(activity,"open",SyncVault.obj("profile",profile));
+            assertEquals(operation.toString(),call(activity,"preparePending",SyncVault.obj("limit",100)).getJSONArray("operations").getJSONObject(0).toString());
+            JSONObject note=call(activity,"request",SyncVault.obj("url","/api/note?path=Bridge.md","method","GET"));assertEquals("durable 🌍",note.getJSONObject("data").getString("content"));
+            assertEquals(1,call(activity,"snapshot",new JSONObject()).getJSONObject("status").getInt("pendingCount"));
+        }
+    }
     @Test public void activityRecreationKeepsNativePluginAndNetworkBlock() {
         try(ActivityScenario<MainActivity> activity=ActivityScenario.launch(MainActivity.class)) {
             activity.onActivity(a -> {assertNotNull(a.getBridge().getPlugin("SyncVault"));assertTrue(a.getBridge().getWebView().getSettings().getBlockNetworkLoads());});

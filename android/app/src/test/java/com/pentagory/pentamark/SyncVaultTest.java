@@ -44,6 +44,17 @@ public class SyncVaultTest {
         try { j.publish(partial, blob.getString("blobHash"), 2); fail("invalid hash accepted"); } catch (IOException expected) { assertEquals("invalid-blob", expected.getMessage()); }
         j.require(blob.getString("blobHash"), size);
     }
+    @Test public void reopenedStagingRequiresCompleteLengthAndDigestBeforePublication()throws Exception {
+        File root=Files.createTempDirectory("sync-crash-staging-").toFile();SyncFileJournal j=journal(root);
+        String hash="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        Files.write(j.partial(hash).toPath(),"a".getBytes(StandardCharsets.UTF_8));j=journal(root);
+        try{j.publish(j.partial(hash),hash,3);fail("short staging published");}catch(IOException expected){assertEquals("invalid-blob",expected.getMessage());}
+        assertFalse(j.object(hash).exists());
+        Files.write(j.partial(hash).toPath(),"abd".getBytes(StandardCharsets.UTF_8));j=journal(root);
+        try{j.publish(j.partial(hash),hash,3);fail("corrupt staging published");}catch(IOException expected){assertEquals("invalid-blob",expected.getMessage());}
+        assertFalse(j.object(hash).exists());
+        Files.write(j.partial(hash).toPath(),"abc".getBytes(StandardCharsets.UTF_8));j.publish(j.partial(hash),hash,3);j.require(hash,3);
+    }
     static JSONObject fixtures() throws Exception {
         InputStream resource = SyncVaultTest.class.getResourceAsStream("/sync/contract-cases.json");
         if (resource == null) resource = new FileInputStream("tests/fixtures/sync/contract-cases.json");

@@ -22,6 +22,8 @@ public final class SyncVaultPlugin extends Plugin {
     private boolean opening;
     private SyncVault importing;
     private String importPath;
+    private SyncVault exporting;
+    private JSONObject exportBlob;
     private static JSObject js(JSONObject object) throws Exception { return new JSObject(object.toString()); }
     interface Task { JSONObject run(SyncVault target) throws Exception; }
     private void run(PluginCall call, Task task) {
@@ -58,6 +60,8 @@ public final class SyncVaultPlugin extends Plugin {
     @PluginMethod public void confirm(PluginCall c){run(c,v -> {v.confirm(c.getObject("result"));return new JSONObject();});}
     @PluginMethod public void resolve(PluginCall c){run(c,v -> {v.resolve(c.getObject("input"));return new JSONObject();});}
     @PluginMethod public void transferProgress(PluginCall c){run(c,v -> SyncVault.obj("transfers",v.transferProgress()));}
+    @PluginMethod public void history(PluginCall c){run(c,v -> SyncVault.obj("versions",v.history(c.getString("entryId"))));}
+    @PluginMethod public void readVersion(PluginCall c){run(c,v -> v.readVersion(c.getObject("version")));}
 
     @PluginMethod public void handshake(PluginCall c){run(c,v -> {
         JSONObject profile=v.snapshot().getJSONObject("profile");
@@ -114,6 +118,23 @@ public final class SyncVaultPlugin extends Plugin {
             try(InputStream in=getContext().getContentResolver().openInputStream(uri)) {
                 if(in==null || target==null)throw new IOException("document-unavailable");
                 c.resolve(js(target.importStream(path,in,SyncVault.MAX_SAFE)));
+            }catch(Exception e){c.reject(e.getMessage(),e);}
+        });}catch(Exception e){c.reject(e.getMessage(),e);}
+    }
+    @PluginMethod public void exportVersion(PluginCall c) {
+        try {
+            synchronized(lock){if(exporting!=null || vault==null)throw new IOException("replica-busy");exportBlob=new JSONObject(c.getObject("blob").toString());exporting=vault;}
+            Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE,"PentaMark-version");
+            getActivity().runOnUiThread(() -> startActivityForResult(c,intent,"exportResult"));
+        }catch(Exception e){synchronized(lock){exporting=null;}c.reject(e.getMessage(),e);}
+    }
+    @ActivityCallback private void exportResult(PluginCall c,ActivityResult result) {
+        final SyncVault target;final JSONObject blob;synchronized(lock){target=exporting;blob=exportBlob;exporting=null;exportBlob=null;}
+        if(c==null)return;if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
+        Uri uri=result.getData().getData();
+        try{work.execute(() -> {
+            try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
+                if(out==null || target==null)throw new IOException("document-unavailable");target.exportBlob(blob,out);c.resolve(new JSObject().put("cancelled",false));
             }catch(Exception e){c.reject(e.getMessage(),e);}
         });}catch(Exception e){c.reject(e.getMessage(),e);}
     }

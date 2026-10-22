@@ -206,9 +206,14 @@ public final class RemoteConnection {
             ByteArrayOutputStream out=new ByteArrayOutputStream();
             try(InputStream in=connection.getInputStream()){byte[] b=new byte[1024];int n;while((n=in.read(b))!=-1){if(out.size()+n>8192)throw new IOException("oversized-response");out.write(b,0,n);}}
             JSONObject progress=new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
-            if(!hash.equals(progress.getString("blobHash")) || progress.getLong("verifiedBytes")!=offset+count
-                || progress.getBoolean("complete")!=(offset+count==total))throw new IOException("invalid-transfer-progress");
-            return offset+count;
+            Object raw=progress.get("verifiedBytes");
+            if(!(raw instanceof Number))throw new IOException("invalid-transfer-progress");
+            double number=((Number)raw).doubleValue();long verified=((Number)raw).longValue();
+            // Replaying an old segment may acknowledge further durable segments or a finished object.
+            if(number!=verified || verified<offset+count || verified>total || verified!=total && verified%SYNC_CHUNK_BYTES!=0
+                || !hash.equals(progress.getString("blobHash")) || !(progress.get("complete") instanceof Boolean)
+                || progress.getBoolean("complete")!=(verified==total))throw new IOException("invalid-transfer-progress");
+            return verified;
         } finally {deadline.cancel(false);release(connection);}
     }
 

@@ -82,6 +82,9 @@ public class SyncDatabaseInstrumentedTest {
         assertEquals(1, vault.snapshot().getJSONArray("conflicts").length());
         assertEquals("later", vault.request("/api/note?path=A.md", "GET", null).getJSONObject("data").getString("content"));
         assertTrue(vault.database.count("versions") >= 3);
+        boolean retained=false;JSONArray history=vault.history(r.getJSONObject("local").getString("entryId"));
+        for(int i=0;i<history.length();i++)if(vault.readVersion(history.getJSONObject(i)).getString("content").equals("user merge"))retained=true;
+        assertTrue("stale resolution discarded user merge",retained);
     }
     @Test public void committedIntentReplaysAfterFileRenameBeforeMetadataCommit() throws Exception {
         write("before"); JSONObject before=row();
@@ -118,5 +121,60 @@ public class SyncDatabaseInstrumentedTest {
         }
         try{vault.persistIncoming(SyncVault.obj("nextCursor","bad","items",items));fail("collision accepted");}catch(IOException expected){assertEquals("path-collision",expected.getMessage());}
         assertEquals(0,vault.snapshot().getJSONArray("entries").length());assertTrue(vault.snapshot().isNull("cursor"));
+    }
+    @Test public void folderDeletionPlansChildrenFirstAndKeepsUnknownFiles() throws Exception {
+        vault.request("/api/folder","POST",SyncVault.obj("path","Notes"));
+        vault.request("/api/note","POST",SyncVault.obj("path","Notes/A.md","content","keep"));
+        // Prepare first so deleting a formerly visible folder cannot be consolidated away.
+        JSONArray prepared=vault.preparePending(100);
+        for(int i=0;i<prepared.length();i++) {
+            JSONObject op=prepared.getJSONObject(i), after=op.getJSONObject("after");
+            vault.confirm(SyncVault.obj("opId",op.getString("opId"),"status","applied","confirmed",SyncVault.obj("entryId",op.getString("entryId"),
+                "kind",after.getString("kind"),"path",after.getString("path"),"blobHash",after.get("blobHash"),"byteLength",after.getLong("byteLength"),"deleted",false,"revision","confirmed-"+i)));
+        }
+        File unknown=new File(vault.files.working,"Notes/unknown.bin");try(FileOutputStream out=new FileOutputStream(unknown)){out.write(7);out.getFD().sync();}
+        try{vault.request("/api/folder?path=Notes","DELETE",null);fail("unknown child removed");}catch(IOException expected){assertEquals("directory-not-empty",expected.getMessage());}
+        assertTrue(unknown.exists());assertEquals("keep",vault.request("/api/note?path=Notes/A.md","GET",null).getJSONObject("data").getString("content"));
+        assertTrue(unknown.delete());
+        vault.request("/api/folder?path=Notes","DELETE",null);
+        JSONArray ops=vault.preparePending(100);assertEquals(2,ops.length());
+        assertEquals("delete",ops.getJSONObject(0).getString("kind"));assertEquals("rmdir",ops.getJSONObject(1).getString("kind"));
+        assertEquals(ops.getJSONObject(0).getString("opId"),ops.getJSONObject(1).getJSONArray("dependsOn").getString(0));
+    }
+    @Test public void folderRenameMovesKnownChildrenAndRetainsHistory() throws Exception {
+        vault.request("/api/folder","POST",SyncVault.obj("path","Notes"));
+        vault.request("/api/note","POST",SyncVault.obj("path","Notes/A.md","content","bytes"));
+        vault.request("/api/folder?path=Notes","PATCH",SyncVault.obj("newPath","Renamed"));
+        assertEquals("bytes",vault.request("/api/note?path=Renamed/A.md","GET",null).getJSONObject("data").getString("content"));
+        assertFalse(new File(vault.files.working,"Notes").exists());
+        vault.close();vault=new SyncVault(context,profile);
+        assertEquals("bytes",vault.request("/api/note?path=Renamed/A.md","GET",null).getJSONObject("data").getString("content"));
+    }
+    @Test public void keepBothResolvesDistinctIdsWithoutReassigningIdentity() throws Exception {
+        write("local");JSONObject before=row();JSONObject blob=vault.files.store(new ByteArrayInputStream("remote".getBytes("UTF-8")),100);
+        JSONObject remote=SyncVault.obj("entryId","other","kind","note","path","A.md","revision","remote","blobHash",blob.getString("blobHash"),"byteLength",6,"deleted",false);
+        vault.persistIncoming(SyncVault.obj("nextCursor","c","items",new JSONArray().put(decision("conflict",before,remote))));
+        JSONObject conflict=vault.snapshot().getJSONArray("conflicts").getJSONObject(0);
+        vault.resolve(SyncVault.obj("conflictId",conflict.getString("conflictId"),"expectedLocalHead",before.getString("localHead"),"expectedRemoteRevision","remote","choice","keep-both"));
+        assertEquals(0,vault.snapshot().getJSONArray("conflicts").length());assertEquals(2,vault.snapshot().getJSONArray("entries").length());
+        assertEquals("remote",vault.request("/api/note?path=A.md","GET",null).getJSONObject("data").getString("content"));
+        JSONObject op=vault.preparePending(100).getJSONObject(0);assertEquals(before.getJSONObject("local").getString("entryId"),op.getString("entryId"));
+        assertTrue(op.getJSONObject("after").getString("path").startsWith("A.md.conflict-"));
+    }
+    @Test public void retainedHistoryCanBeReadAfterReopen()throws Exception {
+        write("old bytes");JSONObject old=row().getJSONObject("local");write("new bytes");
+        vault.close();vault=new SyncVault(context,profile);
+        assertTrue(vault.history(old.getString("entryId")).length()>=2);
+        assertEquals("old bytes",vault.readVersion(old).getString("content"));
+    }
+    @Test public void offlineStateKeepsNotesAssetsAndFoldersInTheirApiCollections()throws Exception {
+        vault.request("/api/folder","POST",SyncVault.obj("path","Notes"));
+        vault.request("/api/note","POST",SyncVault.obj("path","Notes/A.md","content","note"));
+        vault.importStream("pic.png",new ByteArrayInputStream(new byte[]{1,2,3}),100);
+        JSONObject state=vault.request("/api/state","GET",null).getJSONObject("data");
+        assertEquals(1,state.getJSONArray("notes").length());assertEquals(1,state.getJSONArray("assets").length());
+        assertEquals("A",state.getJSONArray("notes").getJSONObject(0).getString("title"));
+        assertEquals("image",state.getJSONArray("assets").getJSONObject(0).getString("kind"));
+        assertEquals("Notes",state.getJSONArray("folders").getString(0));assertEquals(2,state.getJSONArray("assetPaths").length());
     }
 }

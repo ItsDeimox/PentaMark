@@ -140,13 +140,38 @@ public final class SyncVault implements AutoCloseable {
                 if (SyncFileJournal.live(next)) {
                     // Filesystem checks in validateChange allow the old spelling for a case-only rename.
                     File dest = new File(files.working,SyncPaths.path(next.getString("path")));
-                    if (dest.exists() && !(SyncFileJournal.live(old) && old.getString("path").equals(next.getString("path")))) throw new IOException("path-collision");
+                    if (dest.exists() && !(SyncFileJournal.live(old) && old.getString("path").equals(next.getString("path"))) && !vacated(next.getString("path"),rows,i)) throw new IOException("path-collision");
                 }
-                files.validateChange(old, next);
+                try { files.validateChange(old, next); }
+                catch(IOException error) {
+                    if("path-collision".equals(error.getMessage()) && SyncFileJournal.live(next) && vacated(next.getString("path"),rows,i)) {require(next);continue;}
+                    if(!"directory-not-empty".equals(error.getMessage()) || old==null || !old.getString("kind").equals("directory"))throw error;
+                    validateKnownChildren(files.target(old.getString("path")),rows);
+                }
             }
         }
         database.put("file_intents", plan.getString("id"), plan);
         finish(plan);
+    }
+    private boolean vacated(String path,JSONArray changes,int beforeIndex)throws Exception {
+        for(int i=0;i<beforeIndex;i++) {
+            JSONObject c=changes.getJSONObject(i),a=c.getJSONObject("before").optJSONObject("local"),b=c.getJSONObject("after").optJSONObject("local");
+            if(SyncFileJournal.live(a)&&SyncPaths.key(a.getString("path")).equals(SyncPaths.key(path))
+                &&(!SyncFileJournal.live(b)||!SyncPaths.key(b.getString("path")).equals(SyncPaths.key(path))))return true;
+        }return false;
+    }
+    private void validateKnownChildren(File directory,JSONArray changes)throws Exception {
+        File[] children=directory.listFiles();if(children==null)throw new IOException("storage-unavailable");
+        for(File child:children) {
+            String path=child.getAbsolutePath().substring(files.working.getAbsolutePath().length()+1).replace(File.separatorChar,'/');
+            files.target(path);boolean planned=false;
+            for(int i=0;i<changes.length();i++) {
+                JSONObject change=changes.getJSONObject(i), before=change.getJSONObject("before").optJSONObject("local"), after=change.getJSONObject("after").optJSONObject("local");
+                if(SyncFileJournal.live(before) && before.getString("path").equals(path) && (!SyncFileJournal.live(after)||!after.getString("path").equals(path))) {planned=true;break;}
+            }
+            if(!planned)throw new IOException("directory-not-empty");
+            if(child.isDirectory())validateKnownChildren(child,changes);
+        }
     }
     private void recover() throws Exception {
         JSONArray intents = database.all("file_intents");
@@ -156,8 +181,16 @@ public final class SyncVault implements AutoCloseable {
         JSONArray rows = plan.getJSONArray("rows");
         for (int i=0; i<rows.length(); i++) {
             JSONObject change = rows.getJSONObject(i), before = change.getJSONObject("before"), after = change.getJSONObject("after");
-            if (!Objects.equals(String.valueOf(before.optJSONObject("local")), String.valueOf(after.optJSONObject("local"))))
-                files.apply(before.optJSONObject("local"), after.optJSONObject("local"));
+            if (!Objects.equals(String.valueOf(before.optJSONObject("local")), String.valueOf(after.optJSONObject("local")))) {
+                JSONObject old=before.optJSONObject("local");
+                // A later step may already have reused this name before a crash. Never remove its verified final bytes on replay.
+                if(SyncFileJournal.live(old))for(int j=i+1;j<rows.length();j++) {
+                    JSONObject replacement=rows.getJSONObject(j).getJSONObject("after").optJSONObject("local");
+                    if(SyncFileJournal.live(replacement)&&SyncPaths.key(old.getString("path")).equals(SyncPaths.key(replacement.getString("path")))
+                        && files.matches(files.target(replacement.getString("path")),replacement)){old=null;break;}
+                }
+                files.apply(old, after.optJSONObject("local"));
+            }
         }
         database.transaction(() -> {
             for (int i=0; i<rows.length(); i++) {
@@ -186,24 +219,42 @@ public final class SyncVault implements AutoCloseable {
     public synchronized JSONArray preparePending(int limit) throws Exception {
         ready(); if (limit < 1 || limit > 100) throw new IOException("invalid-limit"); JSONArray result = new JSONArray();
         database.transaction(() -> {
-            JSONArray rows = database.all("entries");
-            for (int i=0; i<rows.length() && result.length()<limit; i++) {
-                JSONObject row = rows.getJSONObject(i), existing = pending(row.getString("entryId"));
+            List<JSONObject> rows = orderedRows(database.all("entries"));
+            for (int i=0; i<rows.size() && result.length()<limit; i++) {
+                JSONObject row = rows.get(i), existing = pending(row.getString("entryId"));
                 if (existing != null) { result.put(existing.getJSONObject("operation")); continue; }
                 if (!row.getBoolean("dirty") || !row.getBoolean("approved") || conflicted(row.getString("entryId"))) continue;
                 JSONObject local = row.optJSONObject("local"), base = row.optJSONObject("base"); if (local == null) continue;
                 if (base == null && local.getBoolean("deleted")) { row.put("dirty", false); database.put("entries", row.getString("entryId"), row); continue; }
                 require(local); JSONObject profile = meta.getJSONObject("profile");
                 String kind = local.getBoolean("deleted") ? (local.getString("kind").equals("directory") ? "rmdir" : "delete")
-                    : local.getString("kind").equals("directory") ? "mkdir" : base != null && !local.getString("path").equals(base.getString("path"))
-                    && Objects.equals(local.optString("blobHash"), base.optString("blobHash")) ? "move" : "put";
+                    : base != null && !local.getString("path").equals(base.getString("path"))
+                    && Objects.equals(local.optString("blobHash"), base.optString("blobHash")) ? "move" : local.getString("kind").equals("directory") ? "mkdir" : "put";
+                JSONArray dependencies=new JSONArray(); boolean wait=false;
+                for(JSONObject other:rows) {
+                    if(other==row)continue;JSONObject child=other.optJSONObject("local");if(child==null)continue;
+                    String path=local.getString("path"), otherPath=child.getString("path");
+                    boolean prerequisite=local.getBoolean("deleted") && otherPath.startsWith(path+"/")
+                        || !local.getBoolean("deleted") && !child.getBoolean("deleted") && child.getString("kind").equals("directory") && path.startsWith(otherPath+"/");
+                    if(prerequisite && other.getBoolean("dirty")) {JSONObject p=pending(other.getString("entryId"));if(p==null){wait=true;break;}dependencies.put(p.getJSONObject("operation").getString("opId"));}
+                }
+                if(wait)continue;
                 JSONObject operation = obj("vaultId", profile.getString("vaultId"), "replicaId", profile.getString("replicaId"), "opId", id(), "entryId", row.getString("entryId"),
                     "kind", kind, "baseRevision", base == null ? null : base.getString("revision"), "after", local.getBoolean("deleted") ? null :
-                        obj("path", local.getString("path"), "kind", local.getString("kind"), "blobHash", local.get("blobHash"), "byteLength", size(local)), "dependsOn", new JSONArray());
+                        obj("path", local.getString("path"), "kind", local.getString("kind"), "blobHash", local.get("blobHash"), "byteLength", size(local)), "dependsOn", dependencies);
                 database.put("pending_ops", operation.getString("opId"), obj("operation", operation, "localHead", row.getString("localHead"), "local", local));
                 result.put(operation);
             }
         }); return result;
+    }
+    private static List<JSONObject> orderedRows(JSONArray input)throws Exception {
+        List<JSONObject> result=new ArrayList<>();for(int i=0;i<input.length();i++)result.add(input.getJSONObject(i));
+        result.sort((a,b)-> {
+            JSONObject x=a.optJSONObject("local"),y=b.optJSONObject("local");if(x==null||y==null)return x==y?0:x==null?1:-1;
+            boolean xd=x.optBoolean("deleted"),yd=y.optBoolean("deleted");if(xd!=yd)return xd?1:-1;
+            int depthX=x.optString("path").split("/").length,depthY=y.optString("path").split("/").length;
+            return xd?Integer.compare(depthY,depthX):Integer.compare(depthX,depthY);
+        });return result;
     }
     public synchronized void persistIncoming(JSONObject batch) throws Exception {
         ready(); String cursor = batch.getString("nextCursor"); JSONArray items = batch.getJSONArray("items"); JSONObject plan = plan(); Set<String> seen = new HashSet<>();
@@ -290,7 +341,9 @@ public final class SyncVault implements AutoCloseable {
         Object expected = input.get("expectedRemoteRevision"), actual = remote == null ? JSONObject.NULL : remote.get("revision");
         if (!Objects.equals(expected, actual)) throw new IOException("stale-remote-revision");
         if (pending(row.getString("entryId")) != null) throw new IOException("operation-in-flight");
-        if(remote!=null && !remote.getString("entryId").equals(row.getString("entryId"))) throw new IOException("identity-conflict-needs-rename");
+        if(remote!=null && !remote.getString("entryId").equals(row.getString("entryId"))) {
+            resolveIdentityConflict(input,choice,row,remote);return;
+        }
         JSONObject next = copy(row), plan = plan();
         if (choice.equals("local") || choice.equals("merged")) {
             if (row.optJSONObject("local") == null) throw new IOException("missing-version");
@@ -308,6 +361,16 @@ public final class SyncVault implements AutoCloseable {
         } else throw new IOException("invalid-resolution");
         plan.getJSONArray("removeConflicts").put(input.getString("conflictId")); rowChange(plan, row, next); commit(plan);
     }
+    private void resolveIdentityConflict(JSONObject input,String choice,JSONObject row,JSONObject remote)throws Exception {
+        if(!choice.equals("keep-both")&&!choice.equals("remote"))throw new IOException("identity-conflict-needs-rename");
+        JSONObject local=row.optJSONObject("local");if(!SyncFileJournal.live(local)||local.getString("kind").equals("directory"))throw new IOException("identity-conflict-needs-rename");
+        require(remote);JSONObject other=database.get("entries",remote.getString("entryId"));if(other==null)other=empty(remote.getString("entryId"));
+        if(other.getBoolean("dirty") || pending(other.getString("entryId"))!=null)throw new IOException("stale-local-head");
+        JSONObject relocated=copy(local).put("path",local.getString("path")+".conflict-"+id()).put("revision",id());
+        JSONObject next=copy(row).put("local",relocated).put("localHead",id()).put("dirty",true).put("approved",true);
+        JSONObject received=copy(other).put("base",remote).put("local",remote).put("localHead",id()).put("dirty",false).put("approved",false);
+        JSONObject plan=plan();rowChange(plan,row,next);rowChange(plan,other,received);plan.getJSONArray("removeConflicts").put(input.getString("conflictId"));commit(plan);
+    }
     private JSONObject findPath(String path) throws Exception {
         JSONArray entries = database.all("entries"); String key = SyncPaths.key(path);
         for (int i=0; i<entries.length(); i++) { JSONObject row = entries.getJSONObject(i), local = row.optJSONObject("local");
@@ -317,9 +380,13 @@ public final class SyncVault implements AutoCloseable {
     public synchronized JSONObject request(String url, String method, JSONObject body) throws Exception {
         ready(); RemoteConnection.validateRequest(url, method); URI uri = new URI(url); String route = uri.getPath();
         if (route.equals("/api/state") && method.equals("GET")) {
-            JSONArray entries = database.all("entries"), notes = new JSONArray(), folders = new JSONArray();
-            for (int i=0; i<entries.length(); i++) { JSONObject v = entries.getJSONObject(i).optJSONObject("local"); if (SyncFileJournal.live(v)) { if (v.getString("kind").equals("directory")) folders.put(v.getString("path")); else notes.put(copy(v)); } }
-            return obj("status", 200, "data", obj("notes", notes, "folders", folders));
+            JSONArray entries = database.all("entries"), notes = new JSONArray(), assets=new JSONArray(), folders = new JSONArray(), paths=new JSONArray();
+            for (int i=0; i<entries.length(); i++) { JSONObject v = entries.getJSONObject(i).optJSONObject("local"); if (SyncFileJournal.live(v)) {
+                if (v.getString("kind").equals("directory")) folders.put(v.getString("path"));
+                else {paths.put(v.getString("path"));(v.getString("kind").equals("note")?notes:assets).put(apiMetadata(v));}
+            } }
+            return obj("status", 200, "data", obj("app","PentaMark","protocolVersion",6,"notes", notes,"assets",assets, "folders", folders,"assetPaths",paths,
+                "clients",1,"connections",new JSONArray(),"locks",new JSONArray(),"urls",new JSONArray(),"vaultName",meta.getJSONObject("profile").getString("vaultId"),"isHost",false));
         }
         if (!Arrays.asList("/api/note", "/api/asset", "/api/folder").contains(route)) throw new IOException("unsupported-offline-route");
         String path = null;
@@ -332,10 +399,11 @@ public final class SyncVault implements AutoCloseable {
             if (size(local)>MAX_TEXT) throw new IOException("file-too-large");
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             try (InputStream in = new FileInputStream(files.object(local.getString("blobHash")))) { byte[] b = new byte[8192]; int n; while ((n=in.read(b))!=-1) out.write(b,0,n); }
-            return obj("status", 200, "data", copy(local).put("content", new String(out.toByteArray(), StandardCharsets.UTF_8)));
+            return obj("status", 200, "data", apiMetadata(local).put("revision",local.getString("revision")).put("content", new String(out.toByteArray(), StandardCharsets.UTF_8)));
         }
         if (method.equals("POST") && row != null) throw new IOException("path-collision");
         if (row == null && !(method.equals("POST") || method.equals("PUT"))) throw new IOException("offline-unavailable");
+        if(local!=null && local.getString("kind").equals("directory") && (method.equals("DELETE")||method.equals("PATCH")))return changeFolder(row,method,body);
         if (body != null && body.has("baseRevision") && !body.isNull("baseRevision") && (local == null || !body.getString("baseRevision").equals(local.getString("revision")))) throw new IOException("stale-local-head");
         if (row == null) row = empty(id()); JSONObject next = copy(row), v = local == null ? obj("entryId", row.getString("entryId"), "kind", route.equals("/api/folder") ? "directory" : "note", "path", path, "blobHash", null, "byteLength", 0, "deleted", false) : copy(local);
         if (method.equals("DELETE")) v.put("deleted", true).put("blobHash", JSONObject.NULL).put("byteLength", 0);
@@ -347,6 +415,27 @@ public final class SyncVault implements AutoCloseable {
         v.put("revision", id()); version(v); next.put("local", v).put("localHead", id()).put("dirty", true).put("approved", !conflicted(row.getString("entryId")));
         JSONObject plan = plan(); rowChange(plan, row, next); commit(plan);
         return obj("status", method.equals("POST") ? 201 : 200, "data", obj("path", v.getString("path"), "revision", v.getString("revision"), "localSaved", true));
+    }
+    private JSONObject apiMetadata(JSONObject v)throws Exception {
+        String path=v.getString("path"),name=path.substring(path.lastIndexOf('/')+1),extension=name.contains(".")?name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT):"";
+        boolean note=v.getString("kind").equals("note");JSONObject result=obj("path",path,"title",note&&name.toLowerCase(Locale.ROOT).endsWith(".md")?name.substring(0,name.length()-3):name,"size",size(v),"modified",0);
+        if(!note)result.put("extension",extension).put("kind",Arrays.asList("png","jpg","jpeg","gif","webp","avif","svg","bmp").contains(extension)?"image":Arrays.asList("mp3","wav","ogg","m4a","flac").contains(extension)?"audio":Arrays.asList("mp4","webm","mov","mkv").contains(extension)?"video":extension.equals("pdf")?"pdf":"file");
+        return result;
+    }
+    private JSONObject changeFolder(JSONObject root,String method,JSONObject body)throws Exception {
+        String old=root.getJSONObject("local").getString("path"), dest=method.equals("PATCH")?SyncPaths.path(body.getString("newPath")):null;
+        if(dest!=null && (SyncPaths.key(dest).equals(SyncPaths.key(old))||SyncPaths.key(dest).startsWith(SyncPaths.key(old)+"/")))throw new IOException("invalid-folder-move");
+        List<JSONObject> rows=orderedRows(database.all("entries"));Collections.reverse(rows);JSONObject plan=plan();
+        for(JSONObject row:rows) {
+            JSONObject local=row.optJSONObject("local");if(!SyncFileJournal.live(local))continue;String path=local.getString("path");
+            if(!path.equals(old)&&!path.startsWith(old+"/"))continue;
+            JSONObject next=copy(row), changed=copy(local).put("revision",id());
+            if(dest==null)changed.put("deleted",true).put("blobHash",JSONObject.NULL).put("byteLength",0);
+            else changed.put("path",dest+path.substring(old.length()));
+            next.put("local",changed).put("localHead",id()).put("dirty",true).put("approved",!conflicted(row.getString("entryId")));
+            rowChange(plan,row,next);
+        }
+        commit(plan);return obj("status",200,"data",obj("path",dest==null?old:dest,"localSaved",true));
     }
     /** ContentResolver supplies the stream; only identifiers/progress cross the JS bridge. */
     public synchronized JSONObject importStream(String path, InputStream input, long maximum) throws Exception {
@@ -402,4 +491,21 @@ public final class SyncVault implements AutoCloseable {
         }
     }
     public synchronized JSONArray transferProgress() throws Exception { ready(); return database.all("transfer_progress"); }
+    public synchronized JSONArray history(String entryId)throws Exception {
+        ready();identifier(entryId);JSONArray all=database.all("versions"),result=new JSONArray();Set<String> seen=new HashSet<>();
+        for(int i=0;i<all.length();i++){JSONObject v=all.getJSONObject(i);if(v.getString("entryId").equals(entryId)&&seen.add(v.toString()))result.put(v);}
+        return result;
+    }
+    public synchronized JSONObject readVersion(JSONObject requested)throws Exception {
+        ready();JSONObject v=version(requested);if(v==null || !v.getString("kind").equals("note") || v.getBoolean("deleted") || size(v)>MAX_TEXT)throw new IOException("native-stream-required");
+        JSONArray history=history(v.getString("entryId"));boolean found=false;
+        for(int i=0;i<history.length();i++)if(sameVersion(history.getJSONObject(i),v))found=true;
+        if(!found)throw new IOException("unknown-version");require(v);
+        ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(files.object(v.getString("blobHash")))){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+        return obj("version",v,"content",out.toString("UTF-8"));
+    }
+    public void exportBlob(JSONObject blob,OutputStream output)throws Exception {
+        final File object;synchronized(this){ready();long size=size(blob);files.require(blob.getString("blobHash"),size);object=files.object(blob.getString("blobHash"));}
+        try(InputStream in=new FileInputStream(object)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)output.write(b,0,n);}
+    }
 }
