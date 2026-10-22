@@ -27,10 +27,14 @@ public final class RemoteConnection {
         Thread thread = new Thread(r, "remote-deadlines"); thread.setDaemon(true); return thread;
     });
     private final String origin;
+    interface ConnectionFactory { HttpURLConnection open(URL url) throws IOException; }
+    private final ConnectionFactory factory;
+    public static final int SYNC_CHUNK_BYTES = 1048576;
     private final Set<HttpURLConnection> active = new HashSet<>();
     private boolean closed;
 
-    public RemoteConnection(String origin) { this.origin = validateOrigin(origin); }
+    public RemoteConnection(String origin) { this(origin, url -> (HttpURLConnection)url.openConnection(Proxy.NO_PROXY)); }
+    RemoteConnection(String origin, ConnectionFactory factory) { this.origin = validateOrigin(origin); this.factory = factory; }
 
     /** Closing an old profile aborts its in-flight work; it can never retarget a queued write. */
     public void close() {
@@ -40,7 +44,7 @@ public final class RemoteConnection {
     }
 
     private HttpURLConnection open(String url, String method) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection)new URL(origin + url).openConnection(Proxy.NO_PROXY);
+        HttpURLConnection connection = factory.open(new URL(origin + url));
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(8000);
         connection.setReadTimeout(15000);
@@ -86,6 +90,16 @@ public final class RemoteConnection {
 
     public JSONObject request(String url, String method, String body, String base64, String clientId) throws Exception {
         validateRequest(url, method);
+        return requestJson(url, method, body, base64, clientId);
+    }
+
+    public JSONObject syncRequest(String url, String method, JSONObject body) throws Exception {
+        validateSyncRequest(url, method);
+        if (relative(url).getPath().startsWith("/api/sync/v1/blobs/")) throw new IllegalArgumentException("native-stream-required");
+        return requestJson(url, method, body == null ? null : body.toString(), null, null);
+    }
+
+    private JSONObject requestJson(String url, String method, String body, String base64, String clientId) throws Exception {
         if (clientId != null && !clientId.matches("[a-zA-Z0-9_-]{1,80}")) throw new IllegalArgumentException("Invalid clientId");
         boolean upload = relative(url).getPath().equals("/api/upload");
         if (body != null && base64 != null || base64 != null && !upload || body != null && method.equals("GET"))
@@ -129,6 +143,73 @@ public final class RemoteConnection {
                 return new JSONObject().put("status", status).put("data", data);
             }
         } finally { deadline.cancel(false); release(connection); }
+    }
+
+    public static void validateSyncRequest(String url, String method) {
+        URI uri = relative(url); String allowed, keys = "";
+        switch (uri.getPath()) {
+            case "/api/sync/v1/hello": allowed = "GET"; break;
+            case "/api/sync/v1/snapshot": allowed = "GET|POST"; keys = "|snapshotToken|cursor|"; break;
+            case "/api/sync/v1/changes": allowed = "GET"; keys = "|cursor|limit|"; break;
+            case "/api/sync/v1/apply": allowed = "POST"; break;
+            default:
+                if (!uri.getPath().matches("/api/sync/v1/blobs/[0-9a-f]{64}")) throw new IllegalArgumentException("invalid-sync-route");
+                allowed = "GET|PUT"; keys = "|offset|";
+        }
+        if (method == null || !("|"+allowed+"|").contains("|"+method+"|")) throw new IllegalArgumentException("invalid-sync-method");
+        query(uri, keys);
+    }
+
+    private static void validateChunk(String hash, long total, long offset) throws IOException {
+        if (hash == null || !hash.matches("[0-9a-f]{64}") || total < 0 || total > 9007199254740991L || offset < 0 || offset > total)
+            throw new IOException("invalid-transfer");
+    }
+
+    /** Exactly one segment per call. Caller persists the returned offset only after fsync. */
+    public long downloadChunk(String hash, long total, long offset, File staging) throws Exception {
+        validateChunk(hash, total, offset);
+        if (staging.length() != offset) throw new IOException("invalid-offset");
+        if (offset == total) { if (!staging.exists()) try (FileOutputStream out = new FileOutputStream(staging)) { out.getFD().sync(); } return offset; }
+        long count = Math.min(SYNC_CHUNK_BYTES, total-offset), end = offset+count-1;
+        HttpURLConnection connection = open("/api/sync/v1/blobs/"+hash, "GET");
+        ScheduledFuture<?> deadline = DEADLINES.schedule(() -> release(connection), 45, TimeUnit.SECONDS);
+        try {
+            connection.setRequestProperty("Range", "bytes="+offset+"-"+end);
+            if (status(connection) != 206 || !mime(connection).equals("application/octet-stream")) throw new IOException("invalid-transfer-response");
+            if (!("bytes "+offset+"-"+end+"/"+total).equals(connection.getHeaderField("Content-Range")) || length(connection, SYNC_CHUNK_BYTES) != count) throw new IOException("invalid-range");
+            try (InputStream in = connection.getInputStream(); RandomAccessFile file = new RandomAccessFile(staging, "rw")) {
+                file.seek(offset); long received=0; byte[] buffer=new byte[65536];
+                try {
+                    while(received<count) { int n=in.read(buffer,0,(int)Math.min(buffer.length,count-received)); if(n<0)throw new EOFException("truncated-transfer"); file.write(buffer,0,n); received+=n; }
+                    if(in.read()!=-1)throw new IOException("oversized-transfer"); file.getFD().sync();
+                } catch (Exception error) { file.setLength(offset); file.getFD().sync(); throw error; }
+            }
+            return offset+count;
+        } finally { deadline.cancel(false); release(connection); }
+    }
+
+    public long uploadChunk(String hash, long total, long offset, File object) throws Exception {
+        validateChunk(hash,total,offset); if(object.length()!=total)throw new IOException("invalid-blob");
+        long count=Math.min(SYNC_CHUNK_BYTES,total-offset);
+        HttpURLConnection connection=open("/api/sync/v1/blobs/"+hash+"?offset="+offset,"PUT");
+        ScheduledFuture<?> deadline=DEADLINES.schedule(() -> release(connection),45,TimeUnit.SECONDS);
+        try {
+            connection.setDoOutput(true); connection.setRequestProperty("Content-Type","application/octet-stream");
+            connection.setRequestProperty("Content-Range",total==0?"bytes */0":"bytes "+offset+"-"+(offset+count-1)+"/"+total);
+            connection.setFixedLengthStreamingMode(count);
+            try(RandomAccessFile in=new RandomAccessFile(object,"r"); OutputStream out=connection.getOutputStream()) {
+                in.seek(offset); long remaining=count; byte[] buffer=new byte[65536];
+                while(remaining>0){int n=in.read(buffer,0,(int)Math.min(buffer.length,remaining));if(n<0)throw new EOFException();out.write(buffer,0,n);remaining-=n;}
+            }
+            if(status(connection)!=200 || !mime(connection).equals("application/json"))throw new IOException("upload-not-confirmed");
+            length(connection,8192);
+            ByteArrayOutputStream out=new ByteArrayOutputStream();
+            try(InputStream in=connection.getInputStream()){byte[] b=new byte[1024];int n;while((n=in.read(b))!=-1){if(out.size()+n>8192)throw new IOException("oversized-response");out.write(b,0,n);}}
+            JSONObject progress=new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
+            if(!hash.equals(progress.getString("blobHash")) || progress.getLong("verifiedBytes")!=offset+count
+                || progress.getBoolean("complete")!=(offset+count==total))throw new IOException("invalid-transfer-progress");
+            return offset+count;
+        } finally {deadline.cancel(false);release(connection);}
     }
 
     public static final class Media {
@@ -403,12 +484,16 @@ public final class RemoteConnection {
     }
 
     public static String mediaPath(String localOrigin, String url, String method, boolean mainFrame, String destination) {
+        return mediaPath(localOrigin, url, method, mainFrame, destination, "/_pm_remote/file");
+    }
+
+    static String mediaPath(String localOrigin, String url, String method, boolean mainFrame, String destination, String route) {
         try {
             URI local = new URI(localOrigin);
             URI request = new URI(url);
             if (!"GET".equals(method) || mainFrame || request.getRawUserInfo() != null
                     || !local.getScheme().equals(request.getScheme()) || !local.getRawAuthority().equals(request.getRawAuthority())
-                    || !"/_pm_remote/file".equals(request.getRawPath()) || request.getRawFragment() != null
+                    || !route.equals(request.getRawPath()) || request.getRawFragment() != null
                     || destination != null && !destination.isEmpty() && !destination.equals("empty")
                         && !destination.equals("image") && !destination.equals("audio") && !destination.equals("video"))
                 throw new IllegalArgumentException("Remote media cannot be used as a document");

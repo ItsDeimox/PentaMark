@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(LocalVaultPlugin.class);
         registerPlugin(RemoteVaultPlugin.class);
+        registerPlugin(SyncVaultPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(VaultInvitationPlugin.class);
         super.onCreate(savedInstanceState);
@@ -33,7 +34,7 @@ public class MainActivity extends BridgeActivity {
                 if (!local.getScheme().equals(url.getScheme()) || !local.getAuthority().equals(url.getAuthority())) {
                     return denied();
                 }
-                if (url.getPath() != null && url.getPath().startsWith("/_pm_remote")) {
+                if (url.getPath() != null && (url.getPath().startsWith("/_pm_remote") || url.getPath().startsWith("/_pm_sync"))) {
                     try {
                         String destination = null;
                         String range = null;
@@ -41,9 +42,12 @@ public class MainActivity extends BridgeActivity {
                             if (header.getKey().equalsIgnoreCase("Sec-Fetch-Dest")) destination = header.getValue();
                             if (header.getKey().equalsIgnoreCase("Range")) range = header.getValue();
                         }
-                        String path = RemoteConnection.mediaPath(bridge.getLocalUrl(), url.toString(), request.getMethod(), request.isForMainFrame(), destination);
-                        RemoteVaultPlugin plugin = (RemoteVaultPlugin)bridge.getPlugin("RemoteVault").getInstance();
-                        RemoteConnection.Media media = plugin.openMedia(path, range);
+                        boolean replica = url.getPath().startsWith("/_pm_sync");
+                        String path = RemoteConnection.mediaPath(bridge.getLocalUrl(), url.toString(), request.getMethod(), request.isForMainFrame(), destination,
+                            replica ? "/_pm_sync/file" : "/_pm_remote/file");
+                        RemoteConnection.Media media = replica
+                            ? ((SyncVaultPlugin)bridge.getPlugin("SyncVault").getInstance()).openMedia(path, range)
+                            : ((RemoteVaultPlugin)bridge.getPlugin("RemoteVault").getInstance()).openMedia(path, range);
                         return new WebResourceResponse(media.mime, null, media.status,
                             media.status == 206 ? "Partial Content" : "OK", media.headers, media.stream);
                     } catch (Exception ignored) { return denied(); }
@@ -84,7 +88,7 @@ public class MainActivity extends BridgeActivity {
             // Attachments may be embedded as media, but must not become privileged documents.
             String path = url.getPath();
             if (path != null && (path.startsWith("/_capacitor_file_") || path.startsWith("/_capacitor_content_")
-                    || path.startsWith("/_pm_remote"))) {
+                    || path.startsWith("/_pm_remote") || path.startsWith("/_pm_sync"))) {
                 return true;
             }
             return false;
