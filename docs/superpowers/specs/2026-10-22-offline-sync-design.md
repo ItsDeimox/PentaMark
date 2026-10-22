@@ -54,7 +54,7 @@ O host recebe alterações do próprio editor, APIs normais, MCP e clientes de s
 - vaultId: UUID persistente do cofre, independente de nome, IP ou URL.
 - serverId: UUID da instalação do host. Alterar o endereço exige confirmar o mesmo vaultId/serverId antes de enviar pendências.
 - replicaId: UUID persistente da associação aparelho/cofre.
-- entryId: UUID de cada arquivo ou diretório; renomeações feitas pelo app mantêm a identidade.
+- entryId: UUID de cada arquivo ou diretório; renomeações de arquivos feitas pelo app mantêm a identidade. Na versão 1, renomear uma pasta não vazia pode criar uma nova identidade estrutural para a pasta e um tombstone condicional para a antiga: os arquivos filhos mantêm suas identidades, versões e pendências. A execução cria os destinos, move/atualiza os filhos com precondições e só remove a pasta antiga vazia. Filhos desconhecidos impedem essa remoção; nunca são apagados recursivamente. Essa exceção evita depender de uma operação recursiva de host não existente no protocolo v1; não deve ser apresentada como preservação da identidade da pasta.
 - opId: UUID por operação imutável; nunca reutilizar para outro conteúdo.
 - revision: identificador opaco emitido pelo host para um estado confirmado, incluindo caminho, conteúdo e exclusão. Não usar data/hora como critério de desempate.
 - Hashes de conteúdo: SHA-256 dos bytes reais; não normalizar quebras de linha ou texto durante a cópia.

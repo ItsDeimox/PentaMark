@@ -15,7 +15,7 @@ export function RemoteConnectionPanel() {
       <li>Informe o IP Tailscale do PC e a porta do PentaMark, normalmente 3417.</li>
     </ol>
     <p>Endereços HTTPS .ts.net precisam do Tailscale Serve configurado no PC.</p>
-    <p>O cofre local funciona offline e é separado do PC. Não há sincronização automática. Rascunhos remotos ficam no celular, vinculados ao endereço usado.</p>
+    <p>O cofre local independente continua separado do PC. Para editar uma cópia do cofre do PC sem conexão, habilite “Manter cópia offline” na aba Sincronização e escolha o modo automático ou manual. Sem essa opção, a conexão ao vivo exige o host disponível.</p>
   </>}>
     <label className="pm-field wide">Endereço ou convite<input aria-label="Endereço Tailscale do PC" value={address} onChange={e=>setAddress(e.target.value)} placeholder="100.x.x.x:3417 ou pentamark://join?…" autoCapitalize="none" autoCorrect="off" spellCheck={false}/></label>
     <div className="pm-inline-actions"><button type="button" onClick={()=>{

@@ -1,6 +1,7 @@
 import { ConfirmationProvider } from "./components/dialogs/Confirmation";
 import React from "react";
 import { initializeAndroid, isAndroidLocal, isRemoteVault, returnToAndroidLocal } from './platform/android';
+import { initializeReplica } from './platform/replica';
 import { createRoot } from "react-dom/client";
 import PentaMarkApp from "./PentaMarkApp";
 import "./base.css";
@@ -22,6 +23,7 @@ import "./features/workspace/optical-glass.css";
 import "./features/workspace/theme-controls.css";
 
 async function start() {
+await initializeReplica();
 await initializeAndroid();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

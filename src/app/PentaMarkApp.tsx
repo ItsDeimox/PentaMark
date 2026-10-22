@@ -74,6 +74,10 @@ import { parseInvitation, isInvitation, type VaultInvitation } from '../platform
 import { receiveInvitations } from '../platform/invitation-events';
 import { InvitationDialog } from '../components/dialogs/InvitationDialog';
 import { checkForUpdates, getUpdateStatus, isUpdateSupported } from '../platform/updates';
+import { isOfflineReplica, activeSyncEngine, connectSavedReplica, nativeReplicaCall, notifyReplicaChange } from '../platform/replica';
+import {normalizePath as normalizeReplicaPath} from '../features/sync/reconcile';
+import { useSyncController } from '../features/sync/useSyncController';
+import {syncStatusLabel} from '../features/sync/conflict-model';
 import type {
   Appearance,
   AssetMeta,
@@ -159,6 +163,7 @@ type InstallPromptEvent = Event & {
 };
 
 export default function PentaMarkApp() {
+  const offlineSyncStatus=useSyncController(activeSyncEngine());
   const confirmation = useConfirmation();
   const [mcpOpen, setMcpOpen] = useState(false);
   const [vault, setVault] = useState<VaultState>(EMPTY_STATE);
@@ -265,13 +270,13 @@ export default function PentaMarkApp() {
   }, []);
 
   useLayoutEffect(() => {
-    if (!isAndroidLocal || !activePath || saveState === 'saved') return;
+    if ((!isAndroidLocal && !isOfflineReplica) || !activePath || saveState === 'saved') return;
     try { androidDrafts.put(activePath, content, revision); }
     catch { notify('Sem espaço para proteger o rascunho. Salve ou exporte suas notas antes de sair.'); }
   }, [activePath, content, revision, saveState, notify]);
 
   useEffect(() => {
-    if (!isAndroidLocal) return;
+    if (!isAndroidLocal && !isOfflineReplica) return;
     const protect = (event:Event) => {
       if (!activePath || saveState === 'saved') return;
       try {androidDrafts.put(activePath,content,revision);}
@@ -322,10 +327,14 @@ export default function PentaMarkApp() {
   const openNote = useCallback(async (path: string, force = false, recordHistory = true) => {
     if (!path || (path === activePathRef.current && !force)) return;
     loadingPath.current = path;
+    const refreshingActive = path === activePathRef.current;
+    const requestedContent = contentRef.current;
+    const requestedRevision = revisionRef.current;
     try {
       const note = await request<OpenNote>(`/api/note?path=${encodeURIComponent(path)}`);
       if (loadingPath.current !== path) return;
-      const recovered = isAndroidLocal ? androidDrafts.get(note.path) : null;
+      if (isOfflineReplica && refreshingActive && (contentRef.current !== requestedContent || revisionRef.current !== requestedRevision || saveStateRef.current !== 'saved')) return;
+      const recovered = isAndroidLocal || isOfflineReplica ? androidDrafts.get(note.path) : null;
       activePathRef.current = note.path;
       setActivePath(note.path);
       setAssetPreview(null);
@@ -337,7 +346,7 @@ export default function PentaMarkApp() {
       setSaveState(hasConflict ? 'conflict' : hasDraft ? 'dirty' : 'saved');
       setConflict(hasConflict ? { path: note.path, localContent: recovered.content, remoteContent: note.content, remoteRevision: note.revision } : null);
       setConflictOpen(Boolean(hasConflict));
-      if (isAndroidLocal) {
+      if (isAndroidLocal || isOfflineReplica) {
         localStorage.setItem(androidLastNoteKey, note.path);
         if (recovered && !hasDraft) androidDrafts.remove(note.path);
         if (hasDraft) notify('Rascunho recuperado do aparelho');
@@ -485,7 +494,7 @@ export default function PentaMarkApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: savedContent, baseRevision: savedRevision, clientId }),
       });
-      if (isAndroidLocal) androidDrafts.saved(savedPath, savedContent, result.revision);
+      if (isAndroidLocal || isOfflineReplica) androidDrafts.saved(savedPath, savedContent, result.revision);
       if (activePathRef.current === savedPath) {
         revisionRef.current = result.revision;
         setRevision(result.revision);
@@ -515,7 +524,7 @@ export default function PentaMarkApp() {
   }, [clientId, notify, refreshState]);
 
   useEffect(() => {
-    if (!isAndroidLocal) return;
+    if (!isAndroidLocal && !isOfflineReplica) return;
     const flush = () => { void saveNow(); };
     const busy = (event: Event) => flushSync(() => setStorageBusy(Boolean((event as CustomEvent).detail)));
     const draftSaved = (event: Event) => {
@@ -625,6 +634,7 @@ export default function PentaMarkApp() {
 
   const connectInvitation = useCallback(async(address:string)=>{
     await prepareToLeave();
+    if(connectSavedReplica(address))return;
     if(isAndroidLocal){connectAndroidPc(address);return;}
     const target=normalizeConnectionAddress(address);
     target.searchParams.set('device',deviceName.trim().slice(0,60)||defaultDeviceName());
@@ -639,6 +649,7 @@ export default function PentaMarkApp() {
     try {
       const target = normalizeConnectionAddress(connectionAddress);
       await prepareToLeave();
+      if(connectSavedReplica(target.origin))return;
       const cleanName = deviceName.trim().slice(0, 60) || defaultDeviceName();
       localStorage.setItem("pentamark:device-name", cleanName);
       target.searchParams.set("device", cleanName);
@@ -657,7 +668,7 @@ export default function PentaMarkApp() {
   }, [notify]);
 
   useEffect(() => {
-    if (saveState !== "dirty" || !activePath || (isRemoteVault && !remoteOnline)) return;
+    if (saveState !== "dirty" || !activePath || (isRemoteVault && !isOfflineReplica && !remoteOnline)) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => void saveNow(), 700);
     return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
@@ -1072,6 +1083,7 @@ export default function PentaMarkApp() {
 
   const uploadFiles = useCallback(async (files: FileList | File[]) => {
     if (!files.length) return;
+    if(isOfflineReplica){notify('Use Anexar arquivo offline em Ferramentas para selecionar o arquivo no aparelho.');return;}
     if (!canEditActive) { notify(`${activeLock?.name || "Outro usuário"} está editando este arquivo`); return; }
     setUploading(true);
     try {
@@ -1090,6 +1102,27 @@ export default function PentaMarkApp() {
     } catch (error) { notify(error instanceof Error ? error.message : "Upload falhou"); }
     finally { setUploading(false); }
   }, [activeLock?.name, canEditActive, notify]);
+
+  const importOfflineAttachment=useCallback(async(path:string)=>{
+    if(!isOfflineReplica||!canEditActive)return;
+    const checked=normalizeReplicaPath(path);
+    if(!checked.ok){notify('Informe um caminho relativo válido para o anexo.');return;}
+    const targetNote=activePathRef.current;
+    setUploading(true);
+    try{
+      const imported=await nativeReplicaCall<{cancelled?:boolean;path?:string}>('importDocument',{path:checked.path});
+      if(imported.cancelled)return;
+      if(imported.path!==checked.path)throw new Error('O arquivo importado não corresponde ao destino solicitado.');
+      notifyReplicaChange();
+      if(activePathRef.current===targetNote){
+        const link=imported.path.split('/').map(encodeURIComponent).join('/');
+        const next=contentRef.current+'\n\n[Anexo](<'+link+'>)\n';
+        contentRef.current=next;setContent(next);setSaveState('dirty');
+      }
+      notify('Anexo salvo na cópia local.');
+    }catch(error){notify(error instanceof Error?error.message:'Não foi possível importar o anexo.');}
+    finally{setUploading(false);}
+  },[canEditActive,notify]);
 
   const openContext = useCallback((event: React.MouseEvent, menu: ContextMenu) => {
     event.preventDefault();
@@ -1403,7 +1436,7 @@ export default function PentaMarkApp() {
           onPreview={() => setViewMode("preview")}
           onNewNote={() => { setMobileSidebar(true); beginDraft("note", parentOf(activePath)); }}
         />
-        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />{isRemoteVault ? (remoteOnline ? (saveState === 'saved' ? 'Salvo no PC' : 'Rascunho para o PC') : 'PC desconectado · rascunho protegido') : isAndroidLocal ? (saveState === 'saved' ? 'Salvo no aparelho' : 'Alterações locais') : 'Sincronizado'}</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
+        <footer className="pm-statusbar"><span className="online"><Wifi size={10} />{isOfflineReplica ? (saveState==='saved' ? `Salvo neste aparelho · ${syncStatusLabel(offlineSyncStatus||undefined)}` : 'Alterações locais · salvamento pendente') : isRemoteVault ? (remoteOnline ? (saveState === 'saved' ? 'Salvo no PC' : 'Rascunho para o PC') : 'PC desconectado · rascunho protegido') : isAndroidLocal ? (saveState === 'saved' ? 'Salvo no aparelho' : 'Alterações locais') : 'Sincronizado'}</span><span>Markdown</span><span>UTF-8</span><span className="pm-status-spacer" /><span>PentaMark {APP_VERSION}</span></footer>
       </section>
 
       <QuickOpen open={quickOpen} loading={!vaultReady} query={query} onQuery={setQuery} inputRef={searchRef} notes={vault.notes} assets={vault.assets}
@@ -1412,7 +1445,7 @@ export default function PentaMarkApp() {
         graphics={appearance.graphicsMode || "flat"} onGraphics={mode => setAppearance(current => {
           const next = applyGraphicsPreset(current,mode === 'flat' ? 'economical' : 'quality'); localStorage.setItem("pentamark:appearance", JSON.stringify(next)); return next;
         })}
-        canEdit={canEditActive && !assetPreview && viewMode !== "preview"} onFormat={applyFormat} onUpload={files => void uploadFiles(files)}
+        canEdit={canEditActive && !assetPreview && viewMode !== "preview"} onFormat={applyFormat} onUpload={files => void uploadFiles(files)} onNativeImport={isOfflineReplica?importOfflineAttachment:undefined}
         editorSize={appearance.editorSize} onZoom={direction => setAppearance(current => ({ ...current, editorSize: Math.max(11, Math.min(32, current.editorSize + direction)) }))}
         syncScroll={syncScroll} onSync={() => setSyncScroll(value => !value)}
         hasNote={!!activePath} canBack={noteHistory.current.index > 0} canForward={noteHistory.current.index < noteHistory.current.paths.length - 1}

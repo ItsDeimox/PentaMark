@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react';
+import { useRef, useState, type ComponentType } from 'react';
 import { ArrowLeft, ArrowRight, ArrowRightLeft, Check, ChevronDown, Code2, Columns2, CopyPlus, ExternalLink,
   Eye, FilePlus2, FolderOpen, ImagePlus, LogIn, Pencil, Settings, Share2, Smartphone, Sparkles, Trash2,
   Bot, UserCircle, Users, ZoomIn, ZoomOut, Square, Layers } from 'lucide-react';
@@ -12,6 +12,7 @@ export function ToolsPanel(p: {
   open: boolean; onClose: () => void; mode: ViewMode; onMode: (mode: ViewMode) => void;
   graphics: GraphicsMode; onGraphics: (mode: GraphicsMode) => void;
   onFormat: (kind: FormatKind) => void; onUpload: (files: FileList) => void; canEdit: boolean;
+  onNativeImport?: (path:string)=>Promise<void>;
   onZoom: (direction: number) => void; editorSize: number; syncScroll: boolean; onSync: () => void;
   hasNote: boolean; canBack: boolean; canForward: boolean; onBack: () => void; onForward: () => void;
   onNew: () => void; onRename: () => void; onDuplicate: () => void; onDelete: () => void;
@@ -21,6 +22,14 @@ export function ToolsPanel(p: {
 }) {
   const [fileActions, setFileActions] = useState(false);
   const [formats, setFormats] = useState(false);
+  const [attachmentPath,setAttachmentPath]=useState('assets/anexo.bin');
+  const [importing,setImporting]=useState(false);
+  const importBusy=useRef(false);
+  const importNative=async()=>{
+    if(importBusy.current||!p.onNativeImport)return;
+    importBusy.current=true;setImporting(true);
+    try{await p.onNativeImport(attachmentPath);}finally{importBusy.current=false;setImporting(false);}
+  };
   const modes: Array<{ id: ViewMode; label: string; name: string; icon: Action['icon'] }> = [
     { id:'live', label:'Live', name:'Live Preview', icon:Sparkles },
     { id:'edit', label:'Código', name:'Editor Markdown', icon:Code2 },
@@ -48,8 +57,9 @@ export function ToolsPanel(p: {
       <div className="pm-tools-format" role="toolbar" aria-label="Formatação" onMouseDown={e=>e.preventDefault()}>
         {FORMAT_ACTIONS.slice(0, formats?FORMAT_ACTIONS.length:5).map(({kind,label,shortcut,icon:Icon})=><button key={kind} disabled={!p.canEdit} aria-label={label} data-tooltip={label} data-shortcut={shortcut} onClick={()=>p.onFormat(kind)}><Icon size={16}/></button>)}
         <button aria-label="Todos os formatos" data-tooltip="Mais formatos" aria-expanded={formats} onClick={()=>setFormats(v=>!v)}><ChevronDown size={15}/></button>
-        <label data-tooltip="Anexar arquivos"><ImagePlus size={16}/><input aria-label="Anexar arquivos" type="file" multiple disabled={!p.canEdit} onChange={e=>{if(e.target.files)p.onUpload(e.target.files);e.target.value='';}}/></label>
+        {!p.onNativeImport&&<label data-tooltip="Anexar arquivos"><ImagePlus size={16}/><input aria-label="Anexar arquivos" type="file" multiple disabled={!p.canEdit} onChange={e=>{if(e.target.files)p.onUpload(e.target.files);e.target.value='';}}/></label>}
       </div>
+      {p.onNativeImport&&<div className="pm-field"><label>Caminho do anexo offline<input value={attachmentPath} disabled={importing} onChange={e=>setAttachmentPath(e.target.value)}/></label><small>Escolha o nome e a extensão no cofre. Depois selecione o arquivo no aparelho. Arquivos existentes não serão substituídos.</small><button type="button" disabled={!p.canEdit||importing||!attachmentPath.trim()} onClick={()=>void importNative()}>Anexar arquivo offline</button></div>}
       <div className="pm-tool-zoom"><span>Texto</span><button aria-label="Diminuir zoom do editor" data-tooltip="Diminuir zoom" onClick={()=>p.onZoom(-1)}><ZoomOut size={15}/></button><output>{p.editorSize}px</output><button aria-label="Aumentar zoom do editor" data-tooltip="Aumentar zoom" onClick={()=>p.onZoom(1)}><ZoomIn size={15}/></button><button aria-label="Sincronizar rolagem" data-tooltip="Sincronizar rolagem" aria-pressed={p.syncScroll} title="Sincronizar rolagem" onClick={p.onSync}><ArrowRightLeft size={15}/></button></div>
       {!isAndroidLocal && action({label:'Mostrar no diretório',icon:ExternalLink,run:leave(p.onReveal),disabled:!p.hasNote})}
       <button className="pm-tool-action" aria-label="Mais ações" data-tooltip="Ações do arquivo" aria-expanded={fileActions} onClick={()=>setFileActions(v=>!v)}><FolderOpen size={16}/><span>Arquivo e cofre</span><ChevronDown size={14}/></button>

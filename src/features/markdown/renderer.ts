@@ -4,6 +4,7 @@ import { parse as parseYaml } from "yaml";
 import type { AssetMeta, NoteMeta, OpenNote } from "../../domain/types";
 import { request } from "../../api/client";
 import { isAndroidLocal, nativeFileUrl } from '../../platform/android';
+import { isOfflineReplica, replicaFileUrl } from '../../platform/replica';
 import { baseName, joinPath, parentOf, titleOf } from "../../shared/path";
 import { decodeSource, encodeSource, escapeAttribute, escapeCode } from "../../shared/text";
 import hljs, { CODE_LANGUAGES } from "./highlighting";
@@ -104,6 +105,7 @@ export function extensionOfLink(value: string) {
 
 export function vaultFileUrl(value: string, activePath: string) {
   const { path, fragment } = splitLinkTarget(value);
+  if (isOfflineReplica) return replicaFileUrl(decodedLink(path),activePath,fragment);
   if (isAndroidLocal) return nativeFileUrl(decodedLink(path), activePath, fragment);
   const query = new URLSearchParams({ path: decodedLink(path), note: activePath });
   return `/api/file?${query.toString()}${fragment.startsWith("#") ? fragment : ""}`;
@@ -120,6 +122,7 @@ export function wikiLinkHtml(embed: boolean, body: string, context: MarkdownCont
   const notePath = resolveNotePath(target, context);
   const folderPath = resolveFolderPath(target, context);
   const label = escapeCode(option || titleOf(splitLinkTarget(target).path) || target);
+  if(isOfflineReplica && extension && !notePath && !fileUrl)return `<span class="pm-notice" data-pm-original="${originalAttribute}">${label} — indisponível offline</span>`;
 
   if (embed && IMAGE_EXTENSIONS.has(extension)) {
     const size = /^(\d+)(?:x(\d+))?$/.exec(option);
@@ -152,6 +155,7 @@ export function markdownLinkHtml(image: boolean, label: string, target: string, 
   const extension = extensionOfLink(target);
   const fileUrl = escapeAttribute(vaultFileUrl(target, context.activePath));
   const originalAttribute = escapeAttribute(encodeSource(original));
+  if(isOfflineReplica && !fileUrl && extension!=='md')return `<span class="pm-notice" data-pm-original="${originalAttribute}">${escapeCode(label)} — indisponível offline</span>`;
   if (image) return `<img class="pm-embed-image" src="${fileUrl}" alt="${escapeAttribute(label)}" data-pm-target="${escapeAttribute(splitLinkTarget(target).path)}" data-pm-original="${originalAttribute}" contenteditable="false">`;
   const notePath = extension === "md" ? resolveNotePath(target, context) : "";
   const folderPath = !extension ? resolveFolderPath(target, context) : "";

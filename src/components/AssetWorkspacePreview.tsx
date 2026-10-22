@@ -5,6 +5,7 @@ import { ImageWorkspacePreview } from "./ImageWorkspacePreview";
 
 export function AssetWorkspacePreview(props: { asset: AssetMeta; activeNote: string; onClose: () => void; onReveal: () => void }) {
   const source = vaultFileUrl(props.asset.path, props.activeNote);
+  if(!source)return <section className="pm-asset-workspace"><p role="status">{props.asset.title} — indisponível offline. Conclua a cópia deste arquivo antes de abri-lo.</p><button onClick={props.onClose}>Fechar</button></section>;
   if (props.asset.kind === "image") return <ImageWorkspacePreview key={source} source={source} title={props.asset.title} onClose={props.onClose} onReveal={props.onReveal} />;
   return <section className="pm-asset-workspace">
     <header><div><strong>{props.asset.title}</strong><code>{props.asset.path}</code></div><span><button onClick={props.onReveal}><ExternalLink size={14} />Explorer</button><button onClick={props.onClose}><X size={16} />Fechar</button></span></header>

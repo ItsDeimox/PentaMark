@@ -1,4 +1,5 @@
 import type { ReplicaProfile } from '../features/sync/contracts';
+import type {ReplicaPort} from '../features/sync/contracts';
 import { normalizePcOrigin, draftPrefix } from './remote-profile';
 
 type StoragePort = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'length' | 'key'>;
@@ -22,6 +23,12 @@ export function saveReplicaProfile(storage: StoragePort, value: ReplicaProfile) 
   if (old && (old.vaultId !== p.vaultId || old.serverId !== p.serverId || old.origin !== p.origin)) throw new Error('replica-identity-mismatch');
   storage.setItem(PROFILE_PREFIX+p.replicaId,JSON.stringify(p));
 }
+/** Called only with the profile returned by native rebind after its live identity check. */
+export function saveVerifiedRebind(storage:StoragePort,value:ReplicaProfile,verified:Pick<ReplicaProfile,'vaultId'|'serverId'>) {
+  const p=validate(value),old=readReplicaProfile(storage,p.replicaId);
+  if(!old || old.vaultId!==p.vaultId || old.serverId!==p.serverId || verified.vaultId!==p.vaultId || verified.serverId!==p.serverId)throw new Error('replica-identity-mismatch');
+  storage.setItem(PROFILE_PREFIX+p.replicaId,JSON.stringify(p));
+}
 export function listReplicaProfiles(storage: StoragePort): ReplicaProfile[] {
   const profiles: ReplicaProfile[]=[];
   for (let i=0;i<storage.length;i++) { const key=storage.key(i);if(key?.startsWith(PROFILE_PREFIX)){const p=readReplicaProfile(storage,key.slice(PROFILE_PREFIX.length));if(p)profiles.push(p);} }
@@ -37,6 +44,26 @@ export function readActiveReplica(storage: StoragePort): ReplicaProfile | null {
 /** Disconnecting never deletes a profile, local objects, pending operations or conflicts. */
 export function clearActiveReplica(storage: StoragePort) { storage.removeItem(ACTIVE); }
 export function replicaDraftPrefix(p: ReplicaProfile) { return `pentamark:sync:${p.vaultId}:${p.replicaId}:draft:`; }
+/** Flush protected drafts to this captured local replica, never to its remote host.
+ * A changing draft blocks structural operations instead of removing newer text. */
+export async function flushReplicaDrafts(storage:StoragePort,profile:ReplicaProfile,path:string,request:ReplicaPort['request']) {
+  const prefix=replicaDraftPrefix(profile),saved:Array<{path:string;content:string;revision:string}>=[];
+  const matching=()=>Array.from({length:storage.length},(_,i)=>storage.key(i)).filter((key):key is string=>Boolean(key?.startsWith(prefix)&&(key.slice(prefix.length)===path||key.slice(prefix.length).startsWith(path+'/'))));
+  for(const key of matching()){
+    const raw=storage.getItem(key);if(raw===null)continue;
+    let draft:{content:string;revision:string};
+    try{draft=JSON.parse(raw);if(typeof draft.content!=='string'||typeof draft.revision!=='string')throw Error();}catch{throw new Error('invalid-protected-draft');}
+    const notePath=key.slice(prefix.length),url='/api/note?path='+encodeURIComponent(notePath);
+    const current=await request(url,'GET');
+    if(current.status!==200)throw new Error('protected-draft-unavailable');
+    const result=current.data.content===draft.content?current:await request(url,'PUT',{content:draft.content,baseRevision:draft.revision});
+    if(result.status>=400||typeof result.data.revision!=='string')throw new Error('protected-draft-not-saved');
+    if(storage.getItem(key)!==raw)throw new Error('protected-draft-changed');
+    storage.removeItem(key);saved.push({path:notePath,content:draft.content,revision:result.data.revision});
+  }
+  if(matching().length)throw new Error('protected-draft-changed');
+  return saved;
+}
 export interface DraftImport {
   migrationId: string; vaultId: string; serverId: string; origin: string;
   path: string; content: string; legacyRevision: string;

@@ -8,6 +8,8 @@ import { exportAndroidVault, importAndroidDocuments, isAndroidLocal, isRemoteVau
 import { RemoteConnectionPanel } from './RemoteConnectionPanel';
 import { GraphicsSettings } from '../../features/workspace/GraphicsSettings';
 import { UpdateSettings } from './UpdateSettings';
+import {ReplicaSettingsPanel} from '../../features/sync/ReplicaSettingsPanel';
+import {isOfflineReplica,supportsOfflineReplica} from '../../platform/replica';
 
 const THEMES = [
   { id:'pentagory', name:'PentaMark', color:'#79d2dc' },
@@ -22,6 +24,7 @@ const TABS = [
   { id:'type', label:'Tipografia', icon:Type },
   { id:'vault', label:'Cofre e host', icon:FolderOpen },
   { id:'connection', label:'Conectar ao PC', icon:ExternalLink },
+  { id:'sync', label:'Sincronização', icon:Layers },
   { id:'mcp', label:'MCP', icon:Bot },
   { id:'updates', label:'Atualizações', icon:Download },
 ] as const;
@@ -38,7 +41,7 @@ export function SettingsModal(p: {
   const [tab, setTab] = useState<string>(p.initialTab || 'appearance');
   const [saving, setSaving] = useState(false), [error, setError] = useState('');
   const [transferring, setTransferring] = useState(false);
-  const tabs = TABS.filter(item => isAndroidLocal ? item.id !== 'mcp' : item.id !== 'connection');
+  const tabs = TABS.filter(item => (isAndroidLocal ? item.id !== 'mcp' : item.id !== 'connection') && (item.id!=='sync'||supportsOfflineReplica));
   const transfer = async (mode: 'import' | 'export') => {
     if (transferring) return;
     setTransferring(true); setError('');
@@ -95,7 +98,7 @@ export function SettingsModal(p: {
           <p className="pm-notice">Para acessar outro cofre sem misturar seus arquivos, use a aba Conectar ao PC.</p>
         </DialogSection> : <>
         <DialogSection title="Diretório do cofre">
-          {p.desktopVault ? <div className="pm-vault-location"><FolderOpen size={21}/><div><strong>{p.desktopVault.name}</strong><code>{p.desktopVault.path}</code></div><div className="pm-inline-actions"><button type="button" onClick={p.onShowVault}><ExternalLink size={14}/>Mostrar diretório</button><button type="button" onClick={p.onChooseVault}>Abrir outro cofre</button></div></div>
+          {isOfflineReplica ? <p className="pm-notice">Você está na cópia offline. Use Sincronização para exportar ou trocar de cópia; o diretório do host não é o destino destas edições.</p> : p.desktopVault ? <div className="pm-vault-location"><FolderOpen size={21}/><div><strong>{p.desktopVault.name}</strong><code>{p.desktopVault.path}</code></div><div className="pm-inline-actions"><button type="button" onClick={p.onShowVault}><ExternalLink size={14}/>Mostrar diretório</button><button type="button" onClick={p.onChooseVault}>Abrir outro cofre</button></div></div>
             : <div className="pm-notice"><FolderOpen size={17}/><span>A troca de diretório está disponível no aplicativo Desktop do host.</span></div>}
         </DialogSection>
         <DialogSection title="Host local" hint="As opções de rede e inicialização podem exigir reiniciar o host.">
@@ -109,6 +112,7 @@ export function SettingsModal(p: {
         </>}
       </>}
       {tab==='connection' && isAndroidLocal && <RemoteConnectionPanel/>}
+      {tab==='sync' && <ReplicaSettingsPanel beforeSwitch={p.beforeInstall}/>}
       {tab==='mcp' && !isAndroidLocal && <McpSettings draft={draft} saved={p.config} onChange={config} urls={p.urls} onNotify={p.onNotify}/>}
       {tab==='updates' && <UpdateSettings beforeInstall={async()=>{if(JSON.stringify(draft)!==JSON.stringify(baseline))throw new Error('Salve as configurações antes de instalar a atualização.');await p.beforeInstall();}}/>}
     </div>

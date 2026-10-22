@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 const dir = await mkdtemp(join(tmpdir(), 'pm-sync-migration-'));
 after(() => rm(dir, { recursive: true, force: true }));
 await build({entryPoints:['src/platform/replica-profile.ts'],outfile:join(dir,'profile.mjs'),bundle:true,format:'esm',platform:'node'});
-const {saveReplicaProfile,readActiveReplica,activateReplica,clearActiveReplica,migrateProtectedDrafts,replicaDraftPrefix} = await import(pathToFileURL(join(dir,'profile.mjs')).href);
+const {saveReplicaProfile,readActiveReplica,activateReplica,clearActiveReplica,migrateProtectedDrafts,replicaDraftPrefix,flushReplicaDrafts} = await import(pathToFileURL(join(dir,'profile.mjs')).href);
 const profile = {vaultId:'11111111-1111-4111-8111-111111111111',serverId:'22222222-2222-4222-8222-222222222222',replicaId:'33333333-3333-4333-8333-333333333333',origin:'http://100.100.1.2:3417',offlineEnabled:true,mode:'manual'};
 function storage(){const map=new Map();return{get length(){return map.size;},key:i=>[...map.keys()][i]??null,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)};}
 test('persisted replica opens by identity without network and returned context cannot mutate storage',()=>{
@@ -49,4 +49,17 @@ test('new draft written while native import runs is never removed',async()=>{
  s.setItem(key,JSON.stringify({content:'A',revision:'old'}));
  await migrateProtectedDrafts(s,profile,profile,async input=>{s.setItem(key,JSON.stringify({content:'B',revision:'old'}));return{durable:true,migrationId:input.migrationId};});
  assert.equal(JSON.parse(s.getItem(key)).content,'B');
+});
+test('structural mutations flush only matching replica drafts locally before proceeding',async()=>{
+ const s=storage(),prefix=replicaDraftPrefix(profile);s.setItem(prefix+'folder/a.md',JSON.stringify({content:'pending',revision:'base'}));s.setItem(prefix+'other.md',JSON.stringify({content:'other',revision:'old'}));
+ const calls=[];const saved=await flushReplicaDrafts(s,profile,'folder',async(url,method,body)=>{calls.push({url,method,body});return{status:200,data:method==='GET'?{content:'base',revision:'base'}:{revision:'new'}};});
+ assert.deepEqual(calls.map(c=>c.method),['GET','PUT']);assert.equal(calls[1].body.baseRevision,'base');assert.equal(s.getItem(prefix+'folder/a.md'),null);assert(s.getItem(prefix+'other.md'));assert.equal(saved[0].content,'pending');
+});
+test('failed local draft flush blocks structural mutation and preserves original text',async()=>{
+ const s=storage(),key=replicaDraftPrefix(profile)+'a.md',raw=JSON.stringify({content:'mine',revision:'old'});s.setItem(key,raw);
+ await assert.rejects(flushReplicaDrafts(s,profile,'a.md',async()=>({status:409,data:{error:'stale'}})),/draft/);assert.equal(s.getItem(key),raw);
+});
+test('new draft during local flush is preserved and blocks rename/delete',async()=>{
+ const s=storage(),key=replicaDraftPrefix(profile)+'a.md';s.setItem(key,JSON.stringify({content:'A',revision:'old'}));
+ await assert.rejects(flushReplicaDrafts(s,profile,'a.md',async(_url,method)=>{if(method==='PUT')s.setItem(key,JSON.stringify({content:'B',revision:'old'}));return{status:200,data:{content:'old',revision:'new'}};}),/draft-changed/);assert.equal(JSON.parse(s.getItem(key)).content,'B');
 });

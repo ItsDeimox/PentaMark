@@ -1,6 +1,8 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { DraftStore, resolveLocalFile } from './local-files';
 import { draftPrefix, normalizePcOrigin, readRemoteProfile, REMOTE_PROFILE_KEY } from './remote-profile';
+import { isOfflineReplica, offlineProfile, replicaVaultEvents, connectSavedReplica } from './replica';
+import { clearActiveReplica, replicaDraftPrefix } from './replica-profile';
 
 type NativeResponse = { status: number; data: Record<string, unknown> };
 interface LocalVaultPlugin {
@@ -23,9 +25,9 @@ const remote = registerPlugin<RemoteVaultPlugin>('RemoteVault');
 export const isAndroidLocal = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 // Immutable for this page lifetime: switching vaults reloads the bundled UI.
 // In-flight saves can never change their destination under the editor.
-export const remoteOrigin = isAndroidLocal ? readRemoteProfile(localStorage)?.origin || '' : '';
+export const remoteOrigin = offlineProfile?.origin || (isAndroidLocal ? readRemoteProfile(localStorage)?.origin || '' : '');
 export const isRemoteVault = Boolean(remoteOrigin);
-export const androidDrafts = new DraftStore(localStorage, draftPrefix(remoteOrigin));
+export const androidDrafts = new DraftStore(localStorage, offlineProfile ? replicaDraftPrefix(offlineProfile) : draftPrefix(remoteOrigin));
 export const androidLastNoteKey = remoteOrigin ? `pentamark:android:remote:${encodeURIComponent(remoteOrigin)}:last-note` : 'pentamark:android:last-note';
 const events = new EventTarget();
 let root = '';
@@ -33,6 +35,7 @@ let files: string[] = [];
 
 export async function initializeAndroid() {
   if (!isAndroidLocal) return;
+  if(isOfflineReplica){document.documentElement.dataset.platform='android';return;}
   root = (await plugin.info()).root;
   if (!root.startsWith('/')) throw new Error('O Android não retornou um diretório de arquivos válido.');
   document.documentElement.dataset.platform = 'android';
@@ -52,12 +55,15 @@ export async function initializeAndroid() {
 
 export function connectAndroidPc(value: string) {
   const origin = normalizePcOrigin(value);
+  if(connectSavedReplica(origin))return;
   if (!document.dispatchEvent(new Event('pentamark:before-vault-switch',{cancelable:true}))) return;
+  clearActiveReplica(localStorage);
   localStorage.setItem(REMOTE_PROFILE_KEY, JSON.stringify({origin}));
   location.reload();
 }
 export function returnToAndroidLocal() {
   if (!document.dispatchEvent(new Event('pentamark:before-vault-switch',{cancelable:true}))) return;
+  clearActiveReplica(localStorage);
   localStorage.removeItem(REMOTE_PROFILE_KEY);
   location.reload();
 }
@@ -129,6 +135,7 @@ async function performNativeRequest(url: string, method: string, init?: RequestI
 }
 
 export function vaultEvents(url: string): Pick<EventSource, 'addEventListener' | 'close'> {
+  if(isOfflineReplica)return replicaVaultEvents();
   if (!isAndroidLocal) return new EventSource(url);
   if (isRemoteVault) return remoteEvents(url);
   const controller = new AbortController();
