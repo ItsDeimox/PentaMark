@@ -88,6 +88,13 @@ jobs:
           signer=$(find "$ANDROID_HOME/build-tools" -path '*/lib/apksigner.jar' | sort -V | tail -n 1)
           test -n "$signer"
           cp "$signer" offline-android/apksigner.jar
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          test -n "$aapt"
+          "$aapt" dump badging offline-android/app-release-unsigned.apk > offline-android/apk-metadata.txt
+          version=$(node -p "require('./package.json').version")
+          code=$(node -p "const [a,b,c]=require('./package.json').version.split('.').map(Number);a*10000+b*100+c")
+          head -n 1 offline-android/apk-metadata.txt | grep -F "versionName='$version'"
+          head -n 1 offline-android/apk-metadata.txt | grep -F "versionCode='$code'"
           git rev-parse HEAD > offline-android/source-commit.txt
           (cd offline-android && sha256sum *.apk *.jar > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4

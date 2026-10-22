@@ -44,6 +44,11 @@ export const activeVaultContext=()=>context;
 export const replicaStatus=()=>currentStatus;
 export const replicaPort=():ReplicaPort|null=>context.kind==='offline-replica'?context.replica:null;
 export const activeSyncEngine=()=>engine;
+export async function exportReplicaRecovery():Promise<{cancelled:boolean}> {
+  if(!selected)throw new Error('replica-not-selected');
+  // Native validates the exact failed-open profile and never opens/migrates it.
+  return nativeCaller(selected)<{cancelled:boolean}>('exportRecovery',{profile:selected});
+}
 
 export function bindNativeReplica(profile:ReplicaProfile,call:NativeCall):{replica:ReplicaPort;remote:RemotePort} {
   const replica:ReplicaPort={

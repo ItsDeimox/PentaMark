@@ -9,6 +9,8 @@ async function offlineBridge(page,platform) {
   const meta=path=>({path,title:path.slice(0,-3),size:20,modified:1});
   const handler=async(method,args={})=>{
    if(['handshake','remoteSnapshot','changes','apply','downloadBlob','uploadBlob'].includes(method)){localStorage.setItem('test:network-called',method);throw Error('host offline');}
+   if(method==='open'&&localStorage.getItem('test:future-schema'))throw Error('unsupported-schema');
+   if(method==='exportRecovery'){localStorage.setItem('test:recovery-profile',JSON.stringify(args.profile));return{cancelled:localStorage.getItem('test:cancel-recovery')==='1'};}
    if(method==='open'||method==='configure')return status;
    if(method==='snapshot')return{profile:p,status,cursor:'epoch:1',epoch:'epoch',initialCopy:null,entries:[],conflicts:[],preparedOperations:[]};
    if(method==='preparePending')return{operations:[]};
@@ -31,7 +33,7 @@ async function offlineBridge(page,platform) {
   };
   if(platform==='android'){
    localStorage.setItem('pentamark:android:remote-profile',JSON.stringify({origin:p.origin}));window.androidBridge={};
-   window.Capacitor={PluginHeaders:['SyncVault','LocalVault','RemoteVault'].map(name=>({name,methods:['open','configure','request','snapshot','preparePending','handshake','remoteSnapshot','changes','apply','downloadBlob','uploadBlob','importDocument','exportReplica','info','disconnect','startEvents','stopEvents'].map(name=>({name,rtype:'promise'})).concat({name:'addListener',rtype:'callback'})})),nativeCallback:()=> 'listener',nativePromise:async(plugin,method,args)=>{
+   window.Capacitor={PluginHeaders:['SyncVault','LocalVault','RemoteVault'].map(name=>({name,methods:['open','configure','request','snapshot','preparePending','handshake','remoteSnapshot','changes','apply','downloadBlob','uploadBlob','importDocument','exportReplica','exportRecovery','info','disconnect','startEvents','stopEvents'].map(name=>({name,rtype:'promise'})).concat({name:'addListener',rtype:'callback'})})),nativeCallback:()=> 'listener',nativePromise:async(plugin,method,args)=>{
     if(plugin==='SyncVault')return handler(method,args);
     if(plugin==='RemoteVault'){if(method==='disconnect'){localStorage.setItem('test:legacy-disconnected','1');return{};}localStorage.setItem('test:legacy-network','1');throw Error('host offline');}
     return method==='info'?{root:'/independent'}:{};
@@ -45,6 +47,16 @@ async function offlineBridge(page,platform) {
   }
  },{platform});
 }
+for(const platform of ['pc','android'])test(`${platform}: unknown schema blocks editing and offers native recovery without network`,async({page})=>{
+ await offlineBridge(page,platform);await page.addInitScript(()=>{localStorage.setItem('test:future-schema','1');localStorage.setItem('test:cancel-recovery','1');});await page.goto('/');
+ await expect(page.locator('.cm-content')).toHaveCount(0);
+ const recovery=page.getByRole('button',{name:'Exportar cópia para recuperação',exact:true});await recovery.click();
+ await expect(page.getByRole('status')).toContainText('cancelada');
+ await page.evaluate(()=>localStorage.removeItem('test:cancel-recovery'));await recovery.click();
+ await expect(page.getByRole('status')).toContainText('versão compatível');
+ expect(JSON.parse(await page.evaluate(()=>localStorage.getItem('test:recovery-profile'))).replicaId).toBe('33333333-3333-4333-8333-333333333333');
+ expect(await page.evaluate(()=>localStorage.getItem('test:network-called'))).toBeNull();
+});
 for(const platform of ['pc','android'])test(`${platform}: known manual replica opens, saves and reopens with host disconnected`,async({page})=>{
  await offlineBridge(page,platform);await page.goto('/');
  const editor=page.locator('.cm-content');await expect(editor).toContainText('Conteúdo local Alpha.md');

@@ -34,3 +34,7 @@ Renomear uma pasta não apaga arquivos desconhecidos encontrados no destino/host
 A desativação é bloqueada enquanto houver cópia inicial incompleta, alterações, operações preparadas ou conflitos. Exportar não elimina essas pendências nem desativa a réplica automaticamente.
 
 Os dados da réplica são arquivos de trabalho, **não cache descartável**. Limpar os dados do aplicativo, desinstalar sem backup ou perder o aparelho pode remover conteúdo ainda não enviado. Sincronização não substitui um backup independente. As proteções de recuperação são testadas contra interrupções de processo e falhas simuladas de armazenamento; não constituem garantia contra qualquer falha física ou corrupção do dispositivo.
+
+## Banco de uma versão incompatível
+
+Se uma versão antiga não reconhecer o formato da réplica, a abertura para edição é bloqueada. A tela oferece **Exportar cópia para recuperação**: uma cópia bruta dos arquivos privados, sem interpretar nem converter o banco. Ela exige uma versão compatível para recuperação; não é restauração automática. Cancelar ou falhar nessa exportação não remove os originais. Não limpe os dados nem desinstale para tentar corrigir incompatibilidade.

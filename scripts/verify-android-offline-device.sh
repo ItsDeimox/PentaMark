@@ -20,13 +20,17 @@ adb shell 'ip6tables -C OUTPUT ! -o lo -j REJECT'
 adb shell 'iptables -S OUTPUT; ip6tables -S OUTPUT' > device-evidence/network-isolation.txt
 check_result() {
   cat "$1"
-  grep -Eq 'OK \([1-9][0-9]* tests?\)' "$1"
-  ! grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|shortMsg=Process crashed' "$1"
+  node scripts/verify-instrumentation-result.mjs "$1" "${2:-}"
 }
 # Separate instrumentation process isolates legacy URL-factory state from the
 # real host test; neither process allows external network traffic in WebView.
-adb shell am instrument -w -r -e notClass com.pentagory.pentamark.SyncHostInteropTest com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/instrumentation.txt
+adb shell am instrument -w -r -e notClass com.pentagory.pentamark.SyncHostInteropTest,com.pentagory.pentamark.SyncProcessRestartTest com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/instrumentation.txt
 check_result device-evidence/instrumentation.txt
+adb shell am instrument -w -r -e class com.pentagory.pentamark.SyncProcessRestartTest#seedOfflinePending com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/process-seed.txt
+check_result device-evidence/process-seed.txt com.pentagory.pentamark.SyncProcessRestartTest#seedOfflinePending
+adb shell am force-stop com.pentagory.pentamark
+adb shell am instrument -w -r -e class com.pentagory.pentamark.SyncProcessRestartTest#verifyOfflinePending com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/process-reopen.txt
+check_result device-evidence/process-reopen.txt com.pentagory.pentamark.SyncProcessRestartTest#verifyOfflinePending
 node tests/fixtures/android-interop-host.mjs 35491 > device-evidence/interop-host.txt 2>&1 &
 fixture_pid=$!
 for attempt in $(seq 1 60); do
@@ -37,4 +41,4 @@ done
 grep -q 'INTEROP_READY' device-evidence/interop-host.txt
 adb reverse tcp:35491 tcp:35491
 adb shell am instrument -w -r -e class com.pentagory.pentamark.SyncHostInteropTest -e pmHostPort 35491 com.pentagory.pentamark.test/androidx.test.runner.AndroidJUnitRunner > device-evidence/interop.txt
-check_result device-evidence/interop.txt
+check_result device-evidence/interop.txt com.pentagory.pentamark.SyncHostInteropTest#realHostOfflineConflictPushAndNestedFolderRename
