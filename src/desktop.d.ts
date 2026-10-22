@@ -7,6 +7,21 @@ type DesktopSyncPayloads = {
   persistIncoming: import('./features/sync/contracts').IncomingBatch;
   confirm: import('./features/sync/contracts').ApplyResult;
   resolve: import('./features/sync/contracts').ConflictResolution;
+  completeCycle: { expectedCursor: string; expectedEpoch: string };
+  discover: { origin: string };
+  rebind: { origin: string };
+  history: { entryId: string };
+  readVersion: { version: import('./features/sync/contracts').EntryVersion };
+  mediaUrl: { entryId: string };
+  exportVersion: { blob: import('./features/sync/contracts').BlobRef };
+  exportReplica: Record<string, never>;
+  importDocument: { path: string };
+  handshake: { profile: import('./features/sync/contracts').ReplicaProfile };
+  remoteSnapshot: { snapshotToken?: string; cursor?: string };
+  changes: { cursor: string; limit: number };
+  apply: { operations: import('./features/sync/contracts').Operation[] };
+  downloadBlob: { blob: import('./features/sync/contracts').BlobRef; offset: number };
+  uploadBlob: { blob: import('./features/sync/contracts').BlobRef; offset: number };
 };
 type DesktopSyncCommand = { [M in keyof DesktopSyncPayloads]: {
   requestId: string; replicaId: string; method: M; payload: DesktopSyncPayloads[M];

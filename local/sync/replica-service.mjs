@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, basename, extname } from 'node:path';
 import { openDatabase, transaction, acquireWriter } from './database.mjs';
 import { createObjectStore } from './objects.mjs';
 import { applyFileIntent, matches, verifyFileIntent, directoryIdentity } from './file-journal.mjs';
 import { publicPath, safePath } from './paths.mjs';
-import { check, profileValue, configValue, requestValue, batchValue, resultValue, resolutionValue } from './replica-validation.mjs';
+import { scanVault } from './scan.mjs';
+import { orderReplicaFiles, finalFileEffects } from './replica-file-plan.mjs';
+import { exportReplicaDirectory } from './replica-export.mjs';
+import { check, profileValue, configValue, requestValue, batchValue, resultValue, resolutionValue, versionValue, uuid, blobValue, originValue, helloValue, cycleValue } from './replica-validation.mjs';
 
 const clone = value => structuredClone(value);
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -33,6 +38,7 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       if (v) db.prepare('INSERT OR IGNORE INTO versions(revision,entry_id,version) VALUES(?,?,?)').run(v.revision, v.entryId, JSON.stringify(v));
     }
     function commit(next, intentId) {
+      next.cycleComplete = false;
       transaction(db, () => {
         for (const e of Object.values(next.entries)) { remember(e.base); remember(e.local); }
         for (const c of Object.values(next.conflicts)) {
@@ -46,13 +52,35 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
     async function recover() {
       for (const row of db.prepare('SELECT intent FROM file_intents ORDER BY rowid').all()) {
         const intent = JSON.parse(row.intent);
-        for (const file of intent.files) await applyFileIntent({ vaultRoot: workingRoot, objects, intent: file, interrupt });
+        for (const file of intent.files) {
+          if (file.done) continue;
+          try { await applyFileIntent({ vaultRoot: workingRoot, objects, intent: file, interrupt }); }
+          catch (error) {
+            if (!intent.knownChildBatch || file.desired.kind !== 'directory' || !file.desired.deleted || !['ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error;
+            // rmdir cannot absorb children that appeared after the batch was
+            // captured. Retain the directory and expose the encountered files.
+            const current = intent.next.entries[file.before.entryId];
+            current.local = file.before; current.localHead = randomUUID();
+            const conflict = { conflictId: randomUUID(), entryId: file.before.entryId, base: current.base, local: file.before, remote: file.desired, reason: 'folder-has-new-children' };
+            intent.next.conflicts[conflict.conflictId] = conflict; file.skipped = true;
+            const observed = await scanVault(workingRoot, objects);
+            check(observed.diagnostics.length === 0, 'folder-scan-incomplete');
+            for (const v of observed) {
+              if (Object.values(intent.next.entries).some(e => e.local && !e.local.deleted && publicPath(e.local.path).pathKey === publicPath(v.path).pathKey)) continue;
+              const local = { entryId: randomUUID(), revision: randomUUID(), kind: v.kind, path: v.path, blobHash: v.blobHash, byteLength: v.byteLength, deleted: false };
+              localChange(intent.next, null, local);
+            }
+          }
+          file.done = true;
+          db.prepare('UPDATE file_intents SET intent=? WHERE intent_id=?').run(JSON.stringify(intent), intent.intentId);
+        }
         await interrupt('before-commit');
-        for (const file of intent.files) await verifyFileIntent({ vaultRoot: workingRoot, intent: file });
+        for (const file of finalFileEffects(intent.files)) await verifyFileIntent({ vaultRoot: workingRoot, intent: file });
         commit(intent.next, intent.intentId);
       }
     }
-    async function transition(next, files = []) {
+    async function transition(next, files = [], knownChildBatch = false) {
+      files = await orderReplicaFiles(workingRoot, files);
       for (const file of files) {
         if (file.desired.blobHash) await objects.verify(file.desired);
         const prior = file.before;
@@ -66,7 +94,7 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       }
       if (!files.length) { commit(next); return; }
       const intentId = randomUUID();
-      const intent = { intentId, next, files: files.map(f => ({ ...f, intentId: randomUUID() })) };
+      const intent = { intentId, next, knownChildBatch, files: files.map(f => ({ ...f, intentId: randomUUID() })) };
       db.prepare('INSERT INTO file_intents(intent_id,intent) VALUES(?,?)').run(intentId, JSON.stringify(intent));
       await interrupt('after-intent'); await recover();
     }
@@ -79,9 +107,9 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
     function status() {
       const pendingCount = Object.values(state.entries).filter(e => dirty(e) || Object.values(state.prepared).some(p => p.operation.entryId === e.local?.entryId)).length;
       const conflictCount = Object.keys(state.conflicts).length;
-      return { phase: state.errorCode ? 'blocked' : conflictCount ? 'conflicts' : !state.snapshotComplete ? 'initial-copy' : pendingCount && state.profile.mode === 'manual' ? 'waiting-manual' : 'offline', localSaved: true, pendingCount, conflictCount, snapshotComplete: state.snapshotComplete, lastSuccessfulSync: state.lastSuccessfulSync, errorCode: state.errorCode };
+      return { phase: state.errorCode ? 'blocked' : conflictCount ? 'conflicts' : !state.snapshotComplete ? 'initial-copy' : pendingCount ? state.profile.mode === 'manual' ? 'waiting-manual' : 'offline' : state.profile.offlineEnabled && state.cycleComplete && state.lastSuccessfulSync ? 'idle' : 'offline', localSaved: true, pendingCount, conflictCount, snapshotComplete: state.snapshotComplete, lastSuccessfulSync: state.lastSuccessfulSync, errorCode: state.errorCode };
     }
-    function snapshot() { return clone({ profile: state.profile, cursor: state.cursor, epoch: state.epoch, initialCopy: state.initialCopy, status: status(), conflicts: Object.values(state.conflicts), entries: Object.values(state.entries) }); }
+    function snapshot() { return clone({ profile: state.profile, cursor: state.cursor, epoch: state.epoch, initialCopy: state.initialCopy, status: status(), conflicts: Object.values(state.conflicts), entries: Object.values(state.entries), preparedOperations: Object.values(state.prepared).map(p => p.operation) }); }
     function localChange(next, before, desired, base = undefined) {
       const previous = next.entries[desired.entryId];
       next.entries[desired.entryId] = { base: base === undefined ? previous?.base ?? null : base, local: desired, localHead: randomUUID() };
@@ -98,6 +126,26 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       }
     }
     function find(path) { const key = publicPath(path).pathKey; return Object.values(state.entries).find(e => e.local && !e.local.deleted && publicPath(e.local.path).pathKey === key); }
+    async function folderBatch(before, destination) {
+      const next = clone(state), files = [];
+      const children = Object.values(state.entries).map(e => e.local).filter(v => v && !v.deleted && (v.entryId === before.entryId || v.path.startsWith(before.path + '/')));
+      const dirs = children.filter(v => v.kind === 'directory').sort((a, b) => a.path.length - b.path.length);
+      if (destination) {
+        check(publicPath(destination).pathKey !== publicPath(before.path).pathKey && !destination.startsWith(before.path + '/'), 'invalid-folder-destination');
+        check(!find(destination), 'path-collision');
+        parents(next, destination, files);
+        for (const directory of dirs) {
+          const desired = { ...directory, entryId: randomUUID(), revision: randomUUID(), path: destination + directory.path.slice(before.path.length) };
+          files.push(localChange(next, null, desired));
+        }
+      }
+      for (const child of children.filter(v => v.kind !== 'directory')) {
+        const desired = { ...child, revision: randomUUID(), ...(destination ? { path: destination + child.path.slice(before.path.length) } : { deleted: true, blobHash: null, byteLength: 0 }) };
+        files.push(localChange(next, child, desired));
+      }
+      for (const directory of dirs.reverse()) files.push(localChange(next, directory, { ...directory, revision: randomUUID(), deleted: true }));
+      await transition(next, files, true);
+    }
     async function request(url, method, body) {
       const u = requestValue(url, method, body); const route = u.pathname;
       if (route === '/api/presence' && method === 'POST') return { status: 200, data: { ok: true, lock: null } };
@@ -138,8 +186,10 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       }
       if (method === 'PATCH') desired.path = publicPath(body?.newPath).path;
       if (desired.deleted || kind === 'directory') { desired.blobHash = null; desired.byteLength = 0; }
-      // Folder children require an explicit durable decomposition; fail closed for now.
-      if (kind === 'directory' && ['PATCH', 'DELETE'].includes(method)) check(!Object.values(state.entries).some(x => x.local && !x.local.deleted && x.local.path.startsWith(path + '/')), 'folder-not-empty');
+      if (kind === 'directory' && ['PATCH', 'DELETE'].includes(method)) {
+        await folderBatch(before, method === 'PATCH' ? desired.path : null);
+        return { status: 200, data: method === 'PATCH' ? { path: desired.path } : { deleted: path } };
+      }
       const files = []; if (!desired.deleted) parents(next, desired.path, files);
       files.push(localChange(next, before, desired)); await transition(next, files);
       return { status: method === 'POST' ? 201 : 200, data: method === 'DELETE' ? { deleted: path } : { path: desired.path, ...(desired.blobHash ? { revision: desired.blobHash.slice(0, 20) } : {}) } };
@@ -148,14 +198,14 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       batchValue(batch);
       // No disk work or metadata writes until every expected head has passed.
       for (const { decision: d, expectedLocalHead } of batch.items) {
-        const id = (d.remote || d.local || d.base).entryId;
+        const id = (d.local || d.remote || d.base).entryId;
         check((state.entries[id]?.localHead ?? '') === expectedLocalHead, 'stale-local-head');
         for (const v of [d.base, d.local, d.remote]) if (v?.blobHash) await objects.verify(v);
       }
       check(!batch.epoch || !state.epoch || batch.epoch === state.epoch || batch.initialCopy, 'new-manifest-required');
       const next = clone(state), files = [];
       for (const { decision: d } of batch.items) {
-        const id = (d.remote || d.local || d.base).entryId; const e = next.entries[id];
+        const id = (d.local || d.remote || d.base).entryId; const e = next.entries[id];
         if (d.action === 'conflict') {
           const c = { conflictId: randomUUID(), entryId: id, base: e?.base ?? d.base, local: e?.local ?? d.local, remote: d.remote, reason: d.reason };
           next.conflicts[c.conflictId] = c;
@@ -188,16 +238,23 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
     async function preparePending(limit) {
       check(Number.isInteger(limit) && limit > 0 && limit <= 100, 'invalid-limit');
       const next = clone(state); const result = Object.values(next.prepared).map(p => p.operation).slice(0, limit);
-      const ordered = Object.entries(next.entries).sort(([, a], [, b]) => a.local.path.split('/').length - b.local.path.split('/').length);
+      const rank = e => e.local.kind === 'directory' ? e.local.deleted ? 2 : 0 : 1;
+      const ordered = Object.entries(next.entries).sort(([, a], [, b]) => rank(a) - rank(b) || (a.local.deleted ? -1 : 1) * (a.local.path.split('/').length - b.local.path.split('/').length));
       for (const [id, e] of ordered) {
         if (result.length >= limit) break;
         if (!dirty(e) || Object.values(next.prepared).some(p => p.operation.entryId === id) || Object.values(next.conflicts).some(c => c.entryId === id)) continue;
         const v = e.local; if (v.blobHash) await objects.verify(v);
+        const children = v.deleted && v.kind === 'directory' ? Object.values(next.entries).filter(child => {
+          const flight = Object.values(next.prepared).find(p => p.operation.entryId === child.local.entryId);
+          return (child.base?.path.startsWith(v.path + '/') || flight?.local.path.startsWith(v.path + '/')) && (dirty(child) || flight);
+        }) : [];
+        if (children.some(child => !Object.values(next.prepared).some(p => p.operation.entryId === child.local.entryId && sameContent(p.local, child.local)))) continue;
         const kind = v.deleted ? v.kind === 'directory' ? 'rmdir' : 'delete' : e.base && e.base.path !== v.path && e.base.blobHash === v.blobHash ? 'move' : v.kind === 'directory' ? 'mkdir' : 'put';
         const operation = { vaultId: profile.vaultId, replicaId: profile.replicaId, opId: randomUUID(), entryId: id, kind, baseRevision: e.base?.revision ?? null, after: v.deleted ? null : { path: v.path, kind: v.kind, blobHash: v.blobHash, byteLength: v.byteLength }, dependsOn: [] };
         if (!v.deleted) for (const p of Object.values(next.prepared)) {
           if (p.operation.after?.kind === 'directory' && v.path.startsWith(p.operation.after.path + '/')) operation.dependsOn.push(p.operation.opId);
         }
+        for (const child of children) operation.dependsOn.push(Object.values(next.prepared).find(p => p.operation.entryId === child.local.entryId).operation.opId);
         next.prepared[operation.opId] = { operation, localHead: e.localHead, local: v }; result.push(operation);
       }
       commit(next); return clone(result);
@@ -220,16 +277,30 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
     }
     async function resolve(input) {
       resolutionValue(input);
-      const c = state.conflicts[input.conflictId]; check(c, 'unknown-conflict');
+      const archived = db.prepare('SELECT conflict FROM conflicts WHERE conflict_id=?').get(input.conflictId);
+      const c = state.conflicts[input.conflictId] ?? (archived ? JSON.parse(archived.conflict) : null); check(c, 'unknown-conflict');
       let merged;
       if (input.choice === 'merged') {
         merged = await objects.put(input.mergedContent);
         db.prepare('INSERT INTO replica_resolutions(id,value) VALUES(?,?)').run(randomUUID(), JSON.stringify({ ...input, mergedContent: undefined, ...merged }));
       }
+      check(state.conflicts[input.conflictId], 'stale-conflict-resolution');
       const e = state.entries[c.entryId];
       check(e?.localHead === input.expectedLocalHead && (c.remote?.revision ?? null) === input.expectedRemoteRevision, 'stale-conflict-resolution');
       check(!Object.values(state.prepared).some(p => p.operation.entryId === c.entryId), 'prepared-operation-pending');
       const next = clone(state), files = [];
+      if (c.local && c.remote && c.local.entryId !== c.remote.entryId) {
+        // The remote occupant is a different identity. Never attach its base
+        // revision to the local entry ID. Preserve/archive the old local version.
+        const keep = input.choice === 'keep-both';
+        const local = keep ? { ...e.local, path: `${e.local.path}.conflict-${randomUUID()}`, revision: randomUUID() } : { ...e.local, deleted: true, blobHash: null, byteLength: 0, revision: randomUUID() };
+        files.push(localChange(next, e.local, local));
+        const useLocal = input.choice === 'local' || input.choice === 'merged';
+        const desired = useLocal ? { ...c.remote, ...(merged ?? { blobHash: e.local.blobHash, byteLength: e.local.byteLength }), deleted: e.local.deleted && !merged, revision: randomUUID() } : c.remote;
+        if (merged) check(e.local.kind === 'note' && c.remote.kind === 'note', 'merge-not-text');
+        files.push(localChange(next, null, desired, c.remote)); delete next.conflicts[c.conflictId];
+        await transition(next, files); return;
+      }
       let desired = clone(input.choice === 'remote' ? c.remote : e.local);
       check(desired, 'missing-resolution-version');
       if (input.choice === 'merged') { check(desired.kind === 'note', 'merge-not-text'); desired = { ...desired, ...merged, deleted: false }; }
@@ -243,13 +314,62 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       files.push(localChange(next, e.local, desired, c.remote)); delete next.conflicts[c.conflictId];
       await transition(next, files);
     }
+    function history(entryId) {
+      check(uuid(entryId), 'invalid-entry'); return db.prepare('SELECT version FROM versions WHERE entry_id=? ORDER BY rowid').all(entryId).map(row => JSON.parse(row.version));
+    }
+    async function readVersion(version) {
+      versionValue(version); check(version && version.kind === 'note' && !version.deleted && version.byteLength <= 32 * 1024 * 1024, 'native-stream-required');
+      check(history(version.entryId).some(v => v.revision === version.revision && sameContent(v, version)), 'unknown-version');
+      await objects.verify(version); return { version: clone(version), content: await readFile(objects.path(version.blobHash), 'utf8') };
+    }
+    async function importStream(path, source, maximum) {
+      path = publicPath(path).path; check(!find(path), 'path-collision'); check(Number.isSafeInteger(maximum) && maximum >= 0, 'invalid-limit');
+      async function* bounded() { let size = 0; for await (const chunk of source) { size += chunk.length; check(size <= maximum, 'file-too-large'); yield chunk; } }
+      const ref = await objects.put(bounded()); await interrupt('after-object');
+      const desired = { entryId: randomUUID(), revision: randomUUID(), kind: 'asset', path, ...ref, deleted: false };
+      const next = clone(state), files = []; parents(next, path, files); files.push(localChange(next, null, desired));
+      await transition(next, files); return clone(desired);
+    }
+    function completeCycle(input) {
+      cycleValue(input);
+      transaction(db, () => {
+        check(state.cursor === input.expectedCursor && state.epoch === input.expectedEpoch && state.profile.offlineEnabled && state.snapshotComplete && !state.errorCode && !Object.keys(state.prepared).length && !Object.keys(state.conflicts).length && !Object.values(state.entries).some(dirty), 'stale-local-head');
+        const next = clone(state); next.lastSuccessfulSync = new Date().toISOString(); next.cycleComplete = true;
+        db.prepare('UPDATE replica_state SET state=? WHERE id=1').run(JSON.stringify(next)); state = next;
+      }); return status();
+    }
     return {
       root, workingRoot, objects,
       open: p => run(() => { profileValue(p); identity(p); return status(); }),
-      configure: config => run(() => { configValue(config); const next = clone(state); Object.assign(next.profile, config); commit(next); return status(); }),
+      configure: config => run(() => {
+        configValue(config);
+        transaction(db, () => {
+          if (!config.offlineEnabled) check(state.snapshotComplete && !Object.keys(state.prepared).length && !Object.keys(state.conflicts).length && !Object.values(state.entries).some(dirty), 'replica-not-clean');
+          const next = clone(state); Object.assign(next.profile, config); next.cycleComplete = false;
+          db.prepare('UPDATE replica_state SET state=? WHERE id=1').run(JSON.stringify(next)); state = next;
+        }); return status();
+      }),
       request: (...args) => run(() => request(...args)), snapshot: () => run(snapshot),
       preparePending: limit => run(() => preparePending(limit)), persistIncoming: batch => run(() => persistIncoming(clone(batch))),
       confirm: result => run(() => confirm(clone(result))), resolve: input => run(() => resolve(clone(input))),
+      completeCycle: input => run(() => completeCycle(clone(input))),
+      history: entryId => run(() => history(entryId)), readVersion: version => run(() => readVersion(clone(version))),
+      importStream: (path, stream, maximum = 2 * 1024 * 1024 * 1024) => run(() => importStream(path, stream, maximum)),
+      exportBlob: (blob, output) => run(async () => { blobValue(blob); await objects.verify(blob); await pipeline(createReadStream(objects.path(blob.blobHash)), typeof output === 'function' ? output() : output); }),
+      exportReplica: destination => run(() => {
+        const manifest = transaction(db, () => ({ profile: clone(state.profile), snapshot: snapshot(), nativeState: clone(state),
+          versions: db.prepare('SELECT version FROM versions ORDER BY rowid').all().map(row => JSON.parse(row.version)),
+          archivedConflicts: db.prepare('SELECT conflict FROM conflicts ORDER BY rowid').all().map(row => JSON.parse(row.conflict)),
+          retainedResolutions: db.prepare('SELECT value FROM replica_resolutions ORDER BY rowid').all().map(row => JSON.parse(row.value)),
+        }));
+        return exportReplicaDirectory({ destination, privateRoot: userData, workingRoot, objects, manifest });
+      }),
+      // Native proof comes from the injected fixed-hello transport, never IPC payload.
+      rebindVerified: (origin, hello) => run(() => {
+        originValue(origin); helloValue(hello);
+        check(hello.vaultId === state.profile.vaultId && hello.serverId === state.profile.serverId, 'replica-identity-mismatch');
+        const next = clone(state); next.profile.origin = origin; commit(next); return clone(next.profile);
+      }),
       retainedResolutions: () => db.prepare('SELECT value FROM replica_resolutions').all().map(row => JSON.parse(row.value)),
       close: async () => { await queue; if (!closed) { closed = true; db.close(); release(); } },
     };

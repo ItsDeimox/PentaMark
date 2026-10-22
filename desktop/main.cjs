@@ -179,7 +179,11 @@ function startServer(directory, vaultDirectory, customVault) {
 }
 
 const syncBridge = createSyncBridge({ getChild: () => serverProcess, trustedFrame,
-  validationPath: join(appRoot(), 'local', 'sync', 'replica-validation.mjs') });
+  validationPath: join(appRoot(), 'local', 'sync', 'replica-validation.mjs'),
+  pickImportFile: async () => { const result = await dialog.showOpenDialog(mainWindow, { title: 'Importar arquivo na cópia offline', properties: ['openFile'] }); return result.canceled ? null : result.filePaths[0]; },
+  pickExportFile: async () => { const result = await dialog.showSaveDialog(mainWindow, { title: 'Exportar versão preservada', defaultPath: 'PentaMark-version', properties: ['showOverwriteConfirmation'] }); return result.canceled ? null : result.filePath; },
+  pickExportDirectory: async () => { const result = await dialog.showOpenDialog(mainWindow, { title: 'Exportar réplica completa para uma pasta', properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? null : result.filePaths[0]; },
+});
 ipcMain.handle('pentamark:sync', (event, command) => syncBridge.invoke(event, command));
 app.on('will-quit', () => syncBridge.close());
 

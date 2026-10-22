@@ -223,3 +223,260 @@ test('editor state, config and presence have the actual consumed API shapes', as
   assert.deepEqual(await s.request('/api/presence', 'POST', { clientId: 'client', name: 'Device', avatar: '', color: '#123456', path: '', cursor: 0, selectionEnd: 0, mode: 'edit', editing: false }), { status: 200, data: { ok: true, lock: null } });
   assert.deepEqual(await s.snapshot(), before);
 });
+
+async function acknowledgeAll(s) {
+  for (const op of await s.preparePending(100)) {
+    const local = (await s.snapshot()).entries.find(e => e.local.entryId === op.entryId).local;
+    await s.confirm({ opId: op.opId, status: 'applied', confirmed: { ...local, revision: randomUUID() } });
+  }
+}
+
+test('known-child folder rename is durable and preserves file IDs with ordered wire dependencies', async t => {
+  const f = await fixture(t); const s = f.service;
+  await save(s, 'one', 'old/sub/a.md'); await save(s, 'two', 'old/b.md'); await acknowledgeAll(s);
+  const id = (await s.snapshot()).entries.find(e => e.local.path === 'old/sub/a.md').local.entryId;
+  await s.request('/api/folder?path=old', 'PATCH', { newPath: 'new' });
+  assert.equal(await readFile(join(s.workingRoot, 'new/sub/a.md'), 'utf8'), 'one');
+  assert.equal((await s.snapshot()).entries.find(e => e.local.path === 'new/sub/a.md').local.entryId, id);
+  const ops = await s.preparePending(100);
+  const mkdir = ops.find(op => op.kind === 'mkdir' && op.after.path === 'new/sub');
+  const move = ops.find(op => op.entryId === id); assert.ok(move.dependsOn.includes(mkdir.opId));
+  const oldSub = (await s.snapshot()).entries.find(e => e.local.path === 'old/sub').local.entryId;
+  const remove = ops.find(op => op.entryId === oldSub); assert.ok(remove.dependsOn.includes(move.opId));
+  await s.close(); const reopened = await f.open(); assert.deepEqual(await reopened.preparePending(100), ops);
+});
+
+test('folder batch resumes after crash between children without expanding captured deletion set', async t => {
+  const f = await fixture(t); await save(f.service, 'one', 'old/a.md'); await save(f.service, 'two', 'old/b.md'); await f.service.close();
+  let once = true;
+  const s = await f.open({ interrupt: async point => { if (once && point === 'after-rename') { once = false; throw new Error('batch-crash'); } } });
+  await assert.rejects(s.request('/api/folder?path=old', 'DELETE'), /batch-crash/); await s.close();
+  await writeFile(join(s.workingRoot, 'old/new.md'), 'unknown new child');
+  const recovered = await f.open();
+  assert.equal(await readFile(join(recovered.workingRoot, 'old/new.md'), 'utf8'), 'unknown new child');
+  const snap = await recovered.snapshot();
+  assert.ok(snap.conflicts.some(c => c.reason === 'folder-has-new-children'));
+  assert.ok(snap.entries.some(e => e.local.path === 'old' && !e.local.deleted));
+  assert.ok(snap.entries.some(e => e.local.path === 'old/new.md' && !e.local.deleted));
+  assert.equal((await recovered.request('/api/note?path=old/a.md', 'GET')).status, 404);
+});
+
+test('nonempty folder rename recovers after an intermediate child publication', async t => {
+  const f = await fixture(t); await save(f.service, 'a', 'old/a.md'); await save(f.service, 'b', 'old/b.md'); await f.service.close();
+  let count = 0;
+  const s = await f.open({ interrupt: async point => { if (point === 'after-rename' && ++count === 2) throw new Error('move-crash'); } });
+  await assert.rejects(s.request('/api/folder?path=old', 'PATCH', { newPath: 'new' }), /move-crash/); await s.close();
+  const recovered = await f.open();
+  assert.equal(await readFile(join(recovered.workingRoot, 'new/a.md'), 'utf8'), 'a');
+  assert.equal(await readFile(join(recovered.workingRoot, 'new/b.md'), 'utf8'), 'b');
+  assert.equal((await recovered.request('/api/state', 'GET')).data.folders.includes('old'), false);
+});
+
+test('review: cross-entry path collision persists and keep-both resolves both identities', async t => {
+  const { service: s } = await fixture(t); await save(s, 'local'); const a = await entry(s);
+  const b = await remote(s, 'remote', 'a.md');
+  await s.persistIncoming({ nextCursor: 'e:1', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [{ expectedLocalHead: a.localHead, decision: { action: 'conflict', reason: 'path-collision', base: null, local: a.local, remote: b } }] });
+  const [c] = (await s.snapshot()).conflicts;
+  await s.resolve({ conflictId: c.conflictId, expectedLocalHead: a.localHead, expectedRemoteRevision: b.revision, choice: 'keep-both' });
+  const snap = await s.snapshot();
+  assert.equal((await s.request('/api/note?path=a.md', 'GET')).data.content, 'remote');
+  const kept = snap.entries.find(e => e.local.entryId === a.local.entryId);
+  assert.notEqual(kept.local.path, 'a.md');
+  assert.equal(await readFile(s.objects.path(kept.local.blobHash), 'utf8'), 'local');
+  assert.equal(snap.entries.find(e => e.local.entryId === b.entryId).base.revision, b.revision);
+});
+
+test('review: incoming tombstone then different ID at same path cannot poison recovery', async t => {
+  const f = await fixture(t); const s = f.service; const a = await remote(s, 'old');
+  await s.persistIncoming({ nextCursor: 'e:1', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [pull(a)] });
+  const head = (await entry(s)).localHead;
+  const tombstone = { ...a, revision: randomUUID(), deleted: true, blobHash: null, byteLength: 0 };
+  const b = await remote(s, 'replacement');
+  await s.persistIncoming({ nextCursor: 'e:2', items: [pull(b), { expectedLocalHead: head, decision: { action: 'pull', reason: 'remote-delete', base: a, local: a, remote: tombstone } }] });
+  await s.close(); const recovered = await f.open();
+  assert.equal((await recovered.request('/api/note?path=a.md', 'GET')).data.content, 'replacement');
+  assert.equal((await recovered.snapshot()).cursor, 'e:2');
+});
+
+test('review: typed merge for superseded conflict is retained before stale rejection', async t => {
+  const { service: s } = await fixture(t); await save(s, 'local'); const a = await entry(s);
+  const r = await remote(s, 'remote1', 'a.md', a.local.entryId);
+  const conflictItem = remoteVersion => ({ expectedLocalHead: a.localHead, decision: { action: 'conflict', reason: 'both', base: null, local: a.local, remote: remoteVersion } });
+  await s.persistIncoming({ nextCursor: 'e:1', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [conflictItem(r)] });
+  const [old] = (await s.snapshot()).conflicts;
+  await s.persistIncoming({ nextCursor: 'e:2', items: [conflictItem(await remote(s, 'remote2', 'a.md', a.local.entryId))] });
+  await assert.rejects(s.resolve({ conflictId: old.conflictId, expectedLocalHead: a.localHead, expectedRemoteRevision: r.revision, choice: 'merged', mergedContent: 'typed against old' }), /stale/);
+  const receipts = s.retainedResolutions(); assert.equal(receipts.length, 1);
+  assert.equal(await readFile(s.objects.path(receipts[0].blobHash), 'utf8'), 'typed against old');
+});
+
+test('completeCycle checks all dirty/prepared state and snapshot never prepares fresh operations', async t => {
+  const { service: s } = await fixture(t);
+  await s.persistIncoming({ nextCursor: 'e:1', epoch: 'e', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [] });
+  assert.equal(typeof s.completeCycle, 'function');
+  const input = { expectedCursor: 'e:1', expectedEpoch: 'e' };
+  await assert.rejects(s.completeCycle({ ...input, expectedEpoch: 'wrong' }), /stale-local-head/);
+  const success = await s.completeCycle(input); assert.equal(success.phase, 'idle'); assert.ok(success.lastSuccessfulSync);
+  await save(s, 'edit');
+  const dirty = await s.snapshot(); assert.deepEqual(dirty.preparedOperations, []); assert.notEqual(dirty.status.phase, 'idle');
+  assert.equal(dirty.status.lastSuccessfulSync, success.lastSuccessfulSync);
+  await assert.rejects(s.completeCycle(input), /stale-local-head/);
+  const prepared = await s.preparePending(10); assert.deepEqual((await s.snapshot()).preparedOperations, prepared);
+  await assert.rejects(s.completeCycle(input), /stale-local-head/);
+  await acknowledgeAll(s); assert.notEqual((await s.snapshot()).status.phase, 'idle');
+  assert.equal((await s.completeCycle(input)).phase, 'idle');
+  await s.configure({ offlineEnabled: false, mode: 'manual' }); await assert.rejects(s.completeCycle(input), /stale-local-head/);
+});
+
+test('native stream asset import and historic text reads retain bytes without accepting forged versions', async t => {
+  const { service: s } = await fixture(t);
+  assert.equal(typeof s.importStream, 'function');
+  const asset = await s.importStream('assets/a.bin', (async function* () { yield Buffer.from([0, 255]); yield Buffer.from([1, 2]); })(), 4);
+  assert.equal(asset.kind, 'asset'); assert.deepEqual(await readFile(join(s.workingRoot, 'assets/a.bin')), Buffer.from([0, 255, 1, 2]));
+  await assert.rejects(s.importStream('too-big.bin', [Buffer.alloc(5)], 4), /file-too-large/);
+  await save(s, 'old'); const old = (await entry(s, (await s.snapshot()).entries.find(e => e.local.path === 'a.md').local.entryId)).local;
+  await save(s, 'new');
+  assert.ok((await s.history(old.entryId)).some(v => v.revision === old.revision));
+  assert.equal((await s.readVersion(old)).content, 'old');
+  await assert.rejects(s.readVersion({ ...old, blobHash: asset.blobHash, byteLength: 4 }), /unknown-version/);
+  await assert.rejects(s.readVersion(asset), /native-stream-required/);
+});
+
+test('discovery and verified rebind use native hooks and never mutate identity on mismatch', async t => {
+  const { installReplicaIpc } = await import('../local/sync/replica-ipc.mjs');
+  const f = await fixture(t); await f.service.close();
+  const channel = new EventEmitter(); channel.send = () => {};
+  let observed;
+  const hello = { protocol: 1, vaultId: f.p.vaultId, serverId: f.p.serverId, epoch: 'e', maxFileBytes: 1000, chunkBytes: 1048576 };
+  const ipc = installReplicaIpc({ channel, userData: f.userData, discoverOrigin: async origin => { observed = origin; return origin.includes('wrong') ? { ...hello, serverId: randomUUID() } : hello; } });
+  t.after(() => ipc.close());
+  const call = (method, payload) => ipc.dispatch({ requestId: randomUUID(), replicaId: f.p.replicaId, method, payload });
+  assert.deepEqual(await call('discover', { origin: f.p.origin }), hello); assert.equal(observed, f.p.origin);
+  await call('open', f.p); const s = ipc.getReplica(f.p.replicaId); await save(s, 'pending'); const [a] = await s.preparePending(10);
+  await assert.rejects(call('rebind', { origin: 'http://wrong.test' }), /identity/);
+  assert.equal((await s.snapshot()).profile.origin, f.p.origin);
+  const rebound = await call('rebind', { origin: 'http://new.test' }); assert.equal(rebound.profile.origin, 'http://new.test');
+  assert.deepEqual(await s.preparePending(10), [a]);
+  await assert.rejects(call('discover', { origin: 'http://new.test/api/anything' }), /invalid/);
+  const media = await call('mediaUrl', { entryId: a.entryId }); assert.match(media.url, /^\/__replica_media\//);
+  const versions = await call('history', { entryId: a.entryId }); assert.ok(Array.isArray(versions.versions));
+  assert.equal((await call('readVersion', { version: versions.versions[0] })).content, 'pending');
+  await ipc.close();
+});
+
+test('picker-bound export/import stream exact bytes and reject renderer path injection', async t => {
+  const { installReplicaIpc } = await import('../local/sync/replica-ipc.mjs');
+  const { createSyncBridge } = require('../desktop/sync-ipc.cjs');
+  const f = await fixture(t); await f.service.close();
+  const outputRoot = await mkdtemp(join(tmpdir(), 'pentamark-export-')); t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const importFile = join(outputRoot, 'input.bin'), exportFile = join(outputRoot, 'output.bin');
+  await writeFile(importFile, Buffer.from([0, 7, 255, 3]));
+  const channel = new EventEmitter(); channel.send = message => child.emit('message', message);
+  const child = new EventEmitter(); child.connected = true; child.send = (message, callback) => { channel.emit('message', message); callback?.(); };
+  const ipc = installReplicaIpc({ channel, userData: f.userData });
+  let pickerCount = 0;
+  const bridge = createSyncBridge({ getChild: () => child, trustedFrame: e => e.local, pickImportFile: async () => importFile, pickExportFile: async () => { pickerCount++; return exportFile; } });
+  const call = (method, payload) => bridge.invoke({ local: true }, { requestId: randomUUID(), replicaId: f.p.replicaId, method, payload });
+  try {
+    await call('open', f.p);
+    const imported = await call('importDocument', { path: 'a.bin' }); assert.equal(imported.ok, true);
+    const blob = { blobHash: imported.value.blobHash, byteLength: imported.value.byteLength };
+    await assert.rejects(call('exportVersion', { blob, path: 'C:/arbitrary' }), /invalid/); assert.equal(pickerCount, 0);
+    await assert.rejects(bridge.invoke({ local: false }, { requestId: randomUUID(), replicaId: f.p.replicaId, method: 'exportVersion', payload: { blob } }), /untrusted/);
+    assert.deepEqual((await call('exportVersion', { blob })).value, { cancelled: false });
+    assert.deepEqual(await readFile(exportFile), Buffer.from([0, 7, 255, 3]));
+    const service = ipc.getReplica(f.p.replicaId);
+    assert.deepEqual(await readFile(join(service.workingRoot, 'a.bin')), Buffer.from([0, 7, 255, 3]));
+    assert.equal((await service.snapshot()).status.pendingCount, 1);
+  } finally { bridge.close(); await ipc.close(); }
+});
+
+test('remote apply slot only sends immutable prepared operations and returns results wrapper', async t => {
+  const { installReplicaIpc } = await import('../local/sync/replica-ipc.mjs');
+  const f = await fixture(t); await f.service.close(); const channel = new EventEmitter(); channel.send = () => {};
+  let calls = 0;
+  const ipc = installReplicaIpc({ channel, userData: f.userData, transportFactory: async options => {
+    assert.equal(options.profile.replicaId, f.p.replicaId); assert.equal(options.objects.root, join(ipc.getReplica(f.p.replicaId).root, 'objects'));
+    return { apply: async operations => { calls++; return operations.map(op => ({ opId: op.opId, status: 'blocked', errorCode: 'fixture' })); } };
+  } });
+  const call = (method, payload) => ipc.dispatch({ requestId: randomUUID(), replicaId: f.p.replicaId, method, payload });
+  try {
+    await call('open', f.p); const s = ipc.getReplica(f.p.replicaId); await save(s, 'A'); const [op] = await s.preparePending(10);
+    await assert.rejects(call('apply', { operations: [{ ...op, baseRevision: 'forged' }] }), /not-prepared/); assert.equal(calls, 0);
+    const response = await call('apply', { operations: [op] }); assert.equal(response.results[0].opId, op.opId); assert.equal(calls, 1);
+  } finally { await ipc.close(); }
+});
+
+test('folder removal waits for prepared child A and its later move B', async t => {
+  const { service: s } = await fixture(t);
+  await s.request('/api/folder', 'POST', { path: 'old' }); await acknowledgeAll(s);
+  await save(s, 'A', 'old/a.md'); const [a] = await s.preparePending(10);
+  await s.request('/api/folder?path=old', 'PATCH', { newPath: 'new' });
+  let pending = await s.preparePending(100);
+  assert.equal(pending.some(op => op.kind === 'rmdir'), false);
+  await s.confirm({ opId: a.opId, status: 'applied', confirmed: { ...(await s.snapshot()).entries.find(e => e.local.entryId === a.entryId).local, ...a.after, revision: 'host-A' } });
+  pending = await s.preparePending(100);
+  const move = pending.find(op => op.entryId === a.entryId); assert.equal(move.kind, 'move');
+  assert.ok(pending.find(op => op.kind === 'rmdir').dependsOn.includes(move.opId));
+});
+
+test('preflight rejects a cyclic incoming move before persisting any intent', async t => {
+  const { service: s } = await fixture(t); const a = await remote(s, 'A', 'a.md'), b = await remote(s, 'B', 'b.md');
+  await s.persistIncoming({ nextCursor: 'e:1', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [pull(a), pull(b)] });
+  const snapshot = await s.snapshot();
+  const items = [a, b].map((v, i) => ({ expectedLocalHead: snapshot.entries.find(e => e.local.entryId === v.entryId).localHead, decision: { action: 'pull', reason: 'move', base: v, local: v, remote: { ...v, path: i ? 'a.md' : 'b.md', revision: randomUUID() } } }));
+  await assert.rejects(s.persistIncoming({ nextCursor: 'e:2', items }), /cyclic-file-plan/);
+  const db = new DatabaseSync(join(s.root, 'replica.sqlite')); assert.equal(db.prepare('SELECT count(*) AS n FROM file_intents').get().n, 0); db.close();
+  assert.equal((await s.request('/api/note?path=a.md', 'GET')).data.content, 'A');
+  assert.equal((await s.snapshot()).cursor, 'e:1');
+});
+
+test('configure cannot disable an incomplete or newly edited replica after a UI check', async t => {
+  const { service: s } = await fixture(t);
+  await assert.rejects(s.configure({ offlineEnabled: false, mode: 'manual' }), /replica-not-clean/);
+  await s.persistIncoming({ nextCursor: 'e:1', epoch: 'e', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [] });
+  assert.equal((await s.snapshot()).status.pendingCount, 0);
+  await save(s, 'late edit');
+  await assert.rejects(s.configure({ offlineEnabled: false, mode: 'manual' }), /replica-not-clean/);
+  assert.equal((await s.snapshot()).profile.offlineEnabled, true);
+  await s.preparePending(10);
+  await assert.rejects(s.configure({ offlineEnabled: false, mode: 'manual' }), /replica-not-clean/);
+});
+
+test('directory export preserves working bytes, prepared operations and all historic objects without live SQLite copy', async t => {
+  const { service: s } = await fixture(t); await save(s, 'first'); const [prepared] = await s.preparePending(10); await save(s, 'second');
+  const before = await s.snapshot(); const destination = await mkdtemp(join(tmpdir(), 'pentamark-backup-'));
+  t.after(() => rm(destination, { recursive: true, force: true }));
+  assert.equal(typeof s.exportReplica, 'function');
+  const result = await s.exportReplica(destination); assert.equal(result.cancelled, false); assert.equal(result.format, 'directory');
+  const root = join(destination, result.directoryName);
+  const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.format, 'pentamark-replica-directory-v1');
+  assert.deepEqual(manifest.snapshot.preparedOperations, [prepared]);
+  assert.deepEqual(manifest.snapshot.profile, before.profile);
+  assert.equal(await readFile(join(root, 'working/a.md'), 'utf8'), 'second');
+  assert.equal(await readFile(join(root, 'objects', prepared.after.blobHash), 'utf8'), 'first');
+  assert.ok(manifest.versions.length >= 2);
+  await assert.rejects(readFile(join(root, 'replica.sqlite')), /ENOENT/);
+  assert.deepEqual(await s.snapshot(), before);
+});
+
+test('cancelled replica export does not report completion or dispatch an export', async () => {
+  const { createSyncBridge } = require('../desktop/sync-ipc.cjs');
+  const child = new EventEmitter(); child.connected = true; let sent = 0; child.send = () => { sent++; };
+  let finish;
+  const bridge = createSyncBridge({ getChild: () => child, trustedFrame: () => true, pickExportDirectory: () => new Promise(resolve => { finish = resolve; }) });
+  const command = { requestId: randomUUID(), replicaId: randomUUID(), method: 'exportReplica', payload: {} };
+  const pending = bridge.invoke({}, command);
+  while (!finish) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(bridge.invoke({}, command), /duplicate-request-id/);
+  finish(null); const response = await pending;
+  assert.deepEqual(response.value, { cancelled: true }); assert.equal(sent, 0); bridge.close();
+});
+
+test('replica export cannot report complete when a referenced historical object is missing', async t => {
+  const { service: s } = await fixture(t); await save(s, 'history'); const old = (await entry(s)).local; await save(s, 'current');
+  await rm(s.objects.path(old.blobHash)); // Deliberately corrupt only this generated fixture.
+  const destination = await mkdtemp(join(tmpdir(), 'pentamark-incomplete-export-')); t.after(() => rm(destination, { recursive: true, force: true }));
+  await assert.rejects(s.exportReplica(destination), /ENOENT/);
+});

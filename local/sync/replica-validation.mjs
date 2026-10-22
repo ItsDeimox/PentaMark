@@ -5,11 +5,24 @@ export function record(value, required, optional = []) {
   check(value && typeof value === 'object' && !Array.isArray(value));
   check(required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => [...required, ...optional].includes(key)));
 }
+export function originValue(origin) {
+  check(typeof origin === 'string' && origin.length <= 2048, 'invalid-origin');
+  let u; try { u = new URL(origin); } catch { throw new Error('invalid-origin'); }
+  check(['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && u.origin === origin, 'invalid-origin');
+}
+export function helloValue(h) {
+  record(h, ['protocol', 'vaultId', 'serverId', 'epoch', 'maxFileBytes', 'chunkBytes']);
+  check(h.protocol === 1 && uuid(h.vaultId) && uuid(h.serverId) && typeof h.epoch === 'string' && h.epoch.length > 0 && Number.isSafeInteger(h.maxFileBytes) && h.maxFileBytes >= 0 && h.chunkBytes === 1048576, 'incompatible-protocol');
+}
+export function blobValue(b) {
+  record(b, ['blobHash', 'byteLength']); check(typeof b.blobHash === 'string' && /^[a-f0-9]{64}$/.test(b.blobHash) && Number.isSafeInteger(b.byteLength) && b.byteLength >= 0);
+}
+export function cycleValue(p) { record(p, ['expectedCursor', 'expectedEpoch']); check(typeof p.expectedCursor === 'string' && p.expectedCursor.length > 0 && typeof p.expectedEpoch === 'string' && p.expectedEpoch.length > 0); }
 export function profileValue(p) {
   record(p, ['vaultId', 'serverId', 'replicaId', 'origin', 'offlineEnabled', 'mode']);
   check([p.vaultId, p.serverId, p.replicaId].every(uuid));
   configValue({ offlineEnabled: p.offlineEnabled, mode: p.mode });
-  const u = new URL(p.origin); check(['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && u.origin === p.origin);
+  originValue(p.origin);
 }
 export function configValue(p) { record(p, ['offlineEnabled', 'mode']); check(typeof p.offlineEnabled === 'boolean' && ['manual', 'automatic'].includes(p.mode)); }
 export function versionValue(v) {
@@ -23,7 +36,8 @@ export function versionValue(v) {
 export function conflictValue(c) {
   record(c, ['conflictId', 'entryId', 'base', 'local', 'remote', 'reason']);
   check(uuid(c.conflictId) && uuid(c.entryId) && typeof c.reason === 'string');
-  for (const v of [c.base, c.local, c.remote]) { versionValue(v); check(!v || v.entryId === c.entryId); }
+  for (const v of [c.base, c.local, c.remote]) versionValue(v);
+  check([c.local, c.remote, c.base].some(v => v?.entryId === c.entryId));
 }
 export function batchValue(b) {
   record(b, ['nextCursor', 'items'], ['epoch', 'initialCopy']);
@@ -40,9 +54,9 @@ export function batchValue(b) {
     const d = item.decision; record(d, ['action', 'reason', 'base', 'local', 'remote']);
     check(['none', 'push', 'pull', 'converged', 'conflict'].includes(d.action) && typeof d.reason === 'string');
     for (const v of [d.base, d.local, d.remote]) versionValue(v);
-    const id = (d.remote || d.local || d.base)?.entryId;
+    const id = (d.local || d.remote || d.base)?.entryId;
     check(id && !ids.has(id)); ids.add(id);
-    check([d.base, d.local, d.remote].every(v => !v || v.entryId === id));
+    check(d.action === 'conflict' || [d.base, d.local, d.remote].every(v => !v || v.entryId === id));
   }
 }
 export function resultValue(r) {
@@ -87,12 +101,35 @@ export function commandValue(c) {
   switch (c.method) {
     case 'open': profileValue(c.payload); check(c.payload.replicaId === c.replicaId, 'wrong-replica'); break;
     case 'configure': configValue(c.payload); break;
-    case 'snapshot': record(c.payload, []); break;
+    case 'snapshot': case 'exportReplica': record(c.payload, []); break;
     case 'preparePending': record(c.payload, ['limit']); check(Number.isInteger(c.payload.limit) && c.payload.limit > 0 && c.payload.limit <= 100); break;
     case 'request': record(c.payload, ['url', 'method'], ['body']); requestValue(c.payload.url, c.payload.method, c.payload.body); break;
     case 'persistIncoming': batchValue(c.payload); break;
     case 'confirm': resultValue(c.payload); break;
     case 'resolve': resolutionValue(c.payload); break;
+    case 'completeCycle': cycleValue(c.payload); break;
+    case 'discover': case 'rebind': record(c.payload, ['origin']); originValue(c.payload.origin); break;
+    case 'history': case 'mediaUrl': record(c.payload, ['entryId']); check(uuid(c.payload.entryId)); break;
+    case 'readVersion': record(c.payload, ['version']); check(c.payload.version); versionValue(c.payload.version); break;
+    case 'exportVersion': record(c.payload, ['blob']); blobValue(c.payload.blob); break;
+    case 'importDocument': record(c.payload, ['path']); publicPath(c.payload.path); break;
+    case 'handshake': record(c.payload, ['profile']); profileValue(c.payload.profile); check(c.payload.profile.replicaId === c.replicaId, 'wrong-replica'); break;
+    case 'remoteSnapshot': record(c.payload, [], ['snapshotToken', 'cursor']); check(c.payload.snapshotToken === undefined && c.payload.cursor === undefined || typeof c.payload.snapshotToken === 'string' && c.payload.snapshotToken.length > 0 && typeof c.payload.cursor === 'string' && c.payload.cursor.length > 0); break;
+    case 'changes': record(c.payload, ['cursor', 'limit']); check(typeof c.payload.cursor === 'string' && c.payload.cursor.length > 0 && Number.isInteger(c.payload.limit) && c.payload.limit >= 1 && c.payload.limit <= 100); break;
+    case 'apply': record(c.payload, ['operations']); check(Array.isArray(c.payload.operations) && c.payload.operations.length <= 100); for (const op of c.payload.operations) operationValue(op, c.replicaId); break;
+    case 'downloadBlob': case 'uploadBlob': record(c.payload, ['blob', 'offset']); blobValue(c.payload.blob); check(Number.isSafeInteger(c.payload.offset) && c.payload.offset >= 0 && c.payload.offset <= c.payload.blob.byteLength && c.payload.offset % 1048576 === 0); break;
     default: throw new Error('invalid-method');
   }
+}
+function operationValue(op, replicaId) {
+  record(op, ['vaultId', 'replicaId', 'opId', 'entryId', 'kind', 'baseRevision', 'after', 'dependsOn']);
+  check([op.vaultId, op.replicaId, op.opId, op.entryId].every(uuid) && op.replicaId === replicaId);
+  check(['put', 'move', 'delete', 'mkdir', 'rmdir'].includes(op.kind));
+  check(op.baseRevision === null || typeof op.baseRevision === 'string' && op.baseRevision.length > 0);
+  check(Array.isArray(op.dependsOn) && op.dependsOn.length <= 10000 && op.dependsOn.every(uuid));
+  if (op.after !== null) {
+    record(op.after, ['path', 'kind', 'blobHash', 'byteLength']);
+    versionValue({ ...op.after, entryId: op.entryId, revision: 'validation', deleted: false });
+  }
+  check(['delete', 'rmdir'].includes(op.kind) === (op.after === null));
 }

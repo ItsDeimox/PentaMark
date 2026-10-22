@@ -2,8 +2,8 @@ const { pathToFileURL } = require('node:url');
 const { join } = require('node:path');
 
 // The shared validator lives with the packaged native service in extraResources.
-function createSyncBridge({ getChild, trustedFrame, validationPath = join(__dirname, '../local/sync/replica-validation.mjs'), timeoutMs = 30000 }) {
-  const pending = new Map(); let child = null; let closed = false;
+function createSyncBridge({ getChild, trustedFrame, validationPath = join(__dirname, '../local/sync/replica-validation.mjs'), timeoutMs = 30000, pickImportFile, pickExportFile, pickExportDirectory }) {
+  const pending = new Map(), picking = new Set(); let child = null; let closed = false;
   function failAll() { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('sync-server-disconnected')); } pending.clear(); }
   function receive(message) {
     if (message?.type !== 'pentamark:sync:result') return;
@@ -22,11 +22,24 @@ function createSyncBridge({ getChild, trustedFrame, validationPath = join(__dirn
     const current = getChild();
     if (!current?.connected) throw new Error('sync-server-unavailable');
     if (current !== child) { detach(); child = current; child.on('message', receive); child.on('exit', failAll); child.on('disconnect', failAll); }
-    if (pending.has(command.requestId)) throw new Error('duplicate-request-id');
+    if (pending.has(command.requestId) || picking.has(command.requestId)) throw new Error('duplicate-request-id');
+    const native = {};
+    if (['importDocument', 'exportVersion', 'exportReplica'].includes(command.method)) {
+      const importing = command.method === 'importDocument';
+      const directory = command.method === 'exportReplica';
+      const picker = importing ? pickImportFile : directory ? pickExportDirectory : pickExportFile;
+      if (!picker) throw new Error('native-picker-unavailable');
+      picking.add(command.requestId);
+      let path; try { path = await picker(); } finally { picking.delete(command.requestId); }
+      if (!path) return { requestId: command.requestId, replicaId: command.replicaId, ok: true, value: { cancelled: true } };
+      // Recheck after a modal dialog; never send to a replacement server/frame.
+      if (!trustedFrame(event) || closed || getChild() !== current || !current.connected) throw new Error('sync-context-changed');
+      native[importing ? 'importPath' : directory ? 'exportDirectory' : 'exportPath'] = path;
+    }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(command.requestId); reject(new Error('sync-timeout')); }, timeoutMs);
       pending.set(command.requestId, { resolve, reject, timer, replicaId: command.replicaId });
-      try { child.send({ type: 'pentamark:sync:command', command }, error => { if (error && pending.has(command.requestId)) { pending.delete(command.requestId); clearTimeout(timer); reject(error); } }); }
+      try { current.send({ type: 'pentamark:sync:command', command, native }, error => { if (error && pending.has(command.requestId)) { pending.delete(command.requestId); clearTimeout(timer); reject(error); } }); }
       catch (error) { pending.delete(command.requestId); clearTimeout(timer); reject(error); }
     });
   }
