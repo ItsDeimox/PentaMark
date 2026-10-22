@@ -28,6 +28,68 @@ async function remote(s, text, path = 'a.md', entryId = randomUUID()) {
 }
 const pull = (v, head = '') => ({ expectedLocalHead: head, decision: { action: 'pull', reason: 'remote', base: null, local: null, remote: v } });
 
+test('round2: resolving collision A cannot overwrite tracked moved edited B', async t => {
+  const f = await fixture(t); const s = f.service;
+  const b = await remote(s, 'remote B');
+  await s.persistIncoming({ nextCursor: 'e:1', initialCopy: { snapshotToken: 's', atCursor: 'e:1', pageCursor: null }, items: [pull(b)] });
+  await s.request('/api/note?path=a.md', 'PATCH', { newPath: 'b.md' });
+  await save(s, 'edited B', 'b.md');
+  await save(s, 'local A'); const a = (await s.snapshot()).entries.find(e => e.local.path === 'a.md');
+  await s.persistIncoming({ nextCursor: 'e:2', items: [{ expectedLocalHead: a.localHead, decision: { action: 'conflict', reason: 'path-collision', base: null, local: a.local, remote: b } }] });
+  const before = await s.snapshot(); const [c] = before.conflicts;
+  for (const choice of ['remote', 'local', 'keep-both', 'merged']) {
+    await assert.rejects(s.resolve({ conflictId: c.conflictId, expectedLocalHead: a.localHead, expectedRemoteRevision: b.revision, choice, ...(choice === 'merged' ? { mergedContent: 'typed merge' } : {}) }), /stale-conflict-resolution/);
+    assert.deepEqual((await s.snapshot()).entries, before.entries);
+    assert.equal(await readFile(join(s.workingRoot, 'b.md'), 'utf8'), 'edited B');
+  }
+  const pending = await s.preparePending(100);
+  await assert.rejects(s.resolve({ conflictId: c.conflictId, expectedLocalHead: a.localHead, expectedRemoteRevision: b.revision, choice: 'remote' }), /prepared-operation-pending|stale-conflict-resolution/);
+  assert.deepEqual((await s.snapshot()).preparedOperations, pending);
+});
+
+for (const editDuringAck of [false, true]) test(`round2: edited then folder-renamed note synchronizes through real host (edit during ACK: ${editDuringAck})`, async t => {
+  const { createHostService } = await import('../local/sync/host-service.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'pentamark-pair-'));
+  let host, s;
+  t.after(async () => { await s?.close(); await host?.close(); await rm(root, { recursive: true, force: true }); });
+  const vaultRoot = join(root, 'vault'); await mkdir(join(vaultRoot, 'old'), { recursive: true });
+  await writeFile(join(vaultRoot, 'old/a.md'), 'original');
+  host = await createHostService({ dataRoot: join(root, 'host'), vaultRoot });
+  const hello = await host.hello(); const p = { ...profile(), vaultId: hello.vaultId, serverId: hello.serverId };
+  const open = () => implementation.createReplicaService({ userData: join(root, 'client'), profile: p });
+  s = await open(); const snapshot = await host.openSnapshot();
+  for (const v of snapshot.entries) if (v.blobHash) await s.objects.put(await readFile(host.objects.path(v.blobHash)));
+  await s.persistIncoming({ epoch: hello.epoch, nextCursor: snapshot.atCursor, initialCopy: { snapshotToken: snapshot.snapshotToken, atCursor: snapshot.atCursor, pageCursor: null }, items: snapshot.entries.map(v => pull(v)) });
+  const id = snapshot.entries.find(v => v.path === 'old/a.md').entryId;
+  await save(s, 'edited A', 'old/a.md');
+  await s.request('/api/folder?path=old', 'PATCH', { newPath: 'new' });
+  const first = await s.preparePending(100); await s.close(); s = await open();
+  assert.deepEqual(await s.preparePending(100), first);
+  let edited = false;
+  for (let round = 0; round < 8; round++) {
+    const ops = await s.preparePending(100); if (!ops.length) break;
+    for (const op of ops) {
+      if (op.after?.blobHash) await host.objects.put(await readFile(s.objects.path(op.after.blobHash)));
+      const result = await host.apply(op);
+      assert.equal(result.status, 'applied', JSON.stringify(result));
+      if (op.entryId === id && !edited && editDuringAck) { await save(s, 'edited B', 'new/a.md'); edited = true; }
+      await s.confirm(result);
+      assert.equal(await readFile(join(s.workingRoot, 'new/a.md'), 'utf8'), edited ? 'edited B' : 'edited A');
+    }
+    await s.close(); s = await open();
+  }
+  assert.deepEqual(await s.preparePending(100), []);
+  assert.equal(await readFile(join(vaultRoot, 'new/a.md'), 'utf8'), editDuringAck ? 'edited B' : 'edited A');
+  const versions = await s.history(id);
+  for (const text of ['original', 'edited A', ...(editDuringAck ? ['edited B'] : [])]) {
+    const contents = await Promise.all(versions.filter(v => v.blobHash).map(v => readFile(s.objects.path(v.blobHash), 'utf8')));
+    assert.ok(contents.includes(text), `retained history bytes: ${text}`);
+  }
+  const final = await host.openSnapshot();
+  assert.equal(final.entries.find(v => v.entryId === id).path, 'new/a.md');
+  assert.ok(!final.entries.some(v => v.path === 'old' && !v.deleted));
+});
+
 test('offline save survives restart in isolated userData with immutable history', async t => {
   const f = await fixture(t); const s = f.service;
   assert.equal((await save(s, 'A')).status, 200);

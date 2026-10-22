@@ -249,13 +249,18 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
           return (child.base?.path.startsWith(v.path + '/') || flight?.local.path.startsWith(v.path + '/')) && (dirty(child) || flight);
         }) : [];
         if (children.some(child => !Object.values(next.prepared).some(p => p.operation.entryId === child.local.entryId && sameContent(p.local, child.local)))) continue;
-        const kind = v.deleted ? v.kind === 'directory' ? 'rmdir' : 'delete' : e.base && e.base.path !== v.path && e.base.blobHash === v.blobHash ? 'move' : v.kind === 'directory' ? 'mkdir' : 'put';
-        const operation = { vaultId: profile.vaultId, replicaId: profile.replicaId, opId: randomUUID(), entryId: id, kind, baseRevision: e.base?.revision ?? null, after: v.deleted ? null : { path: v.path, kind: v.kind, blobHash: v.blobHash, byteLength: v.byteLength }, dependsOn: [] };
-        if (!v.deleted) for (const p of Object.values(next.prepared)) {
-          if (p.operation.after?.kind === 'directory' && v.path.startsWith(p.operation.after.path + '/')) operation.dependsOn.push(p.operation.opId);
+        // The host accepts content and path changes separately. Persist content
+        // against the old path first; its ACK supplies the revision for the move.
+        // The working version remains untouched throughout this intermediate step.
+        const target = !v.deleted && e.base && e.base.path !== v.path && e.base.blobHash !== v.blobHash
+          ? { ...v, path: e.base.path } : v;
+        const kind = target.deleted ? target.kind === 'directory' ? 'rmdir' : 'delete' : e.base && e.base.path !== target.path ? 'move' : target.kind === 'directory' ? 'mkdir' : 'put';
+        const operation = { vaultId: profile.vaultId, replicaId: profile.replicaId, opId: randomUUID(), entryId: id, kind, baseRevision: e.base?.revision ?? null, after: target.deleted ? null : { path: target.path, kind: target.kind, blobHash: target.blobHash, byteLength: target.byteLength }, dependsOn: [] };
+        if (!target.deleted) for (const p of Object.values(next.prepared)) {
+          if (p.operation.after?.kind === 'directory' && target.path.startsWith(p.operation.after.path + '/')) operation.dependsOn.push(p.operation.opId);
         }
         for (const child of children) operation.dependsOn.push(Object.values(next.prepared).find(p => p.operation.entryId === child.local.entryId).operation.opId);
-        next.prepared[operation.opId] = { operation, localHead: e.localHead, local: v }; result.push(operation);
+        next.prepared[operation.opId] = { operation, localHead: e.localHead, local: target }; result.push(operation);
       }
       commit(next); return clone(result);
     }
@@ -271,7 +276,7 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       } else {
         check(result.confirmed.entryId === id && sameContent(result.confirmed, pending.local), 'invalid-confirmation');
         e.base = result.confirmed;
-        if (e.localHead === pending.localHead) e.local = result.confirmed;
+        if (e.localHead === pending.localHead && sameContent(e.local, pending.local)) e.local = result.confirmed;
       }
       next.acknowledgments[result.opId] = result; delete next.prepared[result.opId]; next.errorCode = null; commit(next);
     }
@@ -290,6 +295,12 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
       check(!Object.values(state.prepared).some(p => p.operation.entryId === c.entryId), 'prepared-operation-pending');
       const next = clone(state), files = [];
       if (c.local && c.remote && c.local.entryId !== c.remote.entryId) {
+        const other = state.entries[c.remote.entryId];
+        check(!Object.values(state.prepared).some(p => p.operation.entryId === c.remote.entryId), 'prepared-operation-pending');
+        // The displayed remote version does not authorize discarding another
+        // tracked identity's local changes (or its newer confirmed revision).
+        check(!other || equal(other.base, c.remote) && equal(other.local, c.remote)
+          && !Object.values(state.conflicts).some(conflict => conflict.entryId === c.remote.entryId), 'stale-conflict-resolution');
         // The remote occupant is a different identity. Never attach its base
         // revision to the local entry ID. Preserve/archive the old local version.
         const keep = input.choice === 'keep-both';
@@ -298,7 +309,7 @@ export async function createReplicaService({ userData, profile, interrupt = asyn
         const useLocal = input.choice === 'local' || input.choice === 'merged';
         const desired = useLocal ? { ...c.remote, ...(merged ?? { blobHash: e.local.blobHash, byteLength: e.local.byteLength }), deleted: e.local.deleted && !merged, revision: randomUUID() } : c.remote;
         if (merged) check(e.local.kind === 'note' && c.remote.kind === 'note', 'merge-not-text');
-        files.push(localChange(next, null, desired, c.remote)); delete next.conflicts[c.conflictId];
+        files.push(localChange(next, other?.local ?? null, desired, c.remote)); delete next.conflicts[c.conflictId];
         await transition(next, files); return;
       }
       let desired = clone(input.choice === 'remote' ? c.remote : e.local);

@@ -92,3 +92,23 @@ All native runs use supplied Node **24.19.0**, real SQLite/files and disposable 
 - `pnpm typecheck`: pass. Scoped `git diff --check`: pass (normal LF/CRLF warnings).
 
 This checkpoint is submitted for the requested clean review, not self-certified as independently reviewed. Outstanding gates are server wiring, directory-ID representation acceptance, and actual packaged/native UI acceptance. Native discovery now reuses Task 6's committed export.
+
+## Round 2 — Faraday review of 0efa3be
+
+Both Important findings reproduced before implementation:
+
+- `node --test --test-name-pattern=round2 tests/sync-desktop-store.test.mjs`: **0/2 RED**. Cross-identity resolution unexpectedly succeeded, replacing tracked B; the real host rejected edited-then-renamed A with `invalid-state-transition`.
+- Cross-identity resolution now checks the second identity inside the serialized replica operation. Any B prepared operation rejects with `prepared-operation-pending`; a tracked B whose base/local no longer exactly match the displayed remote version, or which has its own active conflict, rejects with `stale-conflict-resolution`. A and B state, working bytes, and prepared operations remain untouched. Typed merges are still retained before rejection. A clean matching B uses its actual before-version in the journal, not a fictitious missing file. The UI must reconcile B before retrying A; A's resolution does not authorize overwriting B.
+- Combined path/content edits prepare an immutable conditional `put` at the confirmed old path first. After its ACK, the next operation uses that confirmed revision for a content-preserving `move`. An intermediate ACK cannot replace the desired working version even if its local head has not changed. Later edits also survive ACKs. Parent removal waits until the child's prepared operation actually represents its final local version; normal directory-creation/move/removal dependencies remain in force.
+- Regression coverage exercises all four resolution choices against moved/edited B, plus B already prepared. Real host/replica pairs exercise edit `old/a.md`, rename `old` to `new`, restart with prepared operations, restart between ACK rounds, both unchanged-head and edited-during-ACK cases, stable file ID, final host bytes, and retained original/A/B history bytes.
+
+Controller ruling received during this round: v1 nonempty folder rename may create new directory UUIDs and conditionally tombstone old directories. Structural directory identity is not stable across this rename; child file identity/history/pending bytes remain stable. Unknown host children continue to block old-directory removal under the unchanged host protocol. No directory atomic-rename protocol expansion is included or needed for this fix.
+
+Fresh verification (Node 24.19.0; disposable real SQLite/files, elevated solely for Windows fixture hard links/native helper execution):
+
+- `node --test tests/sync-desktop-store.test.mjs tests/sync-client-transport.test.mjs`: **51/51 GREEN**, including all three round-2 cases.
+- `pnpm test:unit`: **181/181 GREEN**, including desktop-data-root and desktop-updater coverage.
+- `pnpm typecheck`: **GREEN**.
+- Scoped `git diff --check`: pass; only normal Windows line-ending warnings.
+
+Integration update superseding the earlier gates above: controller reports server IPC/media wiring in `e579a60` and corrected packaged Windows smoke GREEN in `b4ef286`. The startup assertion was a smoke-environment issue; no product main/startup change was made here. Directory-ID representation is now explicitly approved as above. This round changes only replica-service, focused replica tests, and this report. Independent round-2 review and full integrated no-loss/conflict UI acceptance remain controller gates; no publication performed.
