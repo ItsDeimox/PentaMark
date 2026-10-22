@@ -69,6 +69,7 @@
     "files": [
       "desktop/main.cjs",
       "desktop/preload.cjs",
+      "desktop/sync-ipc.cjs",
       "desktop/splash.html",
       "public/pentamark-brand.svg",
       "public/pentamark-brand-badge.svg",

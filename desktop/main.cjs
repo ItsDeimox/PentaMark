@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, shell, safeStorage } = require("ele
 const { createTailscaleSharing } = require('./tailscale.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { invitationFromArgs, validInviteUrl } = require('./invitations.cjs');
+const { createSyncBridge } = require('./sync-ipc.cjs');
 const { spawn } = require("node:child_process");
 const { existsSync, readFileSync, statSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync } = require("node:fs");
 const { randomBytes } = require("node:crypto");
@@ -166,15 +167,21 @@ function startServer(directory, vaultDirectory, customVault) {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       PENTAMARK_DESKTOP: "1",
+      PENTAMARK_USER_DATA_DIR: app.getPath('userData'),
       PENTAMARK_DATA_DIR: directory,
       ...(customVault ? { PENTAMARK_VAULT_DIR: vaultDirectory } : {}),
     },
     windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   serverProcess.stdout?.on("data", (chunk) => console.log(String(chunk).trimEnd()));
   serverProcess.stderr?.on("data", (chunk) => console.error(String(chunk).trimEnd()));
 }
+
+const syncBridge = createSyncBridge({ getChild: () => serverProcess, trustedFrame,
+  validationPath: join(appRoot(), 'local', 'sync', 'replica-validation.mjs') });
+ipcMain.handle('pentamark:sync', (event, command) => syncBridge.invoke(event, command));
+app.on('will-quit', () => syncBridge.close());
 
 async function createWindow() {
   splashWindow = new BrowserWindow({

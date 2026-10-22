@@ -1,5 +1,21 @@
+type DesktopSyncPayloads = {
+  open: import('./features/sync/contracts').ReplicaProfile;
+  configure: { offlineEnabled: boolean; mode: import('./features/sync/contracts').SyncMode };
+  request: { url: string; method: string; body?: unknown };
+  snapshot: Record<string, never>;
+  preparePending: { limit: number };
+  persistIncoming: import('./features/sync/contracts').IncomingBatch;
+  confirm: import('./features/sync/contracts').ApplyResult;
+  resolve: import('./features/sync/contracts').ConflictResolution;
+};
+type DesktopSyncCommand = { [M in keyof DesktopSyncPayloads]: {
+  requestId: string; replicaId: string; method: M; payload: DesktopSyncPayloads[M];
+} }[keyof DesktopSyncPayloads];
+type DesktopSyncResponse = { requestId: string; replicaId: string } &
+  ({ ok: true; value: unknown } | { ok: false; error: string });
 interface Window {
   pentaMarkDesktop?: {
+    sync: { invoke(command: DesktopSyncCommand): Promise<DesktopSyncResponse> };
     tailscaleStatus(): Promise<{installed:boolean;connected:boolean;configured:boolean;deviceName?:string;address?:string;error?:string}>;
     saveTailscaleKey(key:string): Promise<{installed:boolean;connected:boolean;configured:boolean;deviceName?:string;address?:string;error?:string}>;
     forgetTailscaleKey(): Promise<void>;

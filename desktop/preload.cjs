@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("pentaMarkDesktop", {
+  sync: { invoke: command => ipcRenderer.invoke('pentamark:sync', command) },
   tailscaleStatus:()=>ipcRenderer.invoke('pentamark:tailscale-status'),
   saveTailscaleKey:key=>ipcRenderer.invoke('pentamark:tailscale-save-key',key),
   forgetTailscaleKey:()=>ipcRenderer.invoke('pentamark:tailscale-forget-key'),
