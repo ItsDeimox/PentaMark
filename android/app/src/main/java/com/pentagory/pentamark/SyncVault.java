@@ -259,9 +259,12 @@ public final class SyncVault implements AutoCloseable {
                 for(JSONObject other:rows) {
                     if(other==row)continue;JSONObject child=other.optJSONObject("local");if(child==null)continue;
                     String path=local.getString("path"), otherPath=child.getString("path");
-                    boolean prerequisite=local.getBoolean("deleted") && otherPath.startsWith(path+"/")
+                    JSONObject otherBase=other.optJSONObject("base"), p=pending(other.getString("entryId")), preparedLocal=p==null?null:p.optJSONObject("local");
+                    boolean leavingSubtree=otherBase!=null && otherBase.getString("path").startsWith(path+"/")
+                        || preparedLocal!=null && preparedLocal.getString("path").startsWith(path+"/");
+                    boolean prerequisite=local.getBoolean("deleted") && (otherPath.startsWith(path+"/") || leavingSubtree)
                         || !local.getBoolean("deleted") && !child.getBoolean("deleted") && child.getString("kind").equals("directory") && path.startsWith(otherPath+"/");
-                    if(prerequisite && other.getBoolean("dirty")) {JSONObject p=pending(other.getString("entryId"));if(p==null){wait=true;break;}dependencies.put(p.getJSONObject("operation").getString("opId"));}
+                    if(prerequisite && other.getBoolean("dirty")) {if(p==null || !p.getString("localHead").equals(other.getString("localHead"))){wait=true;break;}dependencies.put(p.getJSONObject("operation").getString("opId"));}
                 }
                 if(wait)continue;
                 JSONObject operation = obj("vaultId", profile.getString("vaultId"), "replicaId", profile.getString("replicaId"), "opId", id(), "entryId", row.getString("entryId"),
@@ -457,7 +460,14 @@ public final class SyncVault implements AutoCloseable {
             JSONObject local=row.optJSONObject("local");if(!SyncFileJournal.live(local))continue;String path=local.getString("path");
             if(!path.equals(old)&&!path.startsWith(old+"/"))continue;
             JSONObject next=copy(row), changed=copy(local).put("revision",id());
-            if(dest==null)changed.put("deleted",true).put("blobHash",JSONObject.NULL).put("byteLength",0);
+            if(dest!=null && local.getString("kind").equals("directory")) {
+                // Host protocol moves only empty directories. Create destination scaffolds with new
+                // identities, preserve file identities, then conditionally remove the old directories.
+                JSONObject created=empty(id()), destination=copy(local).put("entryId",created.getString("entryId")).put("path",dest+path.substring(old.length())).put("revision",id());
+                rowChange(plan,created,copy(created).put("local",destination).put("localHead",id()).put("dirty",true).put("approved",!conflicted(row.getString("entryId"))));
+                changed.put("deleted",true).put("blobHash",JSONObject.NULL).put("byteLength",0);
+            }
+            else if(dest==null)changed.put("deleted",true).put("blobHash",JSONObject.NULL).put("byteLength",0);
             else changed.put("path",dest+path.substring(old.length()));
             next.put("local",changed).put("localHead",id()).put("dirty",true).put("approved",!conflicted(row.getString("entryId")));
             rowChange(plan,row,next);

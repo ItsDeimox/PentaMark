@@ -165,6 +165,20 @@ public class SyncDatabaseInstrumentedTest {
         vault.close();vault=new SyncVault(context,profile);
         assertEquals("bytes",vault.request("/api/note?path=Renamed/A.md","GET",null).getJSONObject("data").getString("content"));
     }
+    @Test public void confirmedFolderRenameUsesMkdirChildMoveRmdirWithConditionalDependencies()throws Exception {
+        vault.request("/api/folder","POST",SyncVault.obj("path","Notes"));vault.request("/api/note","POST",SyncVault.obj("path","Notes/A.md","content","bytes"));
+        JSONArray initial=vault.preparePending(100);
+        for(int i=0;i<initial.length();i++){JSONObject op=initial.getJSONObject(i),v=new JSONObject(op.getJSONObject("after").toString()).put("entryId",op.getString("entryId")).put("deleted",false).put("revision","base-"+i);vault.confirm(SyncVault.obj("opId",op.getString("opId"),"status","applied","confirmed",v));}
+        vault.request("/api/folder?path=Notes","PATCH",SyncVault.obj("newPath","Renamed"));vault.close();vault=new SyncVault(context,profile);
+        JSONArray ops=vault.preparePending(100);assertEquals(3,ops.length());
+        JSONObject mkdir=ops.getJSONObject(0),move=ops.getJSONObject(1),rmdir=ops.getJSONObject(2);
+        assertEquals("mkdir",mkdir.getString("kind"));assertTrue(mkdir.isNull("baseRevision"));
+        assertEquals("move",move.getString("kind"));assertEquals("note",move.getJSONObject("after").getString("kind"));assertEquals("base-1",move.getString("baseRevision"));
+        assertEquals(mkdir.getString("opId"),move.getJSONArray("dependsOn").getString(0));
+        assertEquals("rmdir",rmdir.getString("kind"));assertEquals("base-0",rmdir.getString("baseRevision"));assertEquals(move.getString("opId"),rmdir.getJSONArray("dependsOn").getString(0));
+        assertNotEquals(initial.getJSONObject(0).getString("entryId"),mkdir.getString("entryId"));assertEquals(initial.getJSONObject(1).getString("entryId"),move.getString("entryId"));
+        assertEquals(ops.toString(),vault.preparePending(100).toString());assertEquals("bytes",vault.request("/api/note?path=Renamed/A.md","GET",null).getJSONObject("data").getString("content"));
+    }
     @Test public void keepBothResolvesDistinctIdsWithoutReassigningIdentity() throws Exception {
         write("local");JSONObject before=row();JSONObject blob=vault.files.store(new ByteArrayInputStream("remote".getBytes("UTF-8")),100);
         JSONObject remote=SyncVault.obj("entryId","other","kind","note","path","A.md","revision","remote","blobHash",blob.getString("blobHash"),"byteLength",6,"deleted",false);
