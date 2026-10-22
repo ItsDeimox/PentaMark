@@ -571,7 +571,7 @@ export default function PentaMarkApp() {
     savingRef.current=true;
     try{
       await retainRecoveredConflict(conflict);
-      if(activePathRef.current!==conflict.path||contentRef.current!==conflict.localContent)throw new Error('O texto mudou. A cópia foi preservada; revise a nota novamente.');
+      if(activePathRef.current!==conflict.path||contentRef.current!==(conflict.editorContent??conflict.localContent))throw new Error('O texto mudou. A cópia foi preservada; revise a nota novamente.');
       if (isAndroidLocal || isOfflineReplica) androidDrafts.remove(conflict.path);
       contentRef.current=conflict.remoteContent;revisionRef.current=conflict.remoteRevision;
       setContent(conflict.remoteContent);setRevision(conflict.remoteRevision);setSaveState('saved');
@@ -587,13 +587,14 @@ export default function PentaMarkApp() {
     setSaveState("saving");
     try {
       await retainRecoveredConflict(conflict);
-      if(isOfflineReplica&&(activePathRef.current!==conflict.path||contentRef.current!==conflict.localContent))throw new Error('O texto mudou. Revise a nota antes de aplicar a mesclagem.');
+      if(resolvedContent!==conflict.localContent)await retainRecoveredConflict({...conflict,localContent:resolvedContent});
+      if(isOfflineReplica&&(activePathRef.current!==conflict.path||contentRef.current!==(conflict.editorContent??conflict.localContent)))throw new Error('O texto mudou. Revise a nota antes de aplicar a mesclagem.');
       const result = await request<{ revision: string }>(`/api/note?path=${encodeURIComponent(conflict.path)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: resolvedContent, baseRevision: conflict.remoteRevision, clientId }),
       });
-      if(isOfflineReplica&&(activePathRef.current!==conflict.path||contentRef.current!==conflict.localContent))throw new Error('Mesclagem salva localmente; o rascunho mais novo continua preservado.');
+      if(isOfflineReplica&&(activePathRef.current!==conflict.path||contentRef.current!==(conflict.editorContent??conflict.localContent)))throw new Error('Mesclagem salva localmente; o rascunho mais novo continua preservado.');
       contentRef.current=resolvedContent;revisionRef.current=result.revision;
       setContent(resolvedContent);
       if (isAndroidLocal || isOfflineReplica) androidDrafts.remove(conflict.path);
@@ -606,7 +607,7 @@ export default function PentaMarkApp() {
     } catch (error) {
       if (error instanceof RequestError && error.status === 409) {
         const remote = await request<OpenNote>(`/api/note?path=${encodeURIComponent(conflict.path)}`).catch(() => null);
-        if (remote) setConflict({ path: remote.path, localContent: resolvedContent, remoteContent: remote.content, remoteRevision: remote.revision });
+        if (remote) setConflict({ path: remote.path, localContent: resolvedContent, remoteContent: remote.content, remoteRevision: remote.revision, editorContent: conflict.editorContent??conflict.localContent });
         setSaveState("conflict");
         notify("O arquivo mudou de novo — atualizei o diff");
         return;

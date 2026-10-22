@@ -20,7 +20,11 @@ async function offlineBridge(page,platform) {
    if(args.url.startsWith('/api/note')){
     if(args.method==='POST'){localStorage.setItem('test:preserved-conflict',JSON.stringify(args.body));return{status:201,data:{path:args.body.path,revision:'copy-head'}};}
     const path=new URL(args.url,'http://local').searchParams.get('path');const key='test:replica:'+path;
-    if(args.method==='PUT')localStorage.setItem(key,args.body.content);
+    if(args.method==='PUT'){
+     localStorage.setItem('test:put-count',String(Number(localStorage.getItem('test:put-count')||0)+1));
+     if(localStorage.getItem('test:reject-next-put')){localStorage.removeItem('test:reject-next-put');return{status:409,data:{error:'revision-conflict'}};}
+     localStorage.setItem(key,args.body.content);
+    }
     return{status:200,data:{...meta(path),content:localStorage.getItem(key)||'Conteúdo local '+path,revision:'local-head'}};
    }
    return{status:404,data:{error:'unavailable-offline'}};
@@ -57,6 +61,21 @@ for(const choice of ['Usar servidor','Manter minha versão'])test(`pc: recovered
  await page.getByRole('button',{name:choice,exact:true}).click();
  await expect.poll(()=>page.evaluate(()=>localStorage.getItem('test:preserved-conflict'))).toContain('Rascunho divergente');
  await page.reload();await expect(page.locator('.cm-content')).toBeVisible();await expect(page.getByRole('button',{name:'Usar servidor',exact:true})).toHaveCount(0);
+});
+for(const choice of ['Salvar mesclagem','Usar servidor'])test(`pc: merge rejected once can retry with ${choice}`,async({page})=>{
+ await offlineBridge(page,'pc');await page.addInitScript(()=>{
+  localStorage.setItem('test:reject-next-put','1');
+  localStorage.setItem('pentamark:sync:11111111-1111-4111-8111-111111111111:33333333-3333-4333-8333-333333333333:draft:Alpha.md',JSON.stringify({content:'Rascunho original',revision:'old-head'}));
+ });await page.goto('/');
+ await page.getByLabel('Resultado da mesclagem').fill('Mesclagem diferente');
+ await page.getByRole('button',{name:'Salvar mesclagem',exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>localStorage.getItem('test:put-count'))).toBe('1');
+ await expect(page.getByLabel('Resultado da mesclagem')).toHaveValue('Mesclagem diferente');
+ await expect(page.getByRole('region',{name:'Diferenças do arquivo'})).toContainText('Mesclagem diferente');
+ await page.getByRole('button',{name:choice,exact:true}).click();
+ await expect(page.getByLabel('Resultado da mesclagem')).toHaveCount(0);
+ await expect(page.locator('.cm-content')).toContainText(choice==='Salvar mesclagem'?'Mesclagem diferente':'Conteúdo local Alpha.md');
+ expect(await page.evaluate(()=>localStorage.getItem('test:preserved-conflict'))).toContain('Mesclagem diferente');
 });
 for(const platform of ['pc','android'])test(`${platform}: offline attachment uses native picker, settings export stays native`,async({page})=>{
  await offlineBridge(page,platform);await page.goto('/');

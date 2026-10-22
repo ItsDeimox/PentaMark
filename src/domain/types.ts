@@ -14,7 +14,7 @@ export type ClientInfo = {
 export type LockInfo = { path: string; clientId: string; name: string };
 export type VaultState = { notes: NoteMeta[]; assets: AssetMeta[]; folders: string[]; clients: number; connections: ClientInfo[]; locks: LockInfo[]; urls: string[]; vaultName: string };
 export type OpenNote = NoteMeta & { content: string; revision: string };
-export type ConflictData = { path: string; localContent: string; remoteContent: string; remoteRevision: string };
+export type ConflictData = { path: string; localContent: string; remoteContent: string; remoteRevision: string; editorContent?: string };
 export type LinkHoverPreview = { path: string; x: number; y: number; html: string; loading: boolean; error: string };
 export type KanbanDialogState = {
   kind: "card" | "column";

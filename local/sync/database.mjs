@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, openSync, fsyncSync, closeSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 export function openDatabase(path) {
   const db = new DatabaseSync(path);
@@ -7,6 +8,13 @@ export function openDatabase(path) {
     // Refuse newer stores before changing journal mode or issuing any DDL.
     const version = db.prepare('PRAGMA user_version').get().user_version;
     if (version > 1) throw new Error('unsupported-schema');
+    if(version===0&&db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n>0){
+      // SQLite includes committed WAL pages; copying only the main file would not.
+      // Unique, closed snapshot remains available even if migration rolls back.
+      const backup=path+'.pre-schema-1-'+randomUUID()+'.sqlite';
+      db.prepare('VACUUM INTO ?').run(backup);
+      const fd=openSync(backup,'r+');try{fsyncSync(fd);}finally{closeSync(fd);}
+    }
     db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON');
     const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8').replace(/^PRAGMA[^;]*;\s*/gm, '');
     transaction(db, () => { db.exec(schema); db.exec('PRAGMA user_version=1'); });
