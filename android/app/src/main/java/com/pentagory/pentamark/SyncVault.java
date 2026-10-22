@@ -581,6 +581,12 @@ public final class SyncVault implements AutoCloseable {
         ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(files.object(v.getString("blobHash")))){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
         return obj("version",v,"content",out.toString("UTF-8"));
     }
+    public synchronized void exportReplica(OutputStream output)throws Exception {
+        ready();JSONObject manifest=obj("format","pentamark-replica-backup","formatVersion",1,"databaseSchema",1,"identity",copy(meta.getJSONObject("profile")));
+        // Logical SQLite snapshot, never a copy of the live db/WAL. No partial transfers are certified as objects.
+        database.transaction(() -> {manifest.put("snapshot",snapshot()).put("tables",database.exportTables());});
+        SyncReplicaArchive.write(files,manifest,output);
+    }
     public void exportBlob(JSONObject blob,OutputStream output)throws Exception {
         final File object;synchronized(this){ready();long size=size(blob);files.require(blob.getString("blobHash"),size);object=files.object(blob.getString("blobHash"));}
         try(InputStream in=new FileInputStream(object)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)output.write(b,0,n);}

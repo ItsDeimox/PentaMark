@@ -48,6 +48,17 @@ public final class SyncDatabase extends SQLiteOpenHelper {
         if (db.update(table, values, "id=?", new String[]{id}) == 0) db.insertOrThrow(table, null, values);
     }
     void remove(String table, String id) { getWritableDatabase().delete(table, "id=?", new String[]{id}); }
+    JSONObject exportTables()throws Exception {
+        JSONObject result=new JSONObject();
+        for(String table:new String[]{"vaults","entries","versions","pending_ops","applied_ops","conflicts"}) {
+            JSONArray rows=new JSONArray();
+            try(Cursor cursor=getReadableDatabase().query(table,new String[]{"id","value"},null,null,null,null,"rowid")) {
+                while(cursor.moveToNext())rows.put(new JSONObject().put("id",cursor.getString(0)).put("value",new JSONObject(cursor.getString(1))));
+            }
+            result.put(table,rows);
+        }
+        return result;
+    }
     interface Work { void run() throws Exception; }
     void transaction(Work work) throws Exception {
         SQLiteDatabase db = getWritableDatabase(); db.beginTransaction();

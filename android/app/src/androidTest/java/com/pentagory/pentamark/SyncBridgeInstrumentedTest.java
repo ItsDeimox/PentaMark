@@ -12,6 +12,16 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class SyncBridgeInstrumentedTest {
+    @Test public void cancelledReplicaPickerNeverReportsExportComplete()throws Exception {
+        android.app.Instrumentation instrumentation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation();
+        android.content.IntentFilter filter=new android.content.IntentFilter(android.content.Intent.ACTION_CREATE_DOCUMENT);filter.addDataType("application/zip");filter.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        android.app.Instrumentation.ActivityMonitor monitor=instrumentation.addMonitor(filter,new android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED,null),true);
+        JSONObject profile=SyncVault.obj("vaultId",UUID.randomUUID().toString(),"replicaId",UUID.randomUUID().toString(),"serverId",UUID.randomUUID().toString(),"origin","http://100.64.0.1:3000","offlineEnabled",true,"mode","manual");
+        try(ActivityScenario<MainActivity> activity=ActivityScenario.launch(MainActivity.class)) {
+            await(activity,"typeof window.Capacitor?.nativePromise==='function'");call(activity,"open",SyncVault.obj("profile",profile));
+            JSONObject result=call(activity,"exportReplica",new JSONObject());assertTrue(result.getBoolean("cancelled"));assertFalse(result.optBoolean("exported",false));assertEquals(1,monitor.getHits());
+        }finally{instrumentation.removeMonitor(monitor);}
+    }
     @Test public void completionAndMigrationUseExactCapacitorEnvelopes()throws Exception {
         JSONObject profile=SyncVault.obj("vaultId",UUID.randomUUID().toString(),"replicaId",UUID.randomUUID().toString(),"serverId",UUID.randomUUID().toString(),"origin","http://100.64.0.1:3000","offlineEnabled",true,"mode","manual");
         JSONObject hello=SyncVault.obj("protocol",1,"vaultId",profile.getString("vaultId"),"serverId",profile.getString("serverId"),"epoch","e","maxFileBytes",104857600,"chunkBytes",1048576);

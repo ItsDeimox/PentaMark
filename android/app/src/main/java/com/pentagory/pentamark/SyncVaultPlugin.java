@@ -24,6 +24,7 @@ public final class SyncVaultPlugin extends Plugin {
     private String importPath;
     private SyncVault exporting;
     private JSONObject exportBlob;
+    private SyncVault exportingReplica;
     private final java.util.Set<RemoteConnection> probes=new java.util.HashSet<>();
     private RemoteConnection.VerifiedHello discovery;
     private long bindingGeneration;
@@ -186,8 +187,35 @@ public final class SyncVaultPlugin extends Plugin {
         if(c==null)return;if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
         Uri uri=result.getData().getData();
         try{work.execute(() -> {
-            try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
-                if(out==null || target==null)throw new IOException("document-unavailable");target.exportBlob(blob,out);c.resolve(new JSObject().put("cancelled",false));
+            try {
+                try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
+                    if(out==null || target==null)throw new IOException("document-unavailable");target.exportBlob(blob,out);
+                }
+                c.resolve(new JSObject().put("cancelled",false));
+            }catch(Exception e){c.reject(e.getMessage(),e);}
+        });}catch(Exception e){c.reject(e.getMessage(),e);}
+    }
+    @PluginMethod public void exportReplica(PluginCall c) {
+        boolean claimed=false;
+        try {
+            synchronized(lock){if(exportingReplica!=null || vault==null || opening)throw new IOException("replica-busy");exportingReplica=vault;claimed=true;}
+            Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"PentaMark-replica.zip");
+            getActivity().runOnUiThread(() -> {try{startActivityForResult(c,intent,"exportReplicaResult");}catch(Exception e){synchronized(lock){exportingReplica=null;}c.reject(e.getMessage(),e);}});
+        }catch(Exception e){if(claimed)synchronized(lock){exportingReplica=null;}c.reject(e.getMessage(),e);}
+    }
+    @ActivityCallback private void exportReplicaResult(PluginCall c,ActivityResult result) {
+        final SyncVault target;synchronized(lock){target=exportingReplica;exportingReplica=null;}
+        if(c==null)return;
+        if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null || result.getData().getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
+        Uri uri=result.getData().getData();
+        try{work.execute(() -> {
+            try {
+                if(target==null)throw new IOException("replica-changed");
+                try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
+                    if(out==null)throw new IOException("document-unavailable");target.exportReplica(out);
+                }
+                // Provider close/ZIP finalization must succeed before notifying the UI.
+                c.resolve(new JSObject().put("cancelled",false).put("exported",true).put("format","pentamark-replica-backup").put("formatVersion",1));
             }catch(Exception e){c.reject(e.getMessage(),e);}
         });}catch(Exception e){c.reject(e.getMessage(),e);}
     }
