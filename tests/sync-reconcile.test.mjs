@@ -23,6 +23,9 @@ for (const c of cases.reconciliation) {
     const before = structuredClone(inputs);
     assert.deepEqual(planEntry(...inputs), { action: c.action, reason: c.reason, base: before[0], local: before[1], remote: before[2] });
     assert.deepEqual(inputs, before, 'must not mutate supplied versions');
+    if (c.action === 'converged' && inputs[0]) {
+      assert.equal(planEntry(...inputs).base.revision, before[0].revision, 'convergence retains original base revision');
+    }
   });
 }
 for (const c of cases.paths) {

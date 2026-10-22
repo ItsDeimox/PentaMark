@@ -56,7 +56,10 @@ export function planEntry(
   if (base && (!local || !remote)) return decision('conflict', 'missing-version');
   const localChanged = !sameState(base, local);
   const remoteChanged = !sameState(base, remote);
-  if (!localChanged && !remoteChanged) return decision('none', 'unchanged');
+  // A remote edit/revert can preserve state but still require acknowledging its revision.
+  // Revisions are opaque: equality only, never ordering; keep the original base below.
+  const remoteRevisionChanged = base !== null && remote !== null && base.revision !== remote.revision;
+  if (!localChanged && !remoteChanged && !remoteRevisionChanged) return decision('none', 'unchanged');
   if (sameState(local, remote)) return decision('converged', 'same-state');
   if (!remoteChanged) return decision('push', 'local-only');
   if (!localChanged) return decision('pull', 'remote-only');

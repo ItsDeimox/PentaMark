@@ -4,10 +4,12 @@
     "paths": "NFC, forward-slash separators; preserve this spelling in path. pathKey applies locale-independent lower -> upper -> lower -> NFC to path. Java must use Normalizer.normalize(path.toLowerCase(Locale.ROOT).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT), Normalizer.Form.NFC); never default-locale casing. This is a conservative collision rule, not full Unicode casefold. Sigma variants collide; sharp-S ẞ/ß/SS collide as ss. Dotted İ and i+combining-dot collide but remain distinct from plain I/i. Dotless ı conservatively collides with I/i. Keys must remain stable under normalization. Reject empty/dot segments, absolute paths, Windows forbidden characters, trailing dots/spaces and device names. Native ports must additionally check filesystem collisions, symlinks and junctions, including runtime Unicode-version differences.",
     "identity": "Distinct IDs never converge, even with identical bytes. Live distinct IDs with the same pathKey conflict as path-collision. The caller supplies candidates; planEntry cannot discover other entries.",
     "absence": "null means no known version, not a tombstone. Missing sides of a known base conflict; deletion requires an explicit tombstone.",
-    "equality": "Compare ID, kind, NFC path with case preserved, hash, length and deleted; ignore opaque revisions and clocks. Tombstones retain path/kind for conservative comparison."
+    "equality": "Compare state by ID, kind, NFC path with case preserved, hash, length and deleted; ignore clocks. Tombstones retain path/kind for conservative comparison. Revisions are opaque and never ordered. Identical local/remote state with a remote revision different from the known base requires converged/same-state to acknowledge the remote revision, even for tombstones or edit/revert. Preserve the original base in the decision. Truly unchanged state and remote revision remain none/unchanged; a local-only revision difference does not require remote refresh."
   },
   "versions": {
     "A": {"entryId":"one","kind":"note","path":"Notes/A.md","revision":"base-original","blobHash":"A","byteLength":1,"deleted":false},
+    "Areverted": {"entryId":"one","kind":"note","path":"Notes/A.md","revision":"0-opaque-reverted","blobHash":"A","byteLength":1,"deleted":false},
+    "deletedRefreshed": {"entryId":"one","kind":"note","path":"Notes/A.md","revision":"0-opaque-deleted","blobHash":null,"byteLength":0,"deleted":true},
     "B": {"entryId":"one","kind":"note","path":"Notes/A.md","revision":"local-rev","blobHash":"B","byteLength":1,"deleted":false},
     "C": {"entryId":"one","kind":"note","path":"Notes/A.md","revision":"remote-rev","blobHash":"C","byteLength":1,"deleted":false},
     "Bremote": {"entryId":"one","kind":"note","path":"Notes/A.md","revision":"different-rev","blobHash":"B","byteLength":1,"deleted":false},
@@ -29,6 +31,10 @@
     {"name":"local creation","base":null,"local":"A","remote":null,"action":"push","reason":"local-only"},
     {"name":"remote creation","base":null,"local":null,"remote":"A","action":"pull","reason":"remote-only"},
     {"name":"unchanged","base":"A","local":"A","remote":"A","action":"none","reason":"unchanged"},
+    {"name":"remote edit then revert refreshes revision","base":"A","local":"A","remote":"Areverted","action":"converged","reason":"same-state"},
+    {"name":"remote tombstone revision refresh","base":"deleted","local":"deleted","remote":"deletedRefreshed","action":"converged","reason":"same-state"},
+    {"name":"unchanged tombstone","base":"deleted","local":"deleted","remote":"deleted","action":"none","reason":"unchanged"},
+    {"name":"local revision alone does not refresh remote","base":"A","local":"Areverted","remote":"A","action":"none","reason":"unchanged"},
     {"name":"conditional local edit","base":"A","local":"B","remote":"A","action":"push","reason":"local-only"},
     {"name":"remote edit","base":"A","local":"A","remote":"C","action":"pull","reason":"remote-only"},
     {"name":"same content different revisions","base":"A","local":"B","remote":"Bremote","action":"converged","reason":"same-state"},
