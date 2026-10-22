@@ -154,3 +154,11 @@ RED/GREEN evidence:
 - Host syntax and scoped whitespace checks pass. Tests use temporary real SQLite/filesystem fixtures; no HTTP test file was edited and no listener opened.
 
 The review-feedback and TDD skills guided reproducing both findings before implementation. Existing platform/power-loss and parallel integration qualifications from round 1 remain; this narrow checkpoint makes no new feature-wide CI claim.
+
+## Schema-guard initialization cleanup follow-up
+
+Fixed the writer-handle leak exposed by schema guard 40bbbbf (Sartre review). Host metadata open, vault metadata initialization, and object-store initialization now share a failure handler that closes any acquired metadata handle and releases the writer in `finally`. The existing recovery/startup failure handler also releases the writer even if metadata close fails. No schema downgrade or database rewrite fallback was introduced; no journal/route/server/replica interface changed.
+
+TDD regression uses a real temporary store with user_version=99 and a future payload table. RED: **0/1 pass**, second initialization incorrectly returned `host-already-open`. GREEN: repeated initialization returns `unsupported-schema`, exact database bytes and vault content remain unchanged, and reopening succeeds after the test alone restores its supported schema marker. Production never restores or downgrades that marker.
+
+Verification: full focused host/contract suite **133 pass, 0 fail, 0 skip**; existing `pnpm test:unit` run once: **181 pass, 0 fail, 0 skip**; host syntax and scoped whitespace checks pass. Changed files are only local/sync/host-service.mjs, tests/sync-host-store.test.mjs, and this report. Review-feedback/TDD guided reproduction before the narrowly scoped cleanup fix. Prior platform and feature-wide integration qualifications remain.

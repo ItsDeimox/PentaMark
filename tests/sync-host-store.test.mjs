@@ -26,6 +26,29 @@ async function put(f, content, base = null, path = 'a.md') {
   return { vaultId: f.host.vaultId, replicaId: 'test-replica', opId: randomUUID(), entryId: base?.entryId ?? randomUUID(),
     kind: 'put', baseRevision: base?.revision ?? null, after: { path, kind: 'note', ...blob }, dependsOn: [] };
 }
+test('future host schema rejection preserves database bytes and releases initialization writer lock', async t => {
+  const f = await fixture(t);
+  await f.host.mutate({ kind: 'put', path: 'kept.md', content: 'keep' });
+  const databasePath = join(f.host.root, 'store.sqlite');
+  await f.host.close();
+  const { DatabaseSync } = await import('node:sqlite');
+  const future = new DatabaseSync(databasePath);
+  future.exec("CREATE TABLE future_payload(value TEXT); INSERT INTO future_payload VALUES ('retain'); PRAGMA user_version=99; PRAGMA wal_checkpoint(TRUNCATE)");
+  future.close();
+  const bytes = await readFile(databasePath);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(f.reopen(), /unsupported-schema/);
+    assert.deepEqual(await readFile(databasePath), bytes);
+    assert.equal(await readFile(join(f.vaultRoot, 'kept.md'), 'utf8'), 'keep');
+  }
+  // Only the fixture restores its supported marker; production never downgrades.
+  const supported = new DatabaseSync(databasePath);
+  assert.equal(supported.prepare('SELECT value FROM future_payload').get().value, 'retain');
+  supported.exec('PRAGMA user_version=1'); supported.close();
+  await f.reopen();
+  assert.equal((await f.host.openSnapshot()).entries.find(e => e.path === 'kept.md').deleted, false);
+});
+
 for (const mode of ['remote-put', 'remote-move', 'legacy-folder-move']) test(`round2 ambiguous destination ancestor blocks ${mode}`, async t => {
   const f = await fixture(t);
   await mkdir(join(f.vaultRoot, 'cafe\u0301')); await mkdir(join(f.vaultRoot, 'café'));

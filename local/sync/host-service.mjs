@@ -60,10 +60,16 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
   const root = join(privateRoot, 'hosts', identity.vaultId);
   await mkdir(root, { recursive: true });
   const releaseWriter = acquireWriter(join(root, 'writer.sqlite'));
-  const db = openDatabase(join(root, 'store.sqlite'));
-  db.prepare('INSERT OR IGNORE INTO vaults VALUES (?,?,?)').run(identity.vaultId, identity.serverId, randomUUID());
-  const epoch = db.prepare('SELECT epoch FROM vaults').get().epoch;
-  const objects = await createObjectStore(join(root, 'objects'));
+  let db, epoch, objects;
+  try {
+    db = openDatabase(join(root, 'store.sqlite'));
+    db.prepare('INSERT OR IGNORE INTO vaults VALUES (?,?,?)').run(identity.vaultId, identity.serverId, randomUUID());
+    epoch = db.prepare('SELECT epoch FROM vaults').get().epoch;
+    objects = await createObjectStore(join(root, 'objects'));
+  } catch (error) {
+    try { db?.close(); } finally { releaseWriter(); }
+    throw error;
+  }
   let queue = Promise.resolve();
   let closed = false;
   const context = new AsyncLocalStorage();
@@ -429,6 +435,6 @@ export async function createHostService({ dataRoot, vaultRoot, maxFileBytes = 2 
     close: () => serial(() => { if (!closed) { db.close(); releaseWriter(); closed = true; } }),
   };
   try { await service.recover(); await service.rescan(); }
-  catch (e) { db.close(); releaseWriter(); throw e; }
+  catch (e) { try { db.close(); } finally { releaseWriter(); } throw e; }
   return service;
 }
