@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { handleMcpRequest } from "./mcp-bridge.mjs";
 import { createHostService } from "./sync/host-service.mjs";
+import { safeNativePath } from "./sync/paths.mjs";
 
 const LOCAL_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(LOCAL_DIR, "..");
@@ -594,9 +595,9 @@ async function referencedVaultFiles() {
 
 export async function cleanupUnusedAssets() {
   if (!config.cleanupUnusedAssets) return [];
-  const referenced = await referencedVaultFiles();
+  const { referenced, files } = await hostService.read(async () => ({ referenced: await referencedVaultFiles(), files: await walkVaultFiles() }));
   const moved = [];
-  for (const file of await walkVaultFiles()) {
+  for (const file of files) {
     if (!CLEANABLE_EXTENSIONS.has(extname(file.path).toLowerCase())) continue;
     const canonical = await realpath(file.fullPath).catch(() => file.fullPath);
     if (referenced.has(canonical)) continue;
@@ -636,7 +637,7 @@ export function mcpBridge(req) {
     async listFiles(filter = "", limit = 1000) {
       markMcpActivity(req, "listando arquivos", String(filter || ""), false);
       const needle = String(filter).toLocaleLowerCase("pt-BR");
-      return (await walkVaultFiles())
+      return (await hostService.read(() => walkVaultFiles()))
         .filter((file) => !needle || file.path.toLocaleLowerCase("pt-BR").includes(needle))
         .slice(0, limit)
         .map((file) => ({ path: file.path, size: file.size, modified: new Date(file.modified).toISOString(), kind: assetKind(extname(file.path).toLowerCase()) }));
@@ -646,7 +647,7 @@ export function mcpBridge(req) {
       const target = vaultTarget(path);
       const extension = extname(target.path).toLowerCase();
       if (!textMime(extension)) throw new Error("Esse arquivo é binário; use open_asset");
-      const content = await readFile(target.fullPath, "utf8");
+      const content = await hostService.read(async () => readFile(await safeNativePath(VAULT_DIR, target.path), "utf8"));
       const lines = content.split(/\r?\n/);
       const start = Math.max(1, Number(startLine) || 1);
       const end = Math.min(lines.length, Number(endLine) || lines.length);
@@ -655,7 +656,7 @@ export function mcpBridge(req) {
     async openAsset(path) {
       markMcpActivity(req, "visualizando asset", path, false);
       const target = vaultTarget(path);
-      const fileStat = await stat(target.fullPath);
+      const fileStat = await hostService.read(async () => stat(await safeNativePath(VAULT_DIR, target.path)));
       if (!fileStat.isFile()) throw new Error("Arquivo não encontrado");
       const protocol = String(req.headers["x-forwarded-proto"] || "http").split(",")[0];
       const host = String(req.headers.host || `localhost:${runtimePort}`);
@@ -665,6 +666,7 @@ export function mcpBridge(req) {
       markMcpActivity(req, "pesquisando", pathPrefix || query, false);
       const needle = String(query).toLocaleLowerCase("pt-BR");
       const prefix = String(pathPrefix).replaceAll("\\", "/").replace(/^\/+/, "").toLocaleLowerCase("pt-BR");
+      return hostService.read(async () => {
       const matches = [];
       for (const file of await walkVaultFiles()) {
         if (matches.length >= limit || (prefix && !file.path.toLocaleLowerCase("pt-BR").startsWith(prefix)) || !textMime(extname(file.path).toLowerCase()) || file.size > 4 * 1024 * 1024) continue;
@@ -674,6 +676,7 @@ export function mcpBridge(req) {
         });
       }
       return matches;
+      });
     },
     async writeFile(path, content, expectedRevision) {
       markMcpActivity(req, "editando arquivo", path, true);
@@ -733,9 +736,22 @@ async function handleUpload(req, res, url) {
 }
 
 async function serveFile(req, res, filePath, explicitType) {
-  const fileStat = await stat(filePath);
-  if (!fileStat.isFile()) throw new Error("Arquivo não encontrado");
-  const contentType = explicitType || MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
+  const prepare = async () => {
+    const selected = typeof filePath === "function" ? await filePath() : filePath;
+    const fileStat = await stat(selected);
+    if (!fileStat.isFile()) throw new Error("Arquivo não encontrado");
+    const contentType = explicitType || MIME_TYPES[extname(selected).toLowerCase()] || "application/octet-stream";
+    if (insideDirectory(selected, VAULT_DIR)) {
+      const blob = await hostService.objects.capture(await safeNativePath(VAULT_DIR, hostPath(selected)));
+      return { fileStat: { ...fileStat, size: blob.byteLength }, contentType, path: hostService.objects.path(blob.blobHash), cache: selected.startsWith(ASSETS_DIR) };
+    }
+    return { fileStat, contentType, path: selected, cache: false };
+  };
+  // Pin immutable bytes inside the queue, release it before any network streaming.
+  const pinned = typeof filePath === "function" || insideDirectory(filePath, VAULT_DIR)
+    ? await hostService.read(prepare) : await prepare();
+  const { fileStat, contentType } = pinned;
+  filePath = pinned.path;
   const range = req.headers.range;
 
   if (range && fileStat.size > 0) {
@@ -768,7 +784,7 @@ async function serveFile(req, res, filePath, explicitType) {
     "Content-Type": contentType,
     "Content-Length": fileStat.size,
     "Accept-Ranges": "bytes",
-    "Cache-Control": filePath.startsWith(ASSETS_DIR) ? "public, max-age=3600" : "no-cache",
+    "Cache-Control": pinned.cache ? "public, max-age=3600" : "no-cache",
   });
   if (req.method === "HEAD") res.end();
   else createReadStream(filePath).pipe(res);
@@ -787,12 +803,11 @@ async function handleApi(req, res, url) {
   }
   if (url.pathname === "/api/state" && req.method === "GET") {
     const connections = connectedClients();
+    const files = await hostService.read(async () => ({ notes: await listNotes(), assets: await listAssets(), folders: await listFolders() }));
     json(res, 200, {
       app: "PentaMark",
       protocolVersion: 6,
-      notes: await listNotes(),
-      assets: await listAssets(),
-      folders: await listFolders(),
+      ...files,
       clients: Math.max(1, connections.length),
       connections,
       locks: currentLocks(),
@@ -803,8 +818,7 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === "/api/file" && req.method === "GET") {
-    const filePath = await resolveVaultFile(url.searchParams.get("path"), url.searchParams.get("note") || "");
-    await serveFile(req, res, filePath);
+    await serveFile(req, res, () => resolveVaultFile(url.searchParams.get("path"), url.searchParams.get("note") || ""));
     return true;
   }
 
@@ -981,8 +995,10 @@ async function handleApi(req, res, url) {
 
   if (url.pathname === "/api/note" && req.method === "GET") {
     const target = noteTarget(url.searchParams.get("path"));
-    const content = await readFile(target.fullPath, "utf8");
-    const fileStat = await stat(target.fullPath);
+    const { content, fileStat } = await hostService.read(async () => {
+      const full = await safeNativePath(VAULT_DIR, hostPath(target.fullPath));
+      return { content: await readFile(full, "utf8"), fileStat: await stat(full) };
+    });
     json(res, 200, {
       path: target.path,
       title: basename(target.path, extname(target.path)),
@@ -1260,7 +1276,7 @@ export async function initializeVaultHost() {
   config = await loadConfig();
   runtimePort = Number(config.port);
   hostService = await createHostService({ dataRoot: DATA_DIR, vaultRoot: VAULT_DIR,
-    maxFileBytes: Math.max(1, Number(config.maxUploadMB) || 2048) * 1024 * 1024 });
+    getMaxFileBytes: () => Math.max(1, Number(config.maxUploadMB) || 2048) * 1024 * 1024 });
   await ensureVault();
   return hostService;
 }

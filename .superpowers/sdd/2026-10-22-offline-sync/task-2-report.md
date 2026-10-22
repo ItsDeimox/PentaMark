@@ -102,3 +102,38 @@ The tests use real SQLite databases and temporary files. Host API/MCP/upload/cle
 - `.superpowers/sdd/2026-10-22-offline-sync/task-2-report.md`
 
 No protocol route/transfer files, Android files, desktop files, shared contracts, package files, or other workers' tests are part of this commit.
+
+## Fix round 1 — checkpoint after review
+
+Status: DONE_WITH_CONCERNS. All requested host regressions pass. This section supersedes the earlier in-memory-folder, non-NFC-startup, static-limit, and single-rename-spec concerns. Reviewed the committed §7 recoverable no-clobber amendment (8fc821b); publication deliberately retains the recoverable pathname gap, never blind overwrite.
+
+### Fixes and interface decisions
+
+- Staged desired files are verified by hash and length before reuse, synced, and reconstructed from verified immutable objects when incomplete. Incomplete bytes are retained separately. Already-published external edits are not rewritten. Publication is verified again before SQLite confirmation.
+- Directory creation/move recovery requires persisted native identity evidence, not existence. Unexpected files/directories conflict. A crash between mkdir and ownership-evidence persistence conservatively conflicts; unproven destinations are never adopted. Source directory identity and scaffold ownership are checked before removal; nonempty rmdir still conflicts.
+- Legacy folder operations persist the complete original child plan, bases, dependencies, scaffolds and progress before the first child. Startup resumes remaining steps, including process-exit interruption between children. Applied-operation records bridge a crash before progress persistence. Divergence retains a durable conflict instead of recapturing or expanding the child set. `pendingPlans()` exposes unfinished plans.
+- `read(callback)` runs a finite filesystem-read callback after recovery in the mutation queue. Ordinary note/state/MCP/search/cleanup inspection uses it. Downloads pin immutable objects inside the callback and stream after releasing the queue. Nested queued host calls fail promptly with `nested-host-operation`; callbacks must not call public queued sync APIs. Snapshot/change/apply retain their own queue boundaries.
+- `createHostService({getMaxFileBytes})` accepts a synchronous getter returning a positive safe integer. It is validated at construction, hello, apply and the transition boundary. The legacy static `maxFileBytes` option remains supported. Lowering the cap before an interrupted file transition leaves bytes intact, removes the unstarted intent without an applied record, and allows unrelated startup; retry remains blocked until the cap permits it.
+- `apply(operation, {precondition})` invokes the optional async callback inside serialization immediately before the filesystem transition with `{operation, current}`. Undefined/true accepts; false, a string, `{errorCode}`, or `{allowed:false}` denies. Denial returns blocked without consuming the op ID or recording an applied result. Callback authorization is persisted before transition; an intent interrupted before authorization is not implicitly authorized by startup. Task 3 should check current permission/lock/cap here, not only before entering apply. No routes were edited or wired.
+- Native raw spellings are stored separately from NFC wire paths/path keys. Existing NFD files retain native spelling and legacy read/edit access across restart. Scanning isolates per-entry/subtree errors and persists `scanDiagnostics()`; unavailable entries/subtrees retain prior live versions, never inferred tombstones. Folded-key collisions retain both native entries and durable diagnostics/conflicts. Ambiguous subtree mutations fail conservatively while unrelated access works. Shared path folding remains fixture-tested; no replacement reconciliation algorithm was introduced.
+
+### Reusable journal / Task 4 coordination
+
+`applyFileIntent({vaultRoot, objects, intent, interrupt, beforeTransition})` retains its original arguments with optional `beforeTransition`. Intent additions are `beforeNativePath`, `desiredNativePath`, `directorySource`, and `scaffoldIdentity`. Exports `directoryIdentity(path)` and `verifyFileIntent({vaultRoot,intent})` support callers checking native ownership and final publication. Directory identity is `{dev, ino, birth}` with string values. New injected boundaries are `after-directory-create`, `after-preserve`, `after-plan`, and `after-plan-step`. The journal persists directory evidence inside the existing private work directory. Schema changes are additive tables for folder plans, directory ownership, native addressing, and scan diagnostics. Task 4's current imports of the verification/identity exports were checked; its worker owns replica behavior and must validate that integration independently.
+
+### Concise RED / GREEN evidence
+
+Real SQLite and temporary Windows filesystem fixtures; no personal vaults or network listeners:
+
+- Initial partial-stage and unowned-directory regressions: 6 failures before fixes, 6 pass afterward.
+- Durable folder-plan regressions: 3 failures before persistence, then all pass; abrupt process exit mid-plan also passes.
+- Dynamic hooks, queued reads, NFD and scan-error regressions: 5 failures before fixes, all pass afterward. Separate legacy API waiting regression failed before read wiring and passes after it.
+- Actual pathname-gap observation required the new `after-preserve` boundary; coordinated reads now wait through that gap. Slow response streams release the queue and retain their pinned content.
+- Ambiguous native-folder deletion and reduced-cap startup each reproduced a focused failure before their respective fixes; both now pass. Additional recovery tests reject replacement directories/files and publication altered before commit.
+- Final `node --test tests/sync-host-store.test.mjs tests/sync-reconcile.test.mjs`: **123 pass, 0 fail, 0 skip** (56 host + 67 shared).
+- Existing `pnpm test:unit`, run once this round: **181 pass, 0 fail, 0 skip**. The last narrow host recovery change was followed by the full focused run above.
+- Earlier compatibility run including `tests/sync-desktop-store.test.mjs`: **141 pass, 3 fail, 144 total**. Failures were `known-child folder rename is durable and preserves file IDs with ordered wire dependencies`, `folder batch resumes after crash between children without expanding captured deletion set`, and `nonempty folder rename recovers after an intermediate child publication`; each raised `folder-not-empty` from replica-service.mjs before journal execution. Parallel Task 4 changes are ongoing; this is not a clean feature-wide CI claim. No replica files were changed by Task 2.
+
+Remaining limits: process-crash recovery is tested, not physical power-loss certification; directory fsync platform restrictions and hardlink filesystem requirements remain. Native path checks are not a hostile-process handle-relative sandbox. Scanning still streams the vault and retains history/staging/trash without silent pruning. Ownership ambiguity can require conflict resolution rather than automatic adoption. Parallel feature-wide integration and Task 3 server handover remain controller work.
+
+Round-1 changed files: local/server.mjs; local/sync/{file-journal.mjs,host-service.mjs,paths.mjs,scan.mjs,schema.sql}; tests/sync-host-store.test.mjs; this report. No Task 7, route, replica, Android, shared-contract, or package files included.

@@ -19,8 +19,9 @@ export function publicPath(input) {
   if (result.path.split('/').some(s => s.startsWith('.') || s === 'node_modules')) throw new Error('private-path');
   return result;
 }
-export async function safePath(root, path) {
-  const normalized = publicPath(path).path;
+export async function safePath(root, path, { native = false } = {}) {
+  const validated = publicPath(path);
+  const normalized = native ? path.replace(/\\/g, '/') : validated.path;
   const full = resolve(root, normalized);
   if (!full.startsWith(resolve(root) + sep)) throw new Error('invalid-path');
   let part = resolve(root);
@@ -31,6 +32,7 @@ export async function safePath(root, path) {
   }
   return full;
 }
+export const safeNativePath = (root, path) => safePath(root, path, { native: true });
 export async function exists(path) {
   try { await lstat(path); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; }
 }

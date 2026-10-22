@@ -10,3 +10,7 @@ CREATE TABLE IF NOT EXISTS file_intents (intent_id TEXT PRIMARY KEY, intent TEXT
 CREATE TABLE IF NOT EXISTS pending_ops (op_id TEXT PRIMARY KEY, operation TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS transfer_progress (blob_hash TEXT PRIMARY KEY, verified_bytes TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS change_log (sequence INTEGER PRIMARY KEY AUTOINCREMENT, version TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS folder_plans (plan_id TEXT PRIMARY KEY, plan TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS directory_ownership (revision TEXT PRIMARY KEY, identity TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS native_entries (entry_id TEXT PRIMARY KEY, native_path TEXT NOT NULL, identity TEXT);
+CREATE TABLE IF NOT EXISTS scan_diagnostics (diagnostic_id TEXT PRIMARY KEY, diagnostic TEXT NOT NULL);

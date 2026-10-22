@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import { spawn } from 'node:child_process';
 
 const moduleURL = new URL('../local/sync/host-service.mjs', import.meta.url);
@@ -17,8 +17,8 @@ async function fixture(t, options = {}) {
   await mkdir(vaultRoot);
   let host = await implementation.createHostService({ vaultRoot, dataRoot, ...options });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
-  return { root, vaultRoot, dataRoot, get host() { return host; }, async reopen() {
-    await host.close(); host = await implementation.createHostService({ vaultRoot, dataRoot }); return host;
+  return { root, vaultRoot, dataRoot, get host() { return host; }, async reopen(options = {}) {
+    await host.close(); host = await implementation.createHostService({ vaultRoot, dataRoot, ...options }); return host;
   } };
 }
 async function put(f, content, base = null, path = 'a.md') {
@@ -205,6 +205,18 @@ test('normal API, MCP, uploads and cleanup persist history without opening a net
   const first = await request('POST', '/api/note', { path: 'group/a.md', content: 'one' });
   assert.equal(first.status, 201);
   assert.equal(first.data.revision, '7692c3ad3540bb803c02');
+  let unlock, entered;
+  const reached = new Promise(resolve => { entered = resolve; });
+  const holding = host.read(async () => { entered(); await new Promise(resolve => { unlock = resolve; }); });
+  await reached;
+  let noteRead = false, stateRead = false;
+  const readingNote = request('GET', '/api/note?path=group/a.md').then(value => { noteRead = true; return value; });
+  const readingState = request('GET', '/api/state').then(value => { stateRead = true; return value; });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 80));
+    assert.equal(noteRead, false, 'ordinary note reads must join the coordinator');
+    assert.equal(stateRead, false, 'ordinary state reads must join the coordinator');
+  } finally { unlock(); await holding; await Promise.all([readingNote, readingState]); }
   const second = await request('PUT', '/api/note?path=group/a.md', { content: 'two', baseRevision: first.data.revision });
   assert.equal(second.status, 200);
   assert.equal((await request('PUT', '/api/note?path=group/a.md', { content: 'stale', baseRevision: first.data.revision })).status, 409);
@@ -225,9 +237,30 @@ test('normal API, MCP, uploads and cleanup persist history without opening a net
   assert.equal(uploaded.status, 201);
   const asset = (await host.openSnapshot()).entries.find(e => e.path === 'assets/photo.png');
   assert.equal(asset.byteLength, 3);
+  let releaseStream, streamStarted;
+  const startedStream = new Promise(resolve => { streamStarted = resolve; });
+  const chunks = [];
+  const response = new Writable({ write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); releaseStream = done; streamStarted(); } });
+  response.writeHead = () => { response.headersSent = true; };
+  const finishedStream = new Promise(resolve => response.on('finish', resolve));
+  await server.requestHandler({ method: 'GET', url: '/api/file?path=assets/photo.png', headers: { host: 'localhost' }, socket: { remoteAddress: '127.0.0.1' } }, response);
+  await startedStream;
+  let timeout;
+  try {
+    await Promise.race([host.mutate({ kind: 'put', path: 'assets/photo.png', content: Buffer.from([9, 8, 7]) }),
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('network stream holds coordinator')), 2000); })]);
+  } finally { clearTimeout(timeout); releaseStream(); await finishedStream; }
+  assert.deepEqual(Buffer.concat(chunks), Buffer.from([0, 255, 7]), 'stream stays on pinned completed bytes');
   assert.deepEqual(await server.cleanupUnusedAssets(), ['assets/photo.png']);
   assert.equal(host.history(asset.entryId).at(-1).deleted, true);
   assert.deepEqual(await readFile(host.objects.path(asset.blobHash)), Buffer.from([0, 255, 7]));
+  const nativeNote = 'cafe\u0301.md';
+  await writeFile(join(root, 'vault/notes', nativeNote), 'legacy Unicode');
+  const unicodeRead = await request('GET', `/api/note?path=${encodeURIComponent(nativeNote)}`);
+  assert.equal(unicodeRead.status, 200); assert.equal(unicodeRead.data.content, 'legacy Unicode');
+  assert.equal((await request('PUT', `/api/note?path=${encodeURIComponent(nativeNote)}`, { content: 'edited Unicode', baseRevision: unicodeRead.data.revision })).status, 200);
+  assert.equal(await readFile(join(root, 'vault/notes', nativeNote), 'utf8'), 'edited Unicode');
+  assert.equal(existsSync(join(root, 'vault/notes/café.md')), false);
 });
 
 for (const boundary of ['after-object', 'after-intent', 'after-rename', 'before-commit']) test(`process exits with SQLite open at ${boundary}`, async t => {
@@ -345,4 +378,228 @@ test('case-only directory move never confirms an absent directory', async t => {
   const result = await f.host.apply({ vaultId: f.host.vaultId, replicaId: 'test', opId: randomUUID(), entryId: first.confirmed.entryId,
     kind: 'move', baseRevision: first.confirmed.revision, after: { ...first.confirmed, path: 'Folder' }, dependsOn: [] });
   assert.ok(existsSync(join(f.vaultRoot, result.status === 'applied' ? 'Folder' : 'folder')));
+});
+
+test('round1 incomplete desired staging is rebuilt before recovery publishes it', async t => {
+  let armed = false;
+  const f = await fixture(t, { interrupt: async name => { if (armed && name === 'after-intent') throw new Error('interrupted:stage'); } });
+  const first = await f.host.apply(await put(f, 'old'));
+  const op = await put(f, 'x'.repeat(100), first.confirmed); armed = true;
+  await assert.rejects(f.host.apply(op), /interrupted/);
+  const work = join(f.vaultRoot, '.pentamark-sync', f.host.pendingIntents()[0].intentId);
+  await mkdir(work, { recursive: true }); await writeFile(join(work, 'desired'), 'partial');
+  await f.reopen();
+  assert.equal((await f.host.apply(op)).status, 'already-applied');
+  assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'x'.repeat(100));
+});
+test('round1 publication changed before commit cannot be confirmed as intended bytes', async t => {
+  let armed = false, f;
+  f = await fixture(t, { interrupt: async name => { if (armed && name === 'before-commit') { armed = false; await writeFile(join(f.vaultRoot, 'a.md'), 'external'); } } });
+  const first = await f.host.apply(await put(f, 'old'));
+  const op = await put(f, 'x'.repeat(100), first.confirmed); armed = true;
+  assert.notEqual((await f.host.apply(op)).status, 'applied');
+  await f.reopen();
+  assert.equal((await f.host.apply(op)).status, 'conflict');
+  assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'external');
+});
+for (const kind of ['mkdir', 'move']) for (const directory of [false, true]) test(`round1 ${kind} rejects unowned ${directory ? 'directory' : 'file'} destination`, async t => {
+  let armed = false, f;
+  f = await fixture(t, { interrupt: async name => {
+    if (armed && name === 'before-rename') { armed = false; if (directory) await mkdir(join(f.vaultRoot, 'dest')); else await writeFile(join(f.vaultRoot, 'dest'), 'external'); }
+  } });
+  const source = kind === 'move' ? (await f.host.mutate({ kind: 'mkdir', path: 'source' })).confirmed : null;
+  const op = { vaultId: f.host.vaultId, replicaId: 'test', opId: randomUUID(), entryId: source?.entryId ?? randomUUID(), kind,
+    baseRevision: source?.revision ?? null, after: { path: 'dest', kind: 'directory', blobHash: null, byteLength: 0 }, dependsOn: [] };
+  armed = true;
+  assert.notEqual((await f.host.apply(op)).status, 'applied');
+  await f.reopen();
+  assert.equal((await f.host.apply(op)).status, 'conflict');
+  if (source) assert.equal(existsSync(join(f.vaultRoot, 'source')), true);
+  if (!directory) assert.equal(await readFile(join(f.vaultRoot, 'dest'), 'utf8'), 'external');
+});
+
+for (const kind of ['move', 'delete']) test(`round1 persisted folder ${kind} resumes remaining children after crash`, async t => {
+  let armed = false;
+  const f = await fixture(t, { interrupt: async name => { if (armed && name === 'after-rename') { armed = false; throw new Error('interrupted:folder'); } } });
+  const a = await f.host.mutate({ kind: 'put', path: 'source/nested/a.md', content: 'A' });
+  const b = await f.host.mutate({ kind: 'put', path: 'source/b.md', content: 'B' });
+  const dirs = (await f.host.openSnapshot()).entries.filter(e => e.kind === 'directory');
+  armed = true;
+  await assert.rejects(f.host.mutate({ kind, path: 'source', newPath: kind === 'move' ? 'dest' : undefined }), /interrupted/);
+  await f.reopen();
+  assert.equal(existsSync(join(f.vaultRoot, 'source')), false, 'startup must resume the persisted original child plan');
+  if (kind === 'move') {
+    assert.equal(await readFile(join(f.vaultRoot, 'dest/nested/a.md'), 'utf8'), 'A');
+    assert.equal(await readFile(join(f.vaultRoot, 'dest/b.md'), 'utf8'), 'B');
+    for (const original of [a.confirmed, b.confirmed, ...dirs])
+      assert.equal(f.host.history(original.entryId).at(-1).path, original.path.replace('source', 'dest'));
+  }
+  assert.equal(f.host.pendingPlans().length, 0);
+});
+test('round1 resumed folder plan retains original bases and durably conflicts on an edited remaining child', async t => {
+  let armed = false;
+  const f = await fixture(t, { interrupt: async name => { if (armed && name === 'after-rename') { armed = false; throw new Error('interrupted:folder'); } } });
+  await f.host.mutate({ kind: 'put', path: 'source/a.md', content: 'A' });
+  await f.host.mutate({ kind: 'put', path: 'source/b.md', content: 'B' });
+  armed = true; await assert.rejects(f.host.mutate({ kind: 'delete', path: 'source' }), /interrupted/);
+  await writeFile(join(f.vaultRoot, 'source/b.md'), 'external');
+  await f.reopen();
+  assert.equal(await readFile(join(f.vaultRoot, 'source/b.md'), 'utf8'), 'external');
+  assert.equal(f.host.pendingPlans()[0].status, 'conflict');
+  await assert.rejects(f.host.mutate({ kind: 'delete', path: 'source' }), /Conflict/);
+});
+
+test('round1 current limits and queued preconditions deny without consuming operation identity', async t => {
+  let cap = 100, authorized = true, armed = false;
+  const f = await fixture(t, { getMaxFileBytes: () => cap, interrupt: async name => { if (armed && name === 'before-rename') { armed = false; authorized = false; } } });
+  assert.equal((await f.host.hello()).maxFileBytes, 100);
+  const first = await f.host.apply(await put(f, 'old'));
+  const op = await put(f, 'new', first.confirmed); armed = true;
+  let checked;
+  const precondition = ({ current }) => { checked = current; return authorized ? true : { errorCode: 'permission-changed' }; };
+  assert.equal((await f.host.apply(op, { precondition })).errorCode, 'permission-changed');
+  assert.equal(checked.revision, first.confirmed.revision);
+  assert.equal(f.host.pendingIntents().length, 0);
+  assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'old');
+  cap = 2; assert.equal((await f.host.hello()).maxFileBytes, 2);
+  assert.equal((await f.host.apply(op)).errorCode, 'file-too-large');
+  cap = NaN; await assert.rejects(f.host.hello(), /invalid-file-limit/);
+  cap = 100; authorized = true;
+  assert.equal((await f.host.apply(op, { precondition })).status, 'applied');
+});
+test('round1 coordinated reads wait for completed writes and nested queue calls reject promptly', async t => {
+  let release, entered, armed = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const reached = new Promise(resolve => { entered = resolve; });
+  const f = await fixture(t, { interrupt: async name => { if (armed && name === 'after-preserve') { entered(); await gate; } } });
+  const first = await f.host.apply(await put(f, 'old'));
+  assert.equal(typeof f.host.read, 'function');
+  const op = await put(f, 'new', first.confirmed); armed = true;
+  const write = f.host.apply(op);
+  await Promise.race([reached, write.then(() => { throw new Error('missing after-preserve boundary'); })]);
+  assert.equal(existsSync(join(f.vaultRoot, 'a.md')), false, 'exercise the actual recoverable pathname gap');
+  let readDone = false;
+  const reading = f.host.read(async () => { readDone = true; return readFile(join(f.vaultRoot, 'a.md'), 'utf8'); });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(readDone, false); release(); await write;
+  assert.equal(await reading, 'new');
+  await assert.rejects(f.host.read(() => f.host.openSnapshot()), /nested-host-operation/);
+});
+test('round1 NFD startup and edit preserve native spelling while sync path is NFC', async t => {
+  const f = await fixture(t);
+  const raw = 'cafe\u0301.md';
+  await writeFile(join(f.vaultRoot, raw), 'before');
+  await f.reopen();
+  const entry = (await f.host.openSnapshot()).entries.find(e => e.path === 'café.md');
+  assert.ok(entry);
+  await f.host.mutate({ kind: 'put', path: raw, content: 'after' });
+  assert.equal(await readFile(join(f.vaultRoot, raw), 'utf8'), 'after');
+  assert.equal(existsSync(join(f.vaultRoot, 'café.md')), false);
+  assert.equal(f.host.history(entry.entryId).length, 2);
+});
+test('round1 folded native collisions are diagnosed while unrelated entries remain accessible', async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.vaultRoot, 'cafe\u0301.md'), 'NFD');
+  await writeFile(join(f.vaultRoot, 'café.md'), 'NFC');
+  await writeFile(join(f.vaultRoot, 'other.md'), 'safe');
+  await f.reopen();
+  assert.equal((await f.host.openSnapshot()).entries.length, 3);
+  assert.ok(f.host.scanDiagnostics().some(d => d.code === 'path-collision'));
+  await f.host.mutate({ kind: 'put', path: 'other.md', content: 'edited' });
+  assert.equal(await readFile(join(f.vaultRoot, 'other.md'), 'utf8'), 'edited');
+  await assert.rejects(f.host.mutate({ kind: 'put', path: 'cafe\u0301.md', content: 'unsafe' }), /Conflict/);
+});
+test('round1 unscannable known entry retains its live version and reports diagnostic', async t => {
+  const f = await fixture(t);
+  const a = await f.host.mutate({ kind: 'put', path: 'folder/a.md', content: 'keep' });
+  await rm(join(f.vaultRoot, 'folder'), { recursive: true });
+  const outside = join(f.root, 'outside'); await mkdir(outside);
+  await symlink(outside, join(f.vaultRoot, 'folder'), 'junction');
+  await f.reopen();
+  assert.equal(f.host.history(a.confirmed.entryId).at(-1).deleted, false);
+  assert.ok(f.host.scanDiagnostics().some(d => d.code === 'symlink'));
+  assert.equal((await f.host.apply(await put(f, 'safe', null, 'other.md'))).status, 'applied');
+});
+
+for (const replacement of ['file', 'directory']) test(`round1 directory recovery rejects replacement ${replacement} despite old ownership evidence`, async t => {
+  let armed = false;
+  const f = await fixture(t, { interrupt: async name => { if (armed && name === 'before-commit') throw new Error('interrupted:directory'); } });
+  const op = { vaultId: f.host.vaultId, replicaId: 'test', opId: randomUUID(), entryId: randomUUID(), kind: 'mkdir', baseRevision: null,
+    after: { path: 'owned', kind: 'directory', blobHash: null, byteLength: 0 }, dependsOn: [] };
+  armed = true; await assert.rejects(f.host.apply(op), /interrupted/);
+  await rm(join(f.vaultRoot, 'owned'), { recursive: true });
+  if (replacement === 'file') await writeFile(join(f.vaultRoot, 'owned'), 'external');
+  else { await mkdir(join(f.vaultRoot, 'owned')); await writeFile(join(f.vaultRoot, 'owned/unknown.md'), 'external'); }
+  await f.reopen();
+  assert.equal((await f.host.apply(op)).status, 'conflict');
+  assert.equal(await readFile(join(f.vaultRoot, replacement === 'file' ? 'owned' : 'owned/unknown.md'), 'utf8'), 'external');
+});
+test('round1 directory creation without persisted ownership is not adopted after crash', async t => {
+  const f = await fixture(t, { interrupt: async name => { if (name === 'after-directory-create') throw new Error('interrupted:unowned'); } });
+  const op = { vaultId: f.host.vaultId, replicaId: 'test', opId: randomUUID(), entryId: randomUUID(), kind: 'mkdir', baseRevision: null,
+    after: { path: 'unproven', kind: 'directory', blobHash: null, byteLength: 0 }, dependsOn: [] };
+  await assert.rejects(f.host.apply(op), /interrupted/);
+  await f.reopen();
+  assert.equal((await f.host.apply(op)).status, 'conflict');
+  assert.equal(existsSync(join(f.vaultRoot, 'unproven')), true);
+});
+test('round1 process exit mid-folder-plan resumes at startup with original identities', async t => {
+  const f = await fixture(t);
+  const a = await f.host.mutate({ kind: 'put', path: 'source/a.md', content: 'A' });
+  await f.host.mutate({ kind: 'put', path: 'source/b.md', content: 'B' });
+  await f.host.close();
+  const script = `import { createHostService } from ${JSON.stringify(moduleURL.href)};
+    const host = await createHostService({ dataRoot: ${JSON.stringify(f.dataRoot)}, vaultRoot: ${JSON.stringify(f.vaultRoot)},
+      interrupt: async name => { if(name === 'after-plan-step') process.exit(73); } });
+    await host.mutate({kind:'move',path:'source',newPath:'dest'});`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+  let stderr = ''; child.stderr.on('data', bytes => { stderr += bytes; });
+  const code = await new Promise((resolve, reject) => { child.once('exit', resolve); child.once('error', reject); });
+  assert.equal(code, 73, stderr);
+  await f.reopen();
+  assert.equal(await readFile(join(f.vaultRoot, 'dest/a.md'), 'utf8'), 'A');
+  assert.equal(await readFile(join(f.vaultRoot, 'dest/b.md'), 'utf8'), 'B');
+  assert.equal(f.host.history(a.confirmed.entryId).at(-1).path, 'dest/a.md');
+  assert.equal(f.host.pendingPlans().length, 0);
+});
+test('round1 precondition never becomes implicit startup authorization', async t => {
+  let armed = false;
+  const f = await fixture(t, { interrupt: async name => { if (armed && name === 'after-intent') throw new Error('interrupted:unauthorized'); } });
+  const first = await f.host.apply(await put(f, 'old'));
+  const op = await put(f, 'new', first.confirmed); armed = true;
+  await assert.rejects(f.host.apply(op, { precondition: () => false }), /interrupted/);
+  await f.reopen();
+  assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'old');
+  assert.equal((await f.host.apply(op, { precondition: () => true })).status, 'applied');
+});
+test('round1 ambiguous native folder cannot expand a legacy delete into both trees', async t => {
+  const f = await fixture(t);
+  await mkdir(join(f.vaultRoot, 'cafe\u0301')); await mkdir(join(f.vaultRoot, 'café'));
+  await writeFile(join(f.vaultRoot, 'cafe\u0301/a.md'), 'one'); await writeFile(join(f.vaultRoot, 'café/b.md'), 'two');
+  await f.host.rescan();
+  await assert.rejects(f.host.mutate({ kind: 'delete', path: 'cafe\u0301' }), /Conflict/);
+  assert.equal(await readFile(join(f.vaultRoot, 'cafe\u0301/a.md'), 'utf8'), 'one');
+  assert.equal(await readFile(join(f.vaultRoot, 'café/b.md'), 'utf8'), 'two');
+});
+test('round1 dynamic cap is rechecked at the filesystem boundary', async t => {
+  let cap = 100, armed = false;
+  const f = await fixture(t, { getMaxFileBytes: () => cap, interrupt: async name => { if (armed && name === 'before-rename') { armed = false; cap = 1; } } });
+  const first = await f.host.apply(await put(f, 'old'));
+  const op = await put(f, 'new', first.confirmed); armed = true;
+  assert.equal((await f.host.apply(op)).errorCode, 'file-too-large');
+  assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'old');
+  assert.equal(f.host.pendingIntents().length, 0);
+  cap = 100; assert.equal((await f.host.apply(op)).status, 'applied');
+});
+test('round1 lowered cap during unstarted recovery does not block unrelated vault startup', async t => {
+  let cap = 100, armed = false;
+  const f = await fixture(t, { getMaxFileBytes: () => cap, interrupt: async name => { if (armed && name === 'before-rename') throw new Error('interrupted:cap'); } });
+  const first = await f.host.apply(await put(f, 'old'));
+  const op = await put(f, 'new', first.confirmed); armed = true;
+  await assert.rejects(f.host.apply(op), /interrupted/);
+  cap = 1; await f.reopen({ getMaxFileBytes: () => cap });
+  assert.equal(await readFile(join(f.vaultRoot, 'a.md'), 'utf8'), 'old');
+  assert.equal(f.host.pendingIntents().length, 0);
+  assert.equal((await f.host.apply(op)).errorCode, 'file-too-large');
+  cap = 100; assert.equal((await f.host.apply(op)).status, 'applied');
 });
