@@ -1,0 +1,18 @@
+.pm-sync-settings, .pm-sync-status { display: grid; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.pm-sync-settings p, .pm-sync-status p { margin: 4px 0; }
+.pm-sync-settings input[type="url"] { width: 100%; box-sizing: border-box; }
+.pm-sync-modes { display: flex; flex-wrap: wrap; gap: 16px; border: 1px solid var(--pm-border); }
+.pm-sync-modes label { display: flex; align-items: center; gap: 8px; }
+.pm-sync-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.pm-sync-actions > div { flex: 1 1 160px; }
+.pm-sync-actions small { display: block; margin-top: 6px; font-size: .8em; }
+.pm-sync-conflict-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.pm-sync-conflict-list button { overflow-wrap: anywhere; text-align: left; }
+.pm-sync-conflict-list button[aria-pressed="true"] { outline: 1px solid var(--pm-cyan); }
+.pm-sync-versions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pm-sync-versions section { min-width: 0; padding: 10px; border: 1px solid var(--pm-border); border-radius: 8px; overflow-wrap: anywhere; }
+.pm-sync-versions p { font-size: .8em; }
+.pm-sync-versions pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 230px; overflow-y: auto; }
+.pm-sync-conflict-dialog .pm-merge-editor { display: grid; margin-top: 16px; }
+.pm-sync-conflict-dialog textarea { width: 100%; min-width: 0; }
+@media (max-width: 680px) { .pm-sync-versions { grid-template-columns: minmax(0, 1fr); } }
