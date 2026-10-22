@@ -7,6 +7,33 @@ import org.json.JSONObject;
 
 /** Immutable objects and idempotent file-intent materialization. No Android or NIO API-26 dependency. */
 public final class SyncFileJournal {
+    /** Stable dependency order: vacate children/names before their parents/replacements. Reject cycles before intent. */
+    static org.json.JSONArray orderChanges(org.json.JSONArray changes)throws Exception {
+        int count=changes.length();boolean[][] before=new boolean[count][count];boolean[] emitted=new boolean[count];
+        for(int i=0;i<count;i++)for(int j=0;j<count;j++)if(i!=j) {
+            JSONObject a=changes.getJSONObject(i),b=changes.getJSONObject(j);
+            JSONObject old=a.getJSONObject("before").optJSONObject("local"),next=a.getJSONObject("after").optJSONObject("local");
+            JSONObject otherOld=b.getJSONObject("before").optJSONObject("local"),otherNext=b.getJSONObject("after").optJSONObject("local");
+            if(vacates(old,next)) {
+                String key=SyncPaths.key(old.getString("path"));
+                if(old.getString("kind").equals("directory") && vacates(otherOld,otherNext) && SyncPaths.key(otherOld.getString("path")).startsWith(key+"/"))before[j][i]=true;
+                if(live(otherNext) && key.equals(SyncPaths.key(otherNext.getString("path"))))before[i][j]=true;
+            }
+            // A moved directory is materialized after its children (which create destination parents).
+            if(!live(old) && live(next) && next.getString("kind").equals("directory") && live(otherNext)
+                && SyncPaths.key(otherNext.getString("path")).startsWith(SyncPaths.key(next.getString("path"))+"/"))before[i][j]=true;
+        }
+        org.json.JSONArray result=new org.json.JSONArray();
+        while(result.length()<count) {
+            int selected=-1;
+            for(int i=0;i<count;i++)if(!emitted[i]){boolean ready=true;for(int j=0;j<count;j++)if(before[j][i]&&!emitted[j])ready=false;if(ready){selected=i;break;}}
+            if(selected<0)throw new IOException("cyclic-file-plan");emitted[selected]=true;result.put(changes.getJSONObject(selected));
+        }
+        return result;
+    }
+    private static boolean vacates(JSONObject old,JSONObject next)throws Exception {
+        return live(old) && (!live(next)||!old.getString("path").equals(next.getString("path")));
+    }
     public interface DurableFiles {
         void rename(File from, File to) throws IOException;
         void syncDirectory(File directory) throws IOException;

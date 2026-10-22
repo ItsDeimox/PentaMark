@@ -144,6 +144,7 @@ public final class SyncVault implements AutoCloseable {
         plan.getJSONArray("rows").put(obj("before", before, "after", after));
     }
     private void commit(JSONObject plan) throws Exception {
+        plan.put("rows",SyncFileJournal.orderChanges(plan.getJSONArray("rows")));
         // Validate ALL file transitions before making an intent visible. Cursor commits with metadata only after materialization.
         JSONArray rows = plan.getJSONArray("rows");
         Map<String,JSONObject> finalRows = new HashMap<>(); JSONArray existingRows=database.all("entries");
@@ -199,7 +200,8 @@ public final class SyncVault implements AutoCloseable {
         for (int i=0; i<intents.length(); i++) finish(intents.getJSONObject(i));
     }
     private void finish(JSONObject plan) throws Exception {
-        JSONArray rows = plan.getJSONArray("rows");
+        // Also repair order in older durable intents before any replayed filesystem action.
+        JSONArray rows = SyncFileJournal.orderChanges(plan.getJSONArray("rows"));
         for (int i=0; i<rows.length(); i++) {
             JSONObject change = rows.getJSONObject(i), before = change.getJSONObject("before"), after = change.getJSONObject("after");
             if (!Objects.equals(String.valueOf(before.optJSONObject("local")), String.valueOf(after.optJSONObject("local")))) {

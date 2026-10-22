@@ -34,6 +34,14 @@ public class SyncDatabaseInstrumentedTest {
         assertEquals("2", vault.database.pragma("synchronous"));
         assertEquals("1", vault.database.pragma("foreign_keys"));
     }
+    @Test public void parentFirstIncomingDeletesCommitAndReopenWithoutStuckIntent()throws Exception {
+        vault.request("/api/folder","POST",SyncVault.obj("path","Notes"));vault.request("/api/note","PUT",SyncVault.obj("path","Notes/A.md","content","retained"));
+        JSONArray rows=vault.snapshot().getJSONArray("entries"),items=new JSONArray();
+        for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i),deleted=new JSONObject(row.getJSONObject("local").toString()).put("revision","host-delete").put("deleted",true).put("blobHash",JSONObject.NULL).put("byteLength",0);items.put(decision("pull",row,deleted));}
+        vault.persistIncoming(SyncVault.obj("nextCursor","deleted-cursor","items",items));
+        assertEquals(0,vault.database.count("file_intents"));assertFalse(vault.files.target("Notes").exists());
+        vault.close();vault=new SyncVault(context,profile);assertEquals("deleted-cursor",vault.snapshot().getString("cursor"));assertEquals(0,vault.database.count("file_intents"));
+    }
     @Test public void directorySyncChecksOpenedDescriptorType()throws Exception {
         SyncFileJournal.DurableFiles fs=SyncVault.androidFiles();fs.syncDirectory(vault.files.working);
         File ordinary=new File(vault.files.working,"ordinary");try(FileOutputStream out=new FileOutputStream(ordinary)){out.write(1);}

@@ -9,6 +9,15 @@ import java.util.Locale;
 import static org.junit.Assert.*;
 
 public class SyncVaultTest {
+    @Test public void parentFirstDeletePlanReplaysChildrenBeforeDirectory()throws Exception {
+        SyncFileJournal files=journal(Files.createTempDirectory("sync-order-").toFile());
+        JSONObject parent=new JSONObject().put("path","Notes").put("kind","directory").put("deleted",false).put("blobHash",JSONObject.NULL).put("byteLength",0);
+        JSONObject child=version(files.store(new ByteArrayInputStream(new byte[]{42}),100),"Notes/A.md");files.apply(null,parent);files.apply(null,child);
+        JSONArray changes=new JSONArray();for(JSONObject v:new JSONObject[]{parent,child})changes.put(new JSONObject().put("before",new JSONObject().put("local",v)).put("after",new JSONObject().put("local",new JSONObject(v.toString()).put("deleted",true))));
+        JSONArray ordered=SyncFileJournal.orderChanges(changes);
+        for(int retry=0;retry<2;retry++)for(int i=0;i<ordered.length();i++){JSONObject c=ordered.getJSONObject(i);files.apply(c.getJSONObject("before").getJSONObject("local"),c.getJSONObject("after").getJSONObject("local"));}
+        assertFalse(files.target("Notes").exists());files.require(child.getString("blobHash"),1);
+    }
     static SyncFileJournal journal(File root) throws Exception {
         return new SyncFileJournal(root, new SyncFileJournal.DurableFiles() {
             public void rename(File a, File b) throws IOException { Files.move(a.toPath(), b.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
