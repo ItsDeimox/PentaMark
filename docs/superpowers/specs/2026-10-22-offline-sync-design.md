@@ -168,6 +168,8 @@ RemotePort é vinculada à mesma réplica de ReplicaPort; os métodos de blob le
 
 Complemento de implementação: as portas nativas novas retornam status, epoch, progresso da cópia inicial e conflitos persistidos em snapshot(). Os campos são opcionais no tipo para evolução dos adaptadores, mas o motor deve tratar ausência como cópia não confirmada. Páginas intermediárias de initialCopy persistem entradas/progresso e preservam edições locais, sem avançar o cursor confirmado. Somente pageCursor=null finaliza o manifesto em atCursor; mudanças posteriores ainda precisam ser processadas antes de exibir sincronização concluída.
 
+O snapshot também retorna preparedOperations, uma cópia somente leitura das operações já preparadas. Consultar essa lista não prepara novas edições: primeiro repetir operações imutáveis sem ACK, depois receber/reconciliar mudanças, e só então preparar novas operações. completeCycle({expectedCursor, expectedEpoch}) faz uma transação nativa que exige identidade/cursor/epoch atuais, cópia completa, recurso habilitado e ausência de edições sujas, operações preparadas ou conflitos. Só essa transação registra lastSuccessfulSync com o relógio nativo. Uma nova edição invalida esse estado; a mensagem de sucesso descreve o último ciclo observado, não ausência de futuras mudanças no host.
+
 Snapshot e transferências usam referências a objetos; não colocar anexos em JSON/base64. ApiResponse preserva o formato status/data já usado pelo aplicativo. Scheduler do motor expõe now(): number, schedule(callback, delayMs): cancelFn e random(): number; todos são substituíveis nos testes.
 
 ## 6. Protocolo do host, versão 1

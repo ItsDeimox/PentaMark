@@ -75,6 +75,8 @@ export interface ReplicaSnapshot {
   epoch?: string | null;
   initialCopy?: InitialCopyProgress | null;
   conflicts?: Conflict[];
+  /** Read-only durable operations; observing the queue must not prepare new edits. */
+  preparedOperations?: Operation[];
   entries: { base: EntryVersion | null; local: EntryVersion | null; localHead: string }[];
 }
 /** A partial manifest never advances the confirmed changes cursor. */
@@ -129,6 +131,9 @@ export interface ReplicaPort {
   persistIncoming(batch: IncomingBatch): Promise<void>;
   confirm(result: ApplyResult): Promise<void>;
   resolve(input: ConflictResolution): Promise<void>;
+  /** New adapters implement a native transaction checking cursor/epoch, complete
+   * initial copy and no dirty/prepared/conflicting state before recording success. */
+  completeCycle?(input: { expectedCursor: string; expectedEpoch: string }): Promise<SyncStatus>;
 }
 /** Bound to the same replica; blobs stream to/from native staging, never JSON bytes. */
 export interface RemotePort {
