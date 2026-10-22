@@ -11,6 +11,8 @@ Windows e Android passam a compartilhar o protocolo de reconciliação versão 1
 
 ## Uso e limites
 
+**Android mínimo: Android 15 (API 35)**. Este APK não instala em versões anteriores. Não desinstale uma versão existente para tentar contornar essa restrição; preserve os dados locais.
+
 Consulte `docs/offline-sync.md`. A primeira cópia precisa ser concluída antes de depender do modo offline. No Android, a sincronização automática retoma com o aplicativo em primeiro plano; não é um serviço permanente em segundo plano.
 
 Dados da réplica não são cache descartável. Não limpe dados do aplicativo nem desinstale sem salvar pendências. Exportação Windows é uma pasta; Android é ZIP, sem restauração automática nesta versão. Sincronização não substitui backup e não oferece garantia contra defeito físico do armazenamento.

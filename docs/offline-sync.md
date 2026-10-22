@@ -2,7 +2,7 @@
 
 ## Ativar
 
-No Android, a interface requer Android System WebView/Chrome 119 ou superior. Um componente antigo deve ser atualizado pela loja do sistema, sem limpar os dados do PentaMark. Android 7 é validado com WebView 119, não com a WebView original de fábrica.
+Esta versão requer Android 15 (API 35) ou superior, com Android System WebView/Chrome 119 ou superior. Aparelhos anteriores não podem instalar este APK. Mantenha o WebView atualizado pela loja do sistema, sem limpar os dados do PentaMark. A validação nativa usa API 35 e seu WebView de sistema, sem instalar componentes de terceiros.
 
 1. Abra o PentaMark no host e conecte os aparelhos pela rede Tailscale já configurada.
 2. No aparelho que precisa trabalhar desconectado, abra **Configurações → Sincronização**.

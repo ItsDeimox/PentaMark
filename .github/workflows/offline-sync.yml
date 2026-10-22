@@ -95,6 +95,7 @@ jobs:
           code=$(node -p "const [a,b,c]=require('./package.json').version.split('.').map(Number);a*10000+b*100+c")
           head -n 1 offline-android/apk-metadata.txt | grep -F "versionName='$version'"
           head -n 1 offline-android/apk-metadata.txt | grep -F "versionCode='$code'"
+          grep -Fx "sdkVersion:'35'" offline-android/apk-metadata.txt
           git rev-parse HEAD > offline-android/source-commit.txt
           (cd offline-android && sha256sum *.apk *.jar > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
@@ -116,7 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [24, 35]
+        api: [35]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -143,7 +144,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          arch: ${{ matrix.api == 24 && 'x86' || 'x86_64' }}
+          arch: x86_64
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
