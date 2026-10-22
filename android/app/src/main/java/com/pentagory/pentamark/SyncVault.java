@@ -479,12 +479,24 @@ public final class SyncVault implements AutoCloseable {
         commit(plan);return obj("status",200,"data",obj("path",dest==null?old:dest,"localSaved",true));
     }
     /** ContentResolver supplies the stream; only identifiers/progress cross the JS bridge. */
+    private void missingParentRows(JSONObject plan,String path)throws Exception {
+        String[] parts=path.split("/");String parent="";
+        for(int i=0;i<parts.length-1;i++) {
+            parent=parent.isEmpty()?parts[i]:parent+"/"+parts[i];JSONObject existing=findPath(parent);
+            if(existing!=null) {
+                if(!existing.getJSONObject("local").getString("kind").equals("directory"))throw new IOException("path-collision");
+                continue;
+            }
+            JSONObject before=empty(id()),version=obj("entryId",before.getString("entryId"),"kind","directory","path",parent,"revision",id(),"blobHash",null,"byteLength",0,"deleted",false);
+            rowChange(plan,before,copy(before).put("local",version).put("localHead",id()).put("dirty",true).put("approved",true));
+        }
+    }
     public synchronized JSONObject importStream(String path, InputStream input, long maximum) throws Exception {
         ready(); path = SyncPaths.path(path); if (findPath(path) != null) throw new IOException("path-collision");
         JSONObject blob = files.store(input, maximum), row = empty(id()), next = copy(row);
         JSONObject v = obj("entryId", row.getString("entryId"), "kind", "asset", "path", path, "revision", id(), "blobHash", blob.getString("blobHash"), "byteLength", blob.getLong("byteLength"), "deleted", false);
         next.put("local", v).put("localHead", id()).put("dirty", true).put("approved", true);
-        JSONObject plan = plan(); rowChange(plan, row, next); commit(plan); return v;
+        JSONObject plan = plan(); missingParentRows(plan,path);rowChange(plan, row, next); commit(plan); return v;
     }
     public synchronized RemoteConnection.Media openMedia(String path, String range) throws Exception {
         ready(); String mime = RemoteConnection.mediaMime(path); JSONObject row = findPath(SyncPaths.path(path));

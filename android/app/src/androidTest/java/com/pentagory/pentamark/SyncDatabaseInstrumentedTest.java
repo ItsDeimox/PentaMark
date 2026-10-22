@@ -236,6 +236,16 @@ public class SyncDatabaseInstrumentedTest {
         assertFalse(config.getBoolean("isHost"));assertFalse(config.getBoolean("cleanupUnusedAssets"));
         assertFalse(config.getBoolean("aiBridgeEnabled"));assertEquals("",config.getString("aiBridgeToken"));
     }
+    @Test public void nestedAssetImportPersistsParentRowsAndMkdirDependenciesAfterReopen()throws Exception {
+        JSONObject imported=vault.importStream("assets/nested/referencia.pdf",new ByteArrayInputStream(new byte[]{1,2,3}),100);
+        assertTrue(vault.files.target("assets/nested/referencia.pdf").isFile());vault.close();vault=new SyncVault(context,profile);
+        assertEquals(3,vault.snapshot().getJSONArray("entries").length());JSONArray ops=vault.preparePending(100);assertEquals(3,ops.length());
+        JSONObject root=ops.getJSONObject(0),nested=ops.getJSONObject(1),asset=ops.getJSONObject(2);
+        assertEquals("mkdir",root.getString("kind"));assertEquals("assets",root.getJSONObject("after").getString("path"));assertTrue(root.isNull("baseRevision"));
+        assertEquals("mkdir",nested.getString("kind"));assertEquals("assets/nested",nested.getJSONObject("after").getString("path"));assertEquals(root.getString("opId"),nested.getJSONArray("dependsOn").getString(0));
+        assertEquals("put",asset.getString("kind"));assertEquals("assets/nested/referencia.pdf",asset.getJSONObject("after").getString("path"));assertEquals(2,asset.getJSONArray("dependsOn").length());assertEquals(root.getString("opId"),asset.getJSONArray("dependsOn").getString(0));assertEquals(nested.getString("opId"),asset.getJSONArray("dependsOn").getString(1));
+        vault.files.require(imported.getString("blobHash"),3);vault.close();vault=new SyncVault(context,profile);assertEquals(ops.toString(),vault.preparePending(100).toString());
+    }
     @Test public void nativeDownloadAllowsEditsAndResumesDurableOffsetAfterReopen()throws Exception {
         write("initial");JSONObject prepared=vault.preparePending(100).getJSONObject(0);
         File source=File.createTempFile("sync-source-",".bin",context.getCacheDir());long total=2097152;

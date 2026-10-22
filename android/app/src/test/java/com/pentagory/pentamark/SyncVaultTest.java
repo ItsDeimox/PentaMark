@@ -84,7 +84,8 @@ public class SyncVaultTest {
                 JSONObject c = cases.getJSONObject(i), expected = c.getJSONObject("expected");
                 JSONObject actual = (JSONObject)paths.getMethod("validate", String.class).invoke(null, c.getString("input"));
                 assertEquals(c.toString(), expected.getBoolean("ok"), actual.getBoolean("ok"));
-                for (String key : expected.keySet()) assertEquals(c.toString(), expected.get(key), actual.get(key));
+                java.util.Iterator<String> keys=expected.keys();
+                while(keys.hasNext()){String key=keys.next();assertEquals(c.toString(),expected.get(key),actual.get(key));}
             }
         } finally { Locale.setDefault(previous); }
     }
