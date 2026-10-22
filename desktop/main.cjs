@@ -3,7 +3,8 @@ const { createTailscaleSharing } = require('./tailscale.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { invitationFromArgs, validInviteUrl } = require('./invitations.cjs');
 const { spawn } = require("node:child_process");
-const { existsSync, readFileSync, statSync, writeFileSync } = require("node:fs");
+const { existsSync, readFileSync, statSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync } = require("node:fs");
+const { randomBytes } = require("node:crypto");
 const { get } = require("node:http");
 const { basename, dirname, join, resolve } = require("node:path");
 
@@ -15,6 +16,7 @@ let activeVaultIsCustom = false;
 let localOrigin = '';
 let pendingInvitation=invitationFromArgs(process.argv);
 let sharing=null, updater=null;
+let resolvedDataRoot = '';
 
 function trustedFrame(event) {
   return Boolean(mainWindow && event.sender===mainWindow.webContents && event.senderFrame===mainWindow.webContents.mainFrame && localOrigin && new URL(event.senderFrame.url).origin===localOrigin);
@@ -34,13 +36,43 @@ function appRoot() {
   return app.isPackaged ? process.resourcesPath : resolve(__dirname, "..");
 }
 
+function canWriteDataDirectory(directory) {
+  let probe = '';
+  try {
+    mkdirSync(directory, { recursive: true });
+    probe = join(directory, `.pentamark-write-${process.pid}-${randomBytes(8).toString('hex')}`);
+    const descriptor = openSync(probe, 'wx');
+    closeSync(descriptor);
+    unlinkSync(probe);
+    probe = '';
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (probe) { try { unlinkSync(probe); } catch { /* Preserve the original failure. */ } }
+  }
+}
+
 function dataRoot() {
-  if (process.env.PENTAMARK_DATA_DIR) return resolve(process.env.PENTAMARK_DATA_DIR);
+  if (resolvedDataRoot) return resolvedDataRoot;
+  if (process.env.PENTAMARK_DATA_DIR) {
+    const explicit = resolve(process.env.PENTAMARK_DATA_DIR);
+    if (!canWriteDataDirectory(explicit)) throw new Error(`Sem permissão para gravar os dados do PentaMark em: ${explicit}`);
+    return resolvedDataRoot = explicit;
+  }
   const portableDirectory = process.env.PORTABLE_EXECUTABLE_DIR;
-  if (portableDirectory) return resolve(portableDirectory);
   const executableDirectory = dirname(process.execPath);
-  if (existsSync(join(executableDirectory, "vault")) || existsSync(join(executableDirectory, "pentamark.config.json"))) return executableDirectory;
-  return app.getPath("userData");
+  const candidate = portableDirectory ? resolve(portableDirectory) : executableDirectory;
+  const hasVault = existsSync(join(candidate, 'vault'));
+  const hasConfig = existsSync(join(candidate, 'pentamark.config.json'));
+  if (portableDirectory || hasVault || hasConfig) {
+    if (canWriteDataDirectory(candidate)) return resolvedDataRoot = candidate;
+    // Never silently abandon a real portable vault in favour of an empty one.
+    if (hasVault) throw new Error(`Sem permissão para gravar o cofre em: ${candidate}. Mova o aplicativo e seu cofre para uma pasta do usuário.`);
+  }
+  const userDirectory = app.getPath('userData');
+  if (!canWriteDataDirectory(userDirectory)) throw new Error(`Sem permissão para gravar os dados do PentaMark em: ${userDirectory}`);
+  return resolvedDataRoot = userDirectory;
 }
 
 function defaultVaultDirectory() {
