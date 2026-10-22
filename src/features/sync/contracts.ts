@@ -70,7 +70,18 @@ export interface ChangesPage { fromCursor: string; nextCursor: string; entries: 
 export interface ReplicaSnapshot {
   profile: ReplicaProfile;
   cursor: string | null;
+  /** Durable native status; absent only in adapters predating offline sync. */
+  status?: SyncStatus;
+  epoch?: string | null;
+  initialCopy?: InitialCopyProgress | null;
+  conflicts?: Conflict[];
   entries: { base: EntryVersion | null; local: EntryVersion | null; localHead: string }[];
+}
+/** A partial manifest never advances the confirmed changes cursor. */
+export interface InitialCopyProgress {
+  snapshotToken: string;
+  atCursor: string;
+  pageCursor: string | null;
 }
 /** An advisory decision: application still requires revision/head checks. */
 export interface ReconcileDecision {
@@ -88,6 +99,9 @@ export type PathResult = { ok: true; path: string; pathKey: string }
   | { ok: false; code: 'invalid-path' | 'reserved-name' };
 export interface IncomingBatch {
   nextCursor: string;
+  epoch?: string;
+  /** pageCursor=null finishes the manifest; other pages only persist progress. */
+  initialCopy?: InitialCopyProgress;
   items: { decision: ReconcileDecision; expectedLocalHead: string }[];
 }
 export interface ApplyResult {

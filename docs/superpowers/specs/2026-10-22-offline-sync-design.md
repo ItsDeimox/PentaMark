@@ -1,6 +1,6 @@
 # PentaMark — sincronização offline para PC e Android
 
-Data: 22/10/2026. Estado: proposta para revisão; implementação não iniciada.
+Data: 22/10/2026. Estado: implementação autorizada, em andamento.
 Base examinada: 2.13.21, commit 4ff62df, mais a correção local de inicialização em pasta protegida.
 
 ## 1. Objetivo e decisões de produto
@@ -116,8 +116,11 @@ Tipos auxiliares do contrato:
     ChangesPage = { fromCursor: string, nextCursor: string, entries: EntryVersion[] }
     ReplicaSnapshot = {
       profile: ReplicaProfile, cursor: string | null,
+      status?: SyncStatus, epoch?: string | null,
+      initialCopy?: InitialCopyProgress | null, conflicts?: Conflict[],
       entries: { base: EntryVersion | null, local: EntryVersion | null, localHead: string }[]
     }
+    InitialCopyProgress = { snapshotToken: string, atCursor: string, pageCursor: string | null }
     ReconcileDecision = {
       action: 'none'|'push'|'pull'|'converged'|'conflict',
       reason: string, base: EntryVersion | null,
@@ -127,6 +130,7 @@ Tipos auxiliares do contrato:
       | { ok: false, code: 'invalid-path'|'reserved-name' }
     IncomingBatch = {
       nextCursor: string,
+      epoch?: string, initialCopy?: InitialCopyProgress,
       items: { decision: ReconcileDecision, expectedLocalHead: string }[]
     }
     ApplyResult = {
@@ -161,6 +165,8 @@ Portas assíncronas comuns:
     RemotePort.uploadBlob(blob: BlobRef, offset): Promise<TransferProgress>
 
 RemotePort é vinculada à mesma réplica de ReplicaPort; os métodos de blob leem/gravam o staging nativo, não devolvem bytes à WebView. Antes de persistIncoming, todos os objetos exigidos pelas decisões precisam estar completos e verificados. Se expectedLocalHead mudou, a porta rejeita com stale-local-head sem aplicar o lote/avançar cursor; o motor refaz a comparação com o estado atual.
+
+Complemento de implementação: as portas nativas novas retornam status, epoch, progresso da cópia inicial e conflitos persistidos em snapshot(). Os campos são opcionais no tipo para evolução dos adaptadores, mas o motor deve tratar ausência como cópia não confirmada. Páginas intermediárias de initialCopy persistem entradas/progresso e preservam edições locais, sem avançar o cursor confirmado. Somente pageCursor=null finaliza o manifesto em atCursor; mudanças posteriores ainda precisam ser processadas antes de exibir sincronização concluída.
 
 Snapshot e transferências usam referências a objetos; não colocar anexos em JSON/base64. ApiResponse preserva o formato status/data já usado pelo aplicativo. Scheduler do motor expõe now(): number, schedule(callback, delayMs): cancelFn e random(): number; todos são substituíveis nos testes.
 
