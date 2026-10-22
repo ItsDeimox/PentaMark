@@ -59,3 +59,33 @@ Final run: scenario 8.77 seconds, total runner 9.72 seconds. Timeout: 180 second
 - Playwright 1.56.1 emits Node DEP0190 for its Windows launcher; the passing result is not suppressed. The executable is constrained to repository packaging output.
 
 Only this report and the new test belong to this work. Parent-owned renderer/media/workflow changes were neither staged nor committed here.
+
+## Follow-up: responsive navigation in Windows CI (2.14.0)
+
+Read the actual logs for [run 39856738060, job 120096773310](https://github.com/ItsDeimox/PentaMark/actions/runs/39856738060/job/120096773310). Packaged boot and editor save passed; Beta selection timed out because the matching button was hidden. The navigation hook chooses compact mode below 1100 effective CSS pixels, and compact navigation starts closed and closes again after selecting a note. The old harness assumed the sidebar stayed visible.
+
+Rebuilt `local-dist` and the isolated `desktop-dist-probe-native` with the parent's authorization, using its 2.14.0 package metadata. No app, package or workflow files were changed by this follow-up.
+
+The test now opens the real “Mostrar ou ocultar arquivos” button only when its `aria-expanded` is false, waits for visible navigation, and normally clicks the note. It repeats this for each selection. No forced click, DOM visibility override or synthetic click bypass is used.
+
+`PM_NATIVE_DESKTOP_VIEWPORT=1000x700` optionally sets the real Electron window content size on both launches and checks the renderer dimensions. Leaving it unset preserves the runner's normal window size. Supported explicit sizes respect the app's minimum (920×620).
+
+```powershell
+$env:PM_NATIVE_DESKTOP_EXE = Join-Path $PWD 'desktop-dist-probe-native/win-unpacked/PentaMark.exe'
+$env:PM_NATIVE_DESKTOP_VIEWPORT = '1000x700'
+node --test tests/native-desktop-offline.test.mjs
+```
+
+Observed evidence:
+
+- RED, before the navigation fix: reproduced the same Beta click timeout with actual `innerWidth=1000`, `innerHeight=700`, `compact=true`, `navigation=false`, sidebar `aria-hidden=true`, `inert=true`, `visibility=hidden`, opacity 0. Save had already persisted and host connections remained zero.
+- Failure capture verified: `test-results/native-desktop-1792704651135-25768.png` and matching `.json` were generated and inspected. Screenshot shows the edited Alpha note and closed sidebar. The diagnostic includes error/stack, requested and actual viewport, screen/DPR, sidebar state/geometry, note geometry, package hashes, fixture location and process log.
+- GREEN, same packaged build at 1000×700: 1 passed / 0 failed, runner 5.89 seconds. Logs confirm the actual sidebar button was used before both Beta and Alpha. All native persistence/media/conflict/no-host-contact assertions still passed.
+- GREEN at 1440×900: 1 passed / 0 failed, runner 6.73 seconds. Already-open desktop sidebar needed no toggle. The same native assertions passed.
+- `npm run test:unit` with Node 24: 181 unit tests and 279 sync tests passed, zero failures/skips; log saved to `test-results/native-unit-regression.log`. Final process inventory found no remaining probe executable.
+
+On scenario failure, evidence is written before teardown under `test-results/native-desktop-<timestamp>-<pid>.png` and `.json`, ready for the parent's existing artifact upload. Screenshot/renderer capture is bounded to five seconds each; capture failure is recorded without replacing the original scenario error. If there is no live renderer, JSON records that limitation. Preflight package validation cannot capture a screenshot because no app has launched.
+
+Follow-up package SHA-256: EXE `40923aa89ed608ec5c23ebb3cdd41ff07cff3a011b3ade58a6f4bf020ef408c4`; ASAR `32c0f9bcb699ddf957053e3e0ee28d185088c29b857b167a7882f53448166941`; frontend index `ebd2f848c4da662dc5087efd7e78008c924b6c8b327e600f193dc82e9087d682`.
+
+This fixes the test's navigation assumption, not an application bug. The failed GitHub job was inspected, not rerun or cancelled here. The debugging workflow guided a real failing reproduction before the fix, followed by compact and wide native verification.

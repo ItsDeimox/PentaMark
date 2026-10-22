@@ -25,6 +25,22 @@ const editedText = `${baseText}\nNative offline edit survives process restart.\n
 const newerText = `${editedText}\nNewer local IPC edit.\n`;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1cAAAAASUVORK5CYII=', 'base64');
 
+// Optional native content size for reproducing small CI displays; no DOM/CSS override.
+const sizeOption = process.env.PM_NATIVE_DESKTOP_VIEWPORT;
+const requestedSize = sizeOption?.match(/^(\d+)x(\d+)$/);
+if (sizeOption) assert.ok(requestedSize, 'PM_NATIVE_DESKTOP_VIEWPORT must be WIDTHxHEIGHT');
+const contentSize = requestedSize ? { width: Number(requestedSize[1]), height: Number(requestedSize[2]) } : null;
+if (contentSize) assert.ok(contentSize.width >= 920 && contentSize.width <= 4096 && contentSize.height >= 620 && contentSize.height <= 2160,
+  'Native content size must respect the app minimum (920x620) and be at most 4096x2160');
+
+async function boundedEvidence(action) {
+  let timer;
+  try {
+    return await Promise.race([action(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Diagnostic capture timed out')), 5000); })]);
+  } catch (error) { return { captureError: String(error) }; }
+  finally { clearTimeout(timer); }
+}
+
 async function listen(server) {
   await new Promise((resolveListen, reject) => {
     server.once('error', reject);
@@ -119,6 +135,40 @@ test('packaged Windows: manual replica boots offline, saves, restarts, rejects s
     }
     const getNote = () => invoke('request', { url: '/api/note?path=Alpha.md', method: 'GET' });
     const noteEntry = snapshot => snapshot.entries.find(e => e.local?.path === 'Alpha.md');
+    async function selectNote(title) {
+      const toggle = page.getByRole('button', { name: 'Mostrar ou ocultar arquivos', exact: true });
+      await expect(toggle).toBeVisible();
+      // Compact navigation closes after selection. Reopen through the same
+      // control a person uses, on every navigation that needs it.
+      if (await toggle.getAttribute('aria-expanded') === 'false') {
+        await toggle.click();
+        t.diagnostic(`Opened sidebar through UI before selecting ${title}`);
+      }
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.locator('.pm-sidebar')).toHaveAttribute('aria-hidden', 'false');
+      const note = page.locator('.pm-note-item').filter({ hasText: title });
+      await expect(note).toBeVisible();
+      await note.click();
+    }
+    async function captureFailure(error) {
+      const output = join(repo, 'test-results', `native-desktop-${Date.now()}-${process.pid}`);
+      await mkdir(dirname(output), { recursive: true });
+      const viewport = page && !page.isClosed() ? await boundedEvidence(() => page.evaluate(() => {
+        const sidebar = document.querySelector('.pm-sidebar');
+        const style = sidebar && getComputedStyle(sidebar);
+        return { url: location.href, innerWidth, innerHeight, outerWidth, outerHeight, devicePixelRatio,
+          screen: { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight },
+          compact: document.querySelector('.pm-shell')?.getAttribute('data-compact'),
+          navigation: document.querySelector('.pm-shell')?.getAttribute('data-navigation'),
+          sidebar: sidebar && { ariaHidden: sidebar.getAttribute('aria-hidden'), inert: sidebar.inert,
+            display: style.display, visibility: style.visibility, opacity: style.opacity, rect: sidebar.getBoundingClientRect().toJSON() },
+          notes: [...document.querySelectorAll('.pm-note-item')].map(note => ({ text: note.textContent, rect: note.getBoundingClientRect().toJSON() })) };
+      })) : { unavailable: 'No live renderer' };
+      const screenshot = page && !page.isClosed() ? await boundedEvidence(() => page.screenshot({ path: output + '.png', timeout: 5000 }).then(() => output + '.png')) : null;
+      await writeFile(output + '.json', JSON.stringify({ error: { name: error.name, message: error.message, stack: error.stack },
+        build, requestedContentSize: contentSize, viewport, screenshot, fixture: root, hostConnections, rendererHostRequests, processLog }, null, 2));
+      t.diagnostic(`Native failure evidence: ${output}.json; screenshot: ${typeof screenshot === 'string' ? screenshot : JSON.stringify(screenshot)}`);
+    }
     async function launch() {
       app = await _electron.launch({ executablePath: build.exe, env, timeout: 30_000,
         args: [`--host-resolver-rules=MAP ${unavailableName} 127.0.0.1`] });
@@ -159,6 +209,13 @@ test('packaged Windows: manual replica boots offline, saves, restarts, rejects s
       await expect.poll(() => app.windows().some(w => w.url().startsWith(`http://127.0.0.1:${localPort}`)), { timeout: 30_000 }).toBe(true);
       page = app.windows().find(w => w.url().startsWith(`http://127.0.0.1:${localPort}`));
       page.setDefaultTimeout(10_000);
+      if (contentSize) {
+        await app.evaluate(({ BrowserWindow }, size) => {
+          const window = BrowserWindow.getAllWindows().find(w => /^https?:/.test(w.webContents.getURL()));
+          window.setContentSize(size.width, size.height);
+        }, contentSize);
+        await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual(contentSize);
+      }
       await page.waitForFunction(() => typeof window.pentaMarkDesktop?.getVault === 'function');
       assert.equal(await app.evaluate(({ app: electronApp }) => electronApp.isPackaged), true);
       assert.equal(resolve(await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))), resolve(userData));
@@ -202,9 +259,9 @@ test('packaged Windows: manual replica boots offline, saves, restarts, rejects s
       await editor.fill(editedText);
       await page.keyboard.press('Control+s');
       await expect.poll(async () => (await getNote()).data.content, { timeout: 15_000 }).toBe(editedText);
-      await page.locator('.pm-note-item').filter({ hasText: 'Beta' }).click();
+      await selectNote('Beta');
       await expect(editor).toContainText('Second offline note.');
-      await page.locator('.pm-note-item').filter({ hasText: 'Alpha' }).click();
+      await selectNote('Alpha');
       await expect(editor).toContainText('Native offline edit survives process restart.');
       assert.equal((await invoke('snapshot')).status.pendingCount, 1);
       t.diagnostic('PASS: packaged UI opens known manual replica, edits and saves via native IPC, navigates two notes');
@@ -273,6 +330,9 @@ test('packaged Windows: manual replica boots offline, saves, restarts, rejects s
       assert.deepEqual(rendererHostRequests, [], 'Renderer requested unavailable host');
       t.diagnostic('PASS: zero native remote IPC commands, host TCP connections and renderer host requests throughout both boots');
       passed = true;
+    } catch (error) {
+      try { await captureFailure(error); } catch (captureError) { t.diagnostic(`Could not save native failure evidence: ${captureError}`); }
+      throw error;
     } finally {
       clearTimeout(watchdog);
       if (!passed) t.diagnostic(`Fixture retained: ${root}\nHost connections: ${hostConnections}\n${processLog}`);
