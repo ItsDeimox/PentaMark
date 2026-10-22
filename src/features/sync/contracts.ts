@@ -80,6 +80,10 @@ export interface ReconcileDecision {
   local: EntryVersion | null;
   remote: EntryVersion | null;
 }
+/** path preserves NFC spelling; pathKey uses NFC -> lower -> upper -> lower -> NFC.
+ * Casing is locale-independent; Java must use Locale.ROOT for every casing step.
+ * This conservative collision key never replaces native destination checks.
+ */
 export type PathResult = { ok: true; path: string; pathKey: string }
   | { ok: false; code: 'invalid-path' | 'reserved-name' };
 export interface IncomingBatch {

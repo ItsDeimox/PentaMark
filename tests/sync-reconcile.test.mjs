@@ -29,6 +29,20 @@ for (const c of cases.paths) {
   test(`path ${JSON.stringify(c.input)}`, () => {
     assert.equal(typeof normalizePath, 'function', 'normalizePath must validate paths');
     assert.deepEqual(normalizePath(c.input), c.expected);
+    if (c.expected.ok) {
+      assert.equal(normalizePath(c.expected.pathKey).pathKey, c.expected.pathKey, 'canonical key must be stable');
+    }
+  });
+}
+for (const c of cases.caseCollisions) {
+  test(`caseless identity ${c.local} / ${c.remote}`, () => {
+    const local = Object.freeze({ ...cases.versions.A, path: c.local });
+    const remote = Object.freeze({ ...cases.versions.other, path: c.remote });
+    assert.deepEqual(planEntry(null, local, remote), {
+      action: 'conflict', reason: c.reason, base: null, local, remote,
+    });
+    assert.equal(normalizePath(c.local).pathKey === normalizePath(c.remote).pathKey,
+      c.reason === 'path-collision', 'grouping must agree with collision decisions');
   });
 }
 test('inverted clocks cannot choose a winner or replace the original base revision', () => {

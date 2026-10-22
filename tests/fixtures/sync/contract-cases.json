@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "policy": {
-    "paths": "NFC, forward-slash separators; pathKey is locale-independent lowercase followed by NFC. Reject empty/dot segments, absolute paths, Windows forbidden characters, trailing dots/spaces and device names. Native ports must additionally check filesystem collisions, symlinks and junctions.",
+    "paths": "NFC, forward-slash separators; preserve this spelling in path. pathKey applies locale-independent lower -> upper -> lower -> NFC to path. Java must use Normalizer.normalize(path.toLowerCase(Locale.ROOT).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT), Normalizer.Form.NFC); never default-locale casing. This is a conservative collision rule, not full Unicode casefold. Sigma variants collide; sharp-S ẞ/ß/SS collide as ss. Dotted İ and i+combining-dot collide but remain distinct from plain I/i. Dotless ı conservatively collides with I/i. Keys must remain stable under normalization. Reject empty/dot segments, absolute paths, Windows forbidden characters, trailing dots/spaces and device names. Native ports must additionally check filesystem collisions, symlinks and junctions, including runtime Unicode-version differences.",
     "identity": "Distinct IDs never converge, even with identical bytes. Live distinct IDs with the same pathKey conflict as path-collision. The caller supplies candidates; planEntry cannot discover other entries.",
     "absence": "null means no known version, not a tombstone. Missing sides of a known base conflict; deletion requires an explicit tombstone.",
     "equality": "Compare ID, kind, NFC path with case preserved, hash, length and deleted; ignore opaque revisions and clocks. Tombstones retain path/kind for conservative comparison."
@@ -50,7 +50,28 @@
     {"name":"both missing known base","base":"A","local":null,"remote":null,"action":"conflict","reason":"missing-version"},
     {"name":"invalid path","base":"A","local":"invalid","remote":"A","action":"conflict","reason":"invalid-path"}
   ],
+  "caseCollisions": [
+    {"local":"Σ.md","remote":"ς.md","reason":"path-collision"},
+    {"local":"σ.md","remote":"ς.md","reason":"path-collision"},
+    {"local":"ß.md","remote":"SS.md","reason":"path-collision"},
+    {"local":"ẞ.md","remote":"SS.md","reason":"path-collision"},
+    {"local":"ẞ.md","remote":"ß.md","reason":"path-collision"},
+    {"local":"İ.md","remote":"i\u0307.md","reason":"path-collision"},
+    {"local":"İ.md","remote":"i.md","reason":"identity-mismatch"},
+    {"local":"ı.md","remote":"I.md","reason":"path-collision"}
+  ],
   "paths": [
+    {"input":"Σ.md","expected":{"ok":true,"path":"Σ.md","pathKey":"σ.md"}},
+    {"input":"σ.md","expected":{"ok":true,"path":"σ.md","pathKey":"σ.md"}},
+    {"input":"ς.md","expected":{"ok":true,"path":"ς.md","pathKey":"σ.md"}},
+    {"input":"ß.md","expected":{"ok":true,"path":"ß.md","pathKey":"ss.md"}},
+    {"input":"ẞ.md","expected":{"ok":true,"path":"ẞ.md","pathKey":"ss.md"}},
+    {"input":"SS.md","expected":{"ok":true,"path":"SS.md","pathKey":"ss.md"}},
+    {"input":"İ.md","expected":{"ok":true,"path":"İ.md","pathKey":"i\u0307.md"}},
+    {"input":"i\u0307.md","expected":{"ok":true,"path":"i\u0307.md","pathKey":"i\u0307.md"}},
+    {"input":"I.md","expected":{"ok":true,"path":"I.md","pathKey":"i.md"}},
+    {"input":"i.md","expected":{"ok":true,"path":"i.md","pathKey":"i.md"}},
+    {"input":"ı.md","expected":{"ok":true,"path":"ı.md","pathKey":"i.md"}},
     {"input":"Cafe\u0301/Nota.md","expected":{"ok":true,"path":"Café/Nota.md","pathKey":"café/nota.md"}},
     {"input":"Notes\\A.md","expected":{"ok":true,"path":"Notes/A.md","pathKey":"notes/a.md"}},
     {"input":"İ/Σ.md","expected":{"ok":true,"path":"İ/Σ.md","pathKey":"i\u0307/σ.md"}},

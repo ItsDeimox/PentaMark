@@ -12,7 +12,12 @@ export function normalizePath(input: string): PathResult {
     .test(segment.split('.')[0].replace(/ +$/u, '')))) {
     return { ok: false, code: 'reserved-name' };
   }
-  return { ok: true, path, pathKey: path.toLowerCase().normalize('NFC') };
+  // Conservative shared fold, not locale-sensitive casing or full Unicode casefold.
+  // Initial lowercase makes ẞ join ß before uppercase expands both to SS.
+  // Java: Normalizer.normalize(path.toLowerCase(Locale.ROOT)
+  //   .toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT), Normalizer.Form.NFC).
+  const pathKey = path.toLowerCase().toUpperCase().toLowerCase().normalize('NFC');
+  return { ok: true, path, pathKey };
 }
 
 function sameState(a: EntryVersion | null, b: EntryVersion | null): boolean {
