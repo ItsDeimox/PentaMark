@@ -30,6 +30,30 @@ public class SyncRecoveryInstrumentedTest {
     }
     static Field field(String name)throws Exception{Field f=SyncVaultPlugin.class.getDeclaredField(name);f.setAccessible(true);return f;}
     static JSONObject profile()throws Exception{return SyncVault.obj("vaultId",SyncVault.id(),"serverId",SyncVault.id(),"replicaId",SyncVault.id(),"origin","http://100.64.0.1:35491","offlineEnabled",true,"mode","manual");}
+    static java.util.Map<String,String> image(File root)throws Exception {
+        java.util.Map<String,String> result=new java.util.TreeMap<>();image(root,"",result);return result;
+    }
+    private static void image(File root,String prefix,java.util.Map<String,String> result)throws Exception {
+        File[] files=root.listFiles();assertNotNull(files);
+        for(File file:files)if(file.isDirectory()){result.put(prefix+file.getName()+"/","directory");image(file,prefix+file.getName()+"/",result);}
+        else result.put(prefix+file.getName(),file.length()+":"+SyncFileJournal.hash(file));
+    }
+    @Test public void malformedOriginalPreservesEntireInventoryAndAuthorizesOnlyOpaqueRecovery()throws Exception {
+        Context context=ApplicationProvider.getApplicationContext();JSONObject profile=profile();File root=SyncRecoveryGuard.root(context,profile);assertTrue(root.mkdirs());
+        for(String name:new String[]{"replica.db","replica.db-wal","replica.db-shm","replica.db-journal","future-object"})
+            try(FileOutputStream out=new FileOutputStream(new File(root,name))){out.write(new byte[256]);}
+        java.util.Map<String,String> before=image(root);
+        try{SyncRecoveryGuard.check(context,root);fail("malformed schema accepted");}catch(IOException e){assertEquals("unsupported-schema",e.getMessage());}
+        assertEquals(before,image(root));
+        try(ActivityScenario<MainActivity> activity=ActivityScenario.launch(MainActivity.class)) {
+            AtomicReference<SyncVaultPlugin> ref=new AtomicReference<>();activity.onActivity(a -> ref.set((SyncVaultPlugin)a.getBridge().getPlugin("SyncVault").getInstance()));
+            Call call=new Call("malformed","open",profile);ref.get().open(call);call.await();assertEquals("unsupported-schema",call.error);
+            assertEquals(SyncRecoveryGuard.profile(profile).toString(),((JSONObject)field("failedSchemaProfile").get(ref.get())).toString());
+            assertNull(field("vault").get(ref.get()));assertEquals(before,image(root));
+        }
+        ByteArrayOutputStream output=new ByteArrayOutputStream();SyncRecoveryArchive.write(root,profile,output,f -> SyncVault.androidFiles().isLink(f));
+        assertEquals(before,image(root));assertTrue(output.size()>0);
+    }
     static File future(Context context,JSONObject profile)throws Exception {
         File root=SyncRecoveryGuard.root(context,profile);assertTrue(root.mkdirs());
         try(SQLiteDatabase db=SQLiteDatabase.openOrCreateDatabase(new File(root,"replica.db"),null)) {
@@ -40,7 +64,7 @@ public class SyncRecoveryInstrumentedTest {
     }
     @Test public void readOnlyGuardRejectsFutureSchemaWithoutChangingDatabaseBytesOrMode()throws Exception {
         Context context=ApplicationProvider.getApplicationContext();File root=future(context,profile()),dbFile=new File(root,"replica.db");String before=SyncFileJournal.hash(dbFile);long length=dbFile.length();
-        try{SyncRecoveryGuard.check(root);fail("future schema accepted");}catch(IOException e){assertEquals("unsupported-schema",e.getMessage());}
+        try{SyncRecoveryGuard.check(context,root);fail("future schema accepted");}catch(IOException e){assertEquals("unsupported-schema",e.getMessage());}
         assertEquals(before,SyncFileJournal.hash(dbFile));assertEquals(length,dbFile.length());
         try(SQLiteDatabase db=SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY|SQLiteDatabase.NO_LOCALIZED_COLLATORS);
             Cursor mode=db.rawQuery("PRAGMA journal_mode",null);Cursor version=db.rawQuery("PRAGMA user_version",null)) {

@@ -17,6 +17,7 @@ public final class SyncVaultPlugin extends Plugin {
     private static final java.util.Set<SyncVaultPlugin> instances=java.util.Collections.newSetFromMap(new java.util.WeakHashMap<SyncVaultPlugin,Boolean>());
     private static int activeTasks;
     private static SyncVaultPlugin recoveryPlugin;
+    private static SyncVaultPlugin openingPlugin;
     { synchronized(lock){instances.add(this);} }
     private JSONObject failedSchemaProfile;
     private PluginCall recoveryOwner;
@@ -42,7 +43,10 @@ public final class SyncVaultPlugin extends Plugin {
     private static JSObject js(JSONObject object) throws Exception { return new JSObject(object.toString()); }
     interface Task { JSONObject run(SyncVault target) throws Exception; }
     private void submit(Runnable task)throws IOException {
-        synchronized(lock){if(recoveryPlugin!=null)throw new IOException("replica-busy");activeTasks++;}
+        submit(task,false);
+    }
+    private void submit(Runnable task,boolean openingTask)throws IOException {
+        synchronized(lock){if(recoveryPlugin!=null || openingPlugin!=null && (!openingTask || openingPlugin!=this))throw new IOException("replica-busy");activeTasks++;}
         try{work.execute(() -> {try{task.run();}finally{synchronized(lock){activeTasks--;}}});}
         catch(RuntimeException e){synchronized(lock){activeTasks--;}throw e;}
     }
@@ -61,14 +65,19 @@ public final class SyncVaultPlugin extends Plugin {
         boolean claimed=false;long claim=-1;
         try {
             final JSONObject profile = SyncRecoveryGuard.profile(new JSONObject(call.getObject("profile").toString()));
-            synchronized(lock) { if(opening || paused || recoveryPlugin!=null)throw new IOException("replica-busy"); failedSchemaProfile=null;opening=true; claimed=true;claim=++bindingGeneration;cancelProbes(); if(remote!=null)remote.close(); remote=null; }
+            synchronized(lock) {
+                if(opening || paused || recoveryPlugin!=null || openingPlugin!=null || activeTasks!=0)throw new IOException("replica-busy");
+                for(SyncVaultPlugin p:instances)if(p!=this && (p.vault!=null || p.opening))throw new IOException("replica-busy");
+                // Reserve from admission through isolated preflight and normal open. No queued writer can race the copy.
+                openingPlugin=this;failedSchemaProfile=null;opening=true; claimed=true;claim=++bindingGeneration;cancelProbes(); if(remote!=null)remote.close(); remote=null;
+            }
             final long generation=claim;
             submit(() -> {
                 try {
                     synchronized(lock) {
                         if(paused || generation!=bindingGeneration)throw new IOException("replica-changed");
                         if(vault!=null) { vault.close(); vault=null; }
-                        try{SyncRecoveryGuard.check(SyncRecoveryGuard.root(getContext(),profile));}
+                        try{SyncRecoveryGuard.check(getContext(),SyncRecoveryGuard.root(getContext(),profile));}
                         catch(Exception e){if("unsupported-schema".equals(e.getMessage()))failedSchemaProfile=new JSONObject(profile.toString());throw e;}
                         SyncVault next=new SyncVault(getContext(),profile);
                         try {
@@ -77,9 +86,9 @@ public final class SyncVaultPlugin extends Plugin {
                         }catch(Exception e){next.close();throw e;}
                     }
                 } catch(Exception e){call.reject(e.getMessage(),e.getMessage(),e);}
-                finally{synchronized(lock){if(generation==bindingGeneration)opening=false;}}
-            });
-        } catch(Exception e){if(claimed)synchronized(lock){if(claim==bindingGeneration)opening=false;}call.reject(e.getMessage(),e.getMessage(),e);}
+                finally{synchronized(lock){if(generation==bindingGeneration)opening=false;if(openingPlugin==this)openingPlugin=null;}}
+            },true);
+        } catch(Exception e){if(claimed)synchronized(lock){if(claim==bindingGeneration)opening=false;if(openingPlugin==this)openingPlugin=null;}call.reject(e.getMessage(),e.getMessage(),e);}
     }
     @PluginMethod public void configure(PluginCall c){run(c,v -> v.configure(c.getObject("config")));}
     @PluginMethod public void snapshot(PluginCall c){run(c,SyncVault::snapshot);}
@@ -243,7 +252,7 @@ public final class SyncVaultPlugin extends Plugin {
             synchronized(lock) {
                 JSONObject profile=SyncRecoveryGuard.profile(call.getObject("profile"));
                 if(failedSchemaProfile==null || !failedSchemaProfile.toString().equals(profile.toString()))throw new IOException("recovery-not-authorized");
-                if(recoveryPlugin!=null || activeTasks!=0)throw new IOException("replica-busy");
+                if(recoveryPlugin!=null || openingPlugin!=null || activeTasks!=0)throw new IOException("replica-busy");
                 for(SyncVaultPlugin p:instances)if(p.vault!=null || p.opening || p.remote!=null || !p.probes.isEmpty()
                     || p.importOwner!=null || p.importing!=null || p.exporting!=null || p.exportingReplica!=null)throw new IOException("replica-busy");
                 File root=SyncRecoveryGuard.root(getContext(),profile);

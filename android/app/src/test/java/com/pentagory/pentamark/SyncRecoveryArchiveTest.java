@@ -7,6 +7,18 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class SyncRecoveryArchiveTest {
+    @Test public void sqliteInspectionCopyIncludesEverySidecarAndCannotDamageOriginal()throws Exception {
+        File root=Files.createTempDirectory("recovery-original-").toFile(),copy=Files.createTempDirectory("recovery-copy-").toFile();
+        String[] names={"replica.db","replica.db-wal","replica.db-shm","replica.db-journal"};
+        for(int i=0;i<names.length;i++)Files.write(new File(root,names[i]).toPath(),new byte[]{(byte)i,99});
+        SyncRecoveryArchive.copyDatabaseFiles(root,copy,f -> Files.isSymbolicLink(f.toPath()));
+        assertEquals(4,copy.list().length);
+        for(int i=0;i<names.length;i++) {
+            File cloned=new File(copy,names[i]);assertArrayEquals(new byte[]{(byte)i,99},Files.readAllBytes(cloned.toPath()));
+            assertTrue(cloned.delete());assertArrayEquals(new byte[]{(byte)i,99},Files.readAllBytes(new File(root,names[i]).toPath()));
+        }
+        assertEquals(4,root.list().length);
+    }
     @Test public void rawFutureFilesAndSidecarsExportWithoutInterpretationOrMutation()throws Exception {
         File root=Files.createTempDirectory("recovery-").toFile();
         Files.write(new File(root,"replica.db").toPath(),new byte[]{0,99,12});
