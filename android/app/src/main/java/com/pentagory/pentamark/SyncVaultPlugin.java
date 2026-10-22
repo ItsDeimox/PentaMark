@@ -22,6 +22,7 @@ public final class SyncVaultPlugin extends Plugin {
     private boolean opening;
     private SyncVault importing;
     private String importPath;
+    private PluginCall importOwner;
     private SyncVault exporting;
     private JSONObject exportBlob;
     private SyncVault exportingReplica;
@@ -158,15 +159,17 @@ public final class SyncVaultPlugin extends Plugin {
 
     @PluginMethod public void importDocument(PluginCall c) {
         try {
-            synchronized(lock){if(importing!=null || vault==null)throw new IOException("replica-busy");importPath=SyncPaths.path(c.getString("path"));importing=vault;}
+            synchronized(lock){if(importOwner!=null || importing!=null || vault==null || opening)throw new IOException("replica-busy");importPath=SyncPaths.path(c.getString("path"));importing=vault;importOwner=c;}
             Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
-            getActivity().runOnUiThread(() -> startActivityForResult(c,intent,"importResult"));
-        }catch(Exception e){synchronized(lock){importing=null;}c.reject(e.getMessage(),e);}
+            getActivity().runOnUiThread(() -> {try{startActivityForResult(c,intent,"importResult");}catch(Exception e){releaseImport(c);c.reject(e.getMessage(),e);}});
+        }catch(Exception e){releaseImport(c);c.reject(e.getMessage(),e);}
     }
+    private void releaseImport(PluginCall owner){synchronized(lock){if(importOwner==owner){importing=null;importPath=null;importOwner=null;}}}
     @ActivityCallback private void importResult(PluginCall c,ActivityResult result) {
-        final SyncVault target;final String path;synchronized(lock){target=importing;path=importPath;importing=null;}
         if(c==null)return;
-        if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
+        final SyncVault target;final String path;
+        synchronized(lock){if(importOwner!=c){c.reject("replica-changed");return;}target=importing;path=importPath;releaseImport(c);}
+        if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null || result.getData().getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
         Uri uri=result.getData().getData();
         try {work.execute(() -> {
             try(InputStream in=getContext().getContentResolver().openInputStream(uri)) {
