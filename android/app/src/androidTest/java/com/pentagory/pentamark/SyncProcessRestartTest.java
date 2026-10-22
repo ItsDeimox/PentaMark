@@ -29,8 +29,10 @@ public class SyncProcessRestartTest {
     private static SQLiteDatabase futureWalWriter;
 
     private SharedPreferences evidence() {
-        return InstrumentationRegistry.getInstrumentation().getContext()
-            .getSharedPreferences("sync-process-restart-test-only",Context.MODE_PRIVATE);
+        // Instrumentation executes as the TARGET UID, not the test APK's data-directory owner.
+        Context target=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertEquals("Receipt storage must belong to the executing UID",android.os.Process.myUid(),target.getApplicationInfo().uid);
+        return target.getSharedPreferences("sync-process-restart-test-only",Context.MODE_PRIVATE);
     }
 
     @Test(timeout=30000) public void seedOfflinePending()throws Exception {
