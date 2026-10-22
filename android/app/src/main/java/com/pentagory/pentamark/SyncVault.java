@@ -512,9 +512,17 @@ public final class SyncVault implements AutoCloseable {
                 if (upload) files.require(hash,total);
                 else if (files.object(hash).isFile()) { files.require(hash,total); return obj("blobHash",hash,"verifiedBytes",total,"complete",true); }
                 JSONObject progress = database.get("transfer_progress",(upload?"up:":"down:")+hash);
-                if(upload && progress!=null && progress.getBoolean("complete"))return progress;
                 long durable = progress == null ? 0 : progress.getLong("verifiedBytes");
-                if (offset != durable) throw new IOException("invalid-offset");
+                if(durable<0 || durable>total || durable!=total && durable%RemoteConnection.SYNC_CHUNK_BYTES!=0)throw new IOException("invalid-transfer-progress");
+                if(!upload && file.length()<durable) {
+                    // A missing/truncated private partial cannot substantiate an old receipt.
+                    if(offset!=0)throw new IOException("invalid-offset");
+                    database.remove("transfer_progress","down:"+hash);durable=0;progress=null;
+                }
+                if(!upload && offset==0 && durable>0 && durable<total)return obj("blobHash",hash,"verifiedBytes",durable,"complete",false);
+                // Offset zero starts/restarts negotiation. For uploads ALWAYS replay a real segment:
+                // even a durable complete receipt cannot prove the host still retains the object.
+                if(offset!=0 && offset!=durable || upload && offset==total && total>0)throw new IOException("invalid-offset");
                 // Crash after file fsync but before progress commit: discard only unacknowledged staging suffix.
                 if (!upload && file.length() > durable) try (RandomAccessFile part=new RandomAccessFile(file,"rw")) { part.setLength(durable); part.getFD().sync(); }
             }

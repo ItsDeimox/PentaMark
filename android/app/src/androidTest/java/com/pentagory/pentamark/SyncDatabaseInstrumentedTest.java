@@ -239,6 +239,8 @@ public class SyncDatabaseInstrumentedTest {
                 assertEquals(1048576,transfer.get(10,java.util.concurrent.TimeUnit.SECONDS).getLong("verifiedBytes"));
                 vault.close();vault=new SyncVault(context,profile);
                 assertEquals(1048576,vault.transferProgress().getJSONObject(0).getLong("verifiedBytes"));
+                // Shared engine always starts a fresh attempt at zero; native storage negotiates progress.
+                assertEquals(1048576,vault.transfer(connection,blob,0,total,false).getLong("verifiedBytes"));
                 assertTrue(vault.transfer(connection,blob,1048576,total,false).getBoolean("complete"));
                 vault.files.require(hash,total);
                 assertEquals("edited during network",vault.request("/api/note?path=A.md","GET",null).getJSONObject("data").getString("content"));
@@ -246,5 +248,33 @@ public class SyncDatabaseInstrumentedTest {
                 worker.join(10000);assertFalse(worker.isAlive());if(failure.get()!=null)throw new AssertionError(failure.get());
             }finally{release.countDown();connection.close();}
         }finally{executor.shutdownNow();}
+    }
+    @Test public void uploadRetryRevalidatesCompletedReceiptAfterRemoteStorageLoss()throws Exception {
+        long total=2097152;File source=File.createTempFile("upload-retry-",".bin",context.getCacheDir());try(RandomAccessFile file=new RandomAccessFile(source,"rw")){file.setLength(total);}
+        JSONObject blob;try(InputStream input=new FileInputStream(source)){blob=vault.files.store(input,total);}String hash=blob.getString("blobHash");
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure=new java.util.concurrent.atomic.AtomicReference<>();
+        try(java.net.ServerSocket server=new java.net.ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))) {
+            server.setSoTimeout(10000);Thread worker=new Thread(() -> {
+                try {
+                    long[] offsets={0,0,1048576,0,1048576},acks={1048576,1048576,2097152,1048576,2097152};
+                    for(int request=0;request<offsets.length;request++)try(java.net.Socket socket=server.accept()) {
+                        socket.setSoTimeout(10000);InputStream in=socket.getInputStream();ByteArrayOutputStream header=new ByteArrayOutputStream();int ch;
+                        while((ch=in.read())!=-1){header.write(ch);if(header.size()>8192)throw new IOException("headers too long");if(header.toString("US-ASCII").endsWith("\r\n\r\n"))break;}
+                        assertTrue(header.toString("US-ASCII").contains("?offset="+offsets[request]+" HTTP/1.1"));
+                        byte[] buffer=new byte[65536];long remaining=1048576;while(remaining>0){int n=in.read(buffer,0,(int)Math.min(remaining,buffer.length));if(n<0)throw new EOFException();remaining-=n;}
+                        byte[] response=SyncVault.obj("blobHash",hash,"verifiedBytes",acks[request],"complete",acks[request]==total).toString().getBytes("UTF-8");
+                        OutputStream out=socket.getOutputStream();out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "+response.length+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));out.write(response);
+                    }
+                }catch(Throwable error){failure.set(error);}
+            });worker.setDaemon(true);worker.start();
+            RemoteConnection remote=new RemoteConnection(profile.getString("origin"),url -> (java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:"+server.getLocalPort()+url.getFile()).openConnection(java.net.Proxy.NO_PROXY));
+            try {
+                assertEquals(1048576,vault.transfer(remote,blob,0,total,true).getLong("verifiedBytes"));vault.close();vault=new SyncVault(context,profile);
+                assertEquals(1048576,vault.transfer(remote,blob,0,total,true).getLong("verifiedBytes"));assertTrue(vault.transfer(remote,blob,1048576,total,true).getBoolean("complete"));
+                vault.close();vault=new SyncVault(context,profile);
+                JSONObject reset=vault.transfer(remote,blob,0,total,true);assertFalse(reset.getBoolean("complete"));assertEquals(1048576,reset.getLong("verifiedBytes"));
+                assertTrue(vault.transfer(remote,blob,1048576,total,true).getBoolean("complete"));worker.join(12000);assertFalse(worker.isAlive());if(failure.get()!=null)throw new AssertionError(failure.get());
+            }finally{remote.close();}
+        }
     }
 }
