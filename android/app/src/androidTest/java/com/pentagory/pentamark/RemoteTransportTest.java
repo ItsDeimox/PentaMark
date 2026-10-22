@@ -14,6 +14,22 @@ import java.util.concurrent.*;
  * URL to a loopback fixture. There is no production localhost exception or injected transport.
  */
 public class RemoteTransportTest {
+    @Test public void independentLoopbackFixtureSurvivesGlobalRoutingHandler()throws Exception {
+        install();
+        try(ServerSocket server=new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))) {
+            CompletableFuture<Void> served=CompletableFuture.runAsync(() -> {
+                try(Socket client=server.accept()) {
+                    BufferedReader in=new BufferedReader(new InputStreamReader(client.getInputStream(),StandardCharsets.US_ASCII));
+                    String line;while((line=in.readLine())!=null&&!line.isEmpty()){}
+                    client.getOutputStream().write(response(200,"text/plain","independent").getBytes(StandardCharsets.UTF_8));
+                }catch(IOException e){throw new RuntimeException(e);}
+            });
+            HttpURLConnection connection=(HttpURLConnection)new URL("http://127.0.0.1:"+server.getLocalPort()+"/independent").openConnection(Proxy.NO_PROXY);
+            connection.setReadTimeout(4000);connection.setConnectTimeout(4000);
+            try { assertEquals(200,connection.getResponseCode());served.get(5,TimeUnit.SECONDS); }
+            finally { connection.disconnect(); }
+        }
+    }
     private static volatile URL endpoint;
     private static boolean installed;
     private static synchronized void install() throws Exception {
@@ -22,6 +38,9 @@ public class RemoteTransportTest {
         endpoint = new URL("http://127.0.0.1:1");
         URL.setURLStreamHandlerFactory(protocol -> !protocol.equals("http") ? null : new URLStreamHandler() {
             @Override protected URLConnection openConnection(URL url) throws IOException {
+                // Other native suites own independent ephemeral loopback servers.
+                // Preserve their port using the captured platform handler, not this factory.
+                if (url.getHost().equals("127.0.0.1")) return new URL(endpoint, url.toExternalForm()).openConnection(Proxy.NO_PROXY);
                 if (!url.getHost().equals("100.64.0.1")) throw new IOException("Unexpected fixture destination");
                 return new URL(endpoint, url.getFile()).openConnection(Proxy.NO_PROXY);
             }

@@ -11,10 +11,32 @@ import java.io.File;
 /** API 24 SQL; JSON columns hold the exact shared DTO, never file bytes. */
 public final class SyncDatabase extends SQLiteOpenHelper {
     public SyncDatabase(Context context, File file) {
-        super(context, file.getAbsolutePath(), null, 1); setWriteAheadLoggingEnabled(true);
+        super(context, file.getAbsolutePath(), null, 1);
+        if (android.os.Build.VERSION.SDK_INT >= 28) Api28.configure(this);
+    }
+    private static final class Api28 {
+        static void configure(SyncDatabase helper) {
+            helper.setOpenParams(new SQLiteDatabase.OpenParams.Builder()
+                .addOpenFlags(SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING)
+                .setSynchronousMode("FULL").build());
+        }
     }
     @Override public void onConfigure(SQLiteDatabase db) {
-        db.setForeignKeyConstraintsEnabled(true); db.execSQL("PRAGMA synchronous=FULL");
+        db.setForeignKeyConstraintsEnabled(true);
+        if (android.os.Build.VERSION.SDK_INT < 28) {
+            // No public synchronous pool configuration before API28. Keep the
+            // framework's single connection, but enable SQLite WAL on that connection.
+            // SyncVault serializes accesses; do not enable a NORMAL reader pool here.
+            try(Cursor c=db.rawQuery("PRAGMA journal_mode=WAL",null)) {
+                if(!c.moveToFirst() || !"wal".equalsIgnoreCase(c.getString(0)))throw new IllegalStateException("wal-unavailable");
+            }
+            db.execSQL("PRAGMA synchronous=FULL");
+        }
+    }
+    @Override public void onOpen(SQLiteDatabase db) {
+        try(Cursor c=db.rawQuery("PRAGMA synchronous",null)) {
+            if(!c.moveToFirst() || c.getInt(0)!=2)throw new IllegalStateException("full-sync-unavailable");
+        }
     }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE vaults (id TEXT PRIMARY KEY, value TEXT NOT NULL)");

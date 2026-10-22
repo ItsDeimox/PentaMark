@@ -30,9 +30,31 @@ public class SyncDatabaseInstrumentedTest {
             .put("expectedLocalHead", row.getString("localHead"));
     }
     @Test public void sqliteUsesWalFullAndForeignKeys() throws Exception {
-        assertEquals("wal", vault.database.pragma("journal_mode"));
-        assertEquals("2", vault.database.pragma("synchronous"));
-        assertEquals("1", vault.database.pragma("foreign_keys"));
+        for(int reopen=0;reopen<2;reopen++) {
+            java.util.concurrent.ExecutorService reader=java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                for(int attempt=0;attempt<3;attempt++) {
+                    assertEquals("wal", vault.database.pragma("journal_mode"));
+                    assertEquals("2", vault.database.pragma("synchronous"));
+                    assertEquals("1", vault.database.pragma("foreign_keys"));
+                    reader.submit(() -> {
+                        assertEquals("wal",vault.database.pragma("journal_mode"));
+                        assertEquals("2",vault.database.pragma("synchronous"));
+                        assertEquals("1",vault.database.pragma("foreign_keys"));
+                    }).get(5,java.util.concurrent.TimeUnit.SECONDS);
+                    vault.database.transaction(() -> assertEquals("2",vault.database.pragma("synchronous")));
+                }
+            }finally{reader.shutdownNow();}
+            vault.close();vault=new SyncVault(context,profile);
+        }
+    }
+    @Test public void privateRootAliasWorksButWorkingSymlinkRemainsForbidden()throws Exception {
+        assertEquals(vault.files.working.getCanonicalFile(),vault.files.working);
+        write("private");assertTrue(vault.files.target("A.md").isFile());
+        File link=new File(vault.files.working,"escape");
+        android.system.Os.symlink(vault.files.objects.getAbsolutePath(),link.getAbsolutePath());
+        try{vault.files.target("escape/object");fail("working symlink followed");}
+        catch(IOException expected){assertEquals("unsafe-path",expected.getMessage());}
     }
     @Test public void parentFirstIncomingDeletesCommitAndReopenWithoutStuckIntent()throws Exception {
         vault.request("/api/folder","POST",SyncVault.obj("path","Notes"));vault.request("/api/note","PUT",SyncVault.obj("path","Notes/A.md","content","retained"));

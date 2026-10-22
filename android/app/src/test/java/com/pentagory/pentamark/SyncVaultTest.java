@@ -9,6 +9,15 @@ import java.util.Locale;
 import static org.junit.Assert.*;
 
 public class SyncVaultTest {
+    @Test public void trustedRootAliasDoesNotRejectOrdinaryChildren()throws Exception {
+        File parent=Files.createTempDirectory("sync-alias-").toFile();
+        assertTrue(new File(parent,"alias").mkdir());
+        SyncFileJournal files=journal(new File(parent,"alias/../replica"));
+        JSONObject v=version(files.store(new ByteArrayInputStream(new byte[]{42}),100),"A.md");
+        files.apply(null,v);
+        assertTrue(files.target("A.md").isFile());
+        assertEquals(files.working.getCanonicalFile(),files.working);
+    }
     @Test public void parentFirstDeletePlanReplaysChildrenBeforeDirectory()throws Exception {
         SyncFileJournal files=journal(Files.createTempDirectory("sync-order-").toFile());
         JSONObject parent=new JSONObject().put("path","Notes").put("kind","directory").put("deleted",false).put("blobHash",JSONObject.NULL).put("byteLength",0);

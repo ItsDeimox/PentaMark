@@ -21,7 +21,19 @@ final class SyncDiscoveryTestServer {
                 }catch(Throwable e){failure.set(e);}
             });worker.setDaemon(true);worker.start();
             RemoteConnection connection=new RemoteConnection(origin,url -> (HttpURLConnection)new URL("http://127.0.0.1:"+server.getLocalPort()+url.getFile()).openConnection(Proxy.NO_PROXY));
-            try{return connection.discover();}finally{connection.close();worker.join(12000);if(failure.get()!=null)throw new AssertionError(failure.get());}
+            Throwable clientFailure=null;
+            try{return connection.discover();}
+            catch(Exception | AssertionError e){clientFailure=e;throw e;}
+            finally {
+                connection.close();
+                if(clientFailure!=null)server.close(); // Do not hide a client error behind accept timeout.
+                worker.join(12000);
+                if(failure.get()!=null) {
+                    if(clientFailure!=null)clientFailure.addSuppressed(failure.get());
+                    else throw new AssertionError(failure.get());
+                }
+                if(worker.isAlive() && clientFailure==null)throw new AssertionError("fixture worker did not terminate");
+            }
         }
     }
 }

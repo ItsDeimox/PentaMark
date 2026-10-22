@@ -43,8 +43,11 @@ public final class SyncFileJournal {
     private final DurableFiles fs;
     public SyncFileJournal(File root, DurableFiles fs) throws IOException {
         this.fs = fs;
+        // Android's trusted private-files ancestor may have a platform path alias.
+        // Reject a linked replica root, then anchor child containment to its real path.
+        mkdir(root); root = root.getCanonicalFile();
         working = new File(root, "working"); objects = new File(root, "objects"); staging = new File(root, "staging");
-        mkdir(root); mkdir(working); mkdir(objects); mkdir(staging);
+        mkdir(working); mkdir(objects); mkdir(staging);
     }
     private void mkdir(File dir) throws IOException {
         if (fs.isLink(dir)) throw new IOException("unsafe-path");
