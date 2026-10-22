@@ -32,6 +32,11 @@ function clock() {
   };
 }
 async function settle() { for (let i = 0; i < 150; i++) await Promise.resolve(); }
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
 function fixture(options = {}) {
   assert.equal(typeof createSyncEngine, 'function', 'shared engine must exist');
   const time = clock(), calls = [], acknowledgments = [], batches = [], sent = [];
@@ -308,4 +313,52 @@ test('real native pair: remote edit then revert advances revision without losing
   await f.replica.request('/api/note?path=a.md', 'PUT', { content: 'C' }); await engine.synchronizeNow();
   assert.equal(status.errorCode, null); assert.equal((await f.replica.snapshot()).status.pendingCount, 0);
   engine.stop();
+});
+
+for (const action of ['manual', 'stop']) test(`cancellation after awaited catchup snapshot (${action}) prevents remote changes`, async t => {
+  const f = fixture({ mode: 'automatic' }); t.after(() => f.engine.stop());
+  const entered = deferred(), release = deferred(); const snapshot = f.replica.snapshot;
+  let afterHello = 0, blocked = false;
+  f.replica.snapshot = async () => {
+    const value = await snapshot();
+    // Pause the catchup read after the post-replay snapshot, before changes().
+    if (!blocked && f.calls.includes('hello') && ++afterHello === 2) {
+      blocked = true; entered.resolve(); await release.promise;
+    }
+    return value;
+  };
+  const cycle = f.engine.start(); await entered.promise;
+  if (action === 'manual') await f.engine.setMode('manual'); else f.engine.stop();
+  release.resolve(); await cycle;
+  assert.equal(f.calls.includes('changes'), false, 'cancelled cycle must not start a new content request');
+  assert.deepEqual(f.time.delays, []);
+});
+
+test('automatic conflicts keep polling independent remote entries without stamping success', async t => {
+  const f = fixture({ mode: 'automatic' }); t.after(() => f.engine.stop());
+  f.state.conflicts = [{ conflictId: 'conflict', entryId: 'unresolved' }]; f.state.status.conflictCount = 1;
+  f.state.status.lastSuccessfulSync = '2026-01-01T00:00:00.000Z';
+  await f.engine.start();
+  f.options.changes = cursor => ({ fromCursor: cursor, nextCursor: 'epoch:1', entries: cursor === 'epoch:1' ? [] : [{ ...version('c'), entryId: 'independent', path: 'independent.md' }] });
+  await f.time.advance(30000);
+  assert.equal(f.state.entries[0]?.local.entryId, 'independent', 'unresolved conflict must not stop remote-only polling');
+  assert.equal(f.state.status.conflictCount, 1); assert.equal(f.status.phase, 'conflicts');
+  assert.equal(f.state.status.lastSuccessfulSync, '2026-01-01T00:00:00.000Z');
+  assert.equal(f.calls.includes('complete'), false); assert.deepEqual(f.time.delays, [30000]);
+});
+
+for (const cancelWaiting of [false, true]) test(`replacement engine reacquires replica slot after stopped owner (${cancelWaiting ? 'waiting engine stopped' : 'live successor'})`, async t => {
+  const f = fixture({ mode: 'automatic' }); const entered = deferred(), release = deferred();
+  const hello = f.remote.handshake; let successorHandshakes = 0;
+  f.remote.handshake = async () => { const result = await hello(); entered.resolve(); await release.promise; return result; };
+  const successorClock = clock();
+  const successor = createSyncEngine({ replica: f.replica, clock: successorClock,
+    remote: { ...f.remote, handshake: async () => { successorHandshakes++; return hello(); } } });
+  t.after(() => { f.engine.stop(); successor.stop(); });
+  f.edit(version('a')); const first = f.engine.start(); await entered.promise;
+  const second = successor.start(); await settle(); assert.equal(successorHandshakes, 0);
+  f.engine.stop(); if (cancelWaiting) successor.stop(); release.resolve(); await Promise.all([first, second]);
+  assert.equal(successorHandshakes, cancelWaiting ? 0 : 1);
+  assert.equal(f.state.status.pendingCount, cancelWaiting ? 1 : 0);
+  assert.deepEqual(successorClock.delays, cancelWaiting ? [] : [30000]);
 });

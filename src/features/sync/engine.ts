@@ -114,7 +114,7 @@ export function createSyncEngine({ replica, remote, clock = systemScheduler }: {
         const latest = [...new Map(entries.map(v => [v.entryId, v])).values()];
         for (const v of latest) await download(v);
         for (let attempt = 0; attempt < 8; attempt++) {
-          checkpoint(); const current = await read();
+          checkpoint(); const current = await read(); checkpoint();
           const items = latest.map(v => {
             const path = normalizePath(v.path);
             const collision = !v.deleted && path.ok ? current.entries.find(e => {
@@ -143,7 +143,7 @@ export function createSyncEngine({ replica, remote, clock = systemScheduler }: {
       if (!needsManifest) await send(snapshot.preparedOperations);
       checkpoint();
       if (partialError) throw new Error(partialError);
-      snapshot = await read();
+      snapshot = await read(); checkpoint();
       if (!snapshot.status?.snapshotComplete || !snapshot.cursor || snapshot.epoch !== hello.epoch) {
         let progress = snapshot.epoch === hello.epoch && !replayAfterManifest.length ? snapshot.initialCopy : null;
         // Re-read a partial stable manifest from its beginning to reconstruct the
@@ -178,7 +178,7 @@ export function createSyncEngine({ replica, remote, clock = systemScheduler }: {
         }
       }
       for (let round = 0; round < 1000; round++) {
-        checkpoint(); snapshot = await read();
+        checkpoint(); snapshot = await read(); checkpoint();
         if (!snapshot.cursor) throw new Error('initial-copy-incomplete');
         const page = await remote.changes(snapshot.cursor, 100); checkpoint();
         if (page.fromCursor !== snapshot.cursor || !page.nextCursor || !Array.isArray(page.entries)
@@ -193,8 +193,10 @@ export function createSyncEngine({ replica, remote, clock = systemScheduler }: {
           await send(pending); checkpoint();
           if (partialError) throw new Error(partialError); continue;
         }
-        snapshot = await read();
-        if (snapshot.status?.pendingCount || snapshot.status?.conflictCount) { emit(settled(snapshot)); return; }
+        snapshot = await read(); checkpoint();
+        if (snapshot.status?.pendingCount || snapshot.status?.conflictCount) {
+          emit(settled(snapshot)); schedule(30000); return;
+        }
         checkpoint();
         emit(await replica.completeCycle({ expectedCursor: page.nextCursor, expectedEpoch: hello.epoch }));
         retry = 0; completed = true; return;
@@ -224,8 +226,13 @@ export function createSyncEngine({ replica, remote, clock = systemScheduler }: {
     activeGeneration = token;
     active = (async () => {
       const snapshot = await read(), id = snapshot.profile.replicaId;
-      const existing = activeReplicas.get(id);
-      if (existing) { await existing; emit(settled(await read())); return; }
+      // Waiting for another instance is not this engine's cycle. Recheck the
+      // slot after every await so only one live successor acquires it.
+      while (activeReplicas.has(id)) {
+        await activeReplicas.get(id);
+        if (generation !== token) return;
+      }
+      if (generation !== token) return;
       const work = cycle(explicit, token); activeReplicas.set(id, work);
       try { await work; } finally { if (activeReplicas.get(id) === work) activeReplicas.delete(id); }
     })().catch(async error => { emit({ ...settled(await read(), codeOf(error)), phase: 'blocked' }); }).finally(() => { active = null; });

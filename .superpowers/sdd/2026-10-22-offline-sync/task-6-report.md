@@ -1,6 +1,6 @@
 # Task 6 — shared engine / native transport
 
-Status: BLOCKED on one shared-planner regression pending controller correction; owned implementation checkpoint is ready for review. No adapter/platform/server/desktop/Android/UI/package/contracts edits by Task 6. No subagents, personal vault, installed app, publication or external host used.
+Status: DONE for the owned implementation and review fix round 1. Controller planner fix ba65b47 resolved the original blocker; all 36 focused tests now pass. Downstream native/UI/release verification gates remain as listed below. No adapter/platform/server/desktop/Android/UI/package/contracts edits by Task 6. No subagents, personal vault, installed app, publication or external host used.
 
 ## Delivered integration API
 
@@ -56,9 +56,27 @@ The engine imports `planEntry` and `normalizePath`; it does not implement anothe
 - Final edge-case regression: `node --test --test-name-pattern='remote edit then revert' tests/sync-engine.test.mjs`: **1 fail** with `unrepresented-remote-change`. Host A→B→A updates remote revision but shared planner emits none; native exact-base guard rejects it. Controller notified to correct shared planner to emit converged for identical local/remote state with a different remote revision. No local fork or native weakening was made. Checkpoint remains pending this correction and focused rerun.
 - Final combined rerun of both owned suites: **31 tests, 30 pass, 1 fail, 0 skip**; only the above shared-planner regression fails. `git diff --check` for owned source/test paths passed. No test skipped or changed to assert the blocked behavior.
 
+## Review fix round 1 — Herschel's three lifecycle findings
+
+Scope: only `src/features/sync/engine.ts`, `tests/sync-engine.test.mjs`, and this report. Transport, shared planner, adapters, platform and UI untouched. Used the receiving-code-review skill to reproduce the findings before applying changes and retained the TDD workflow.
+
+1. Recheck cancellation after awaited native snapshots before starting changes requests or persisting/continuing reconciliation. A manual-mode change or stop that resolves while the catchup snapshot is suspended now prevents the next remote content request.
+2. A settled cycle with remaining pending/conflicted state schedules the next automatic poll at 30 seconds. It never calls completeCycle or changes lastSuccessfulSync. The regression introduces an independent remote entry after the conflict-bearing cycle and verifies that the next fake-clock poll receives it while the conflict and previous success timestamp remain intact. Manual/stopped engines still cannot schedule content.
+3. A replacement engine waits for the old replica slot, rechecks its generation and slot ownership, then runs its own cycle. It no longer returns after merely observing the previous engine finish. Every waiting successor rechecks the map, preserving serialization; a stopped waiting engine does not acquire the slot or start a handshake.
+
+Node 24 commands/results:
+
+- RED: `node --test --test-name-pattern='cancellation after|automatic conflicts|replacement engine' tests/sync-engine.test.mjs` — **4 fail, 1 pass**. Both manual/stop cancellation variants issued changes unexpectedly; independent remote entry was unseen; live successor issued zero handshakes. The already-stopped waiter guard passed.
+- Fix 1 GREEN: `node --test --test-name-pattern='cancellation after' tests/sync-engine.test.mjs` — **2/2 pass**.
+- Fix 2 GREEN: `node --test --test-name-pattern='automatic conflicts' tests/sync-engine.test.mjs` — **1/1 pass**.
+- Fix 3 GREEN: `node --test --test-name-pattern='replacement engine' tests/sync-engine.test.mjs` — **2/2 pass**.
+- Final focused GREEN: `node --test tests/sync-engine.test.mjs tests/sync-client-transport.test.mjs` — **36 pass, 0 fail, 0 skip**, including the actual native/HTTP/blob fixtures and the now-correct shared planner revision-refresh regression. Native fixture execution used authorized escalation for loopback/hardlinks.
+- `npm.cmd run typecheck` — **pass**. `git diff --check -- src/features/sync/engine.ts tests/sync-engine.test.mjs` — **pass** (normal LF/CRLF notices only).
+- Full unit suite was not repeated for this scoped round; the prior checkpoint's **181/181** result above remains historical evidence, not a new run.
+
 ## Remaining integration/verification concerns
 
 - Controller/native owners must land completeCycle/preparedOperations and the closed RemotePort IPC/plugin bindings alongside this checkpoint. Tests consumed their concurrent checkout implementations; Task 6 does not commit their files.
 - Renderer never handles blob bytes. Upload verifies the immutable source before each chunk; this bounds memory but repeats full-object I/O. Download staging persists aligned segments and verifies final hash/length before object-store publication. No physical power-loss certification or hostile same-user filesystem-race claim.
 - stop cancels future work at async boundaries; an issued native request may run until completion/30-second timeout. Immediate abort requires a lifecycle extension to the reviewed RemotePort; Android already has native socket-pause machinery, but the common port does not expose it.
-- Shared planner revision-refresh edge case above is a concrete integration blocker until controller correction. Native Android instrumentation, packaged Windows/APK and real UI/IPC end-to-end acceptance remain controller-owned gates; they were not run here.
+- Shared planner revision-refresh blocker was corrected by controller commit ba65b47 and passes in the final 36-test run. Native Android instrumentation, packaged Windows/APK and real UI/IPC end-to-end acceptance remain controller-owned gates; they were not run here.
