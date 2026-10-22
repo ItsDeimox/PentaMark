@@ -460,6 +460,7 @@ public final class SyncVault implements AutoCloseable {
         String old=root.getJSONObject("local").getString("path"), dest=method.equals("PATCH")?SyncPaths.path(body.getString("newPath")):null;
         if(dest!=null && (SyncPaths.key(dest).equals(SyncPaths.key(old))||SyncPaths.key(dest).startsWith(SyncPaths.key(old)+"/")))throw new IOException("invalid-folder-move");
         List<JSONObject> rows=orderedRows(database.all("entries"));Collections.reverse(rows);JSONObject plan=plan();
+        if(dest!=null)missingParentRows(plan,dest);
         for(JSONObject row:rows) {
             JSONObject local=row.optJSONObject("local");if(!SyncFileJournal.live(local))continue;String path=local.getString("path");
             if(!path.equals(old)&&!path.startsWith(old+"/"))continue;
