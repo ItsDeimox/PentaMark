@@ -75,6 +75,14 @@ function dataRoot() {
   return resolvedDataRoot = userDirectory;
 }
 
+// An explicitly isolated profile must be selected before reading settings or
+// acquiring the single-instance lock. Native validation uses a disposable one.
+if (process.env.PENTAMARK_USER_DATA_DIR) {
+  const profileDirectory = resolve(process.env.PENTAMARK_USER_DATA_DIR);
+  if (!canWriteDataDirectory(profileDirectory)) throw new Error(`Sem permissão para gravar o perfil do PentaMark em: ${profileDirectory}`);
+  app.setPath('userData', profileDirectory);
+}
+
 function defaultVaultDirectory() {
   return join(dataRoot(), "vault");
 }

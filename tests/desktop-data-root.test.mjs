@@ -9,25 +9,28 @@ import { runInNewContext } from 'node:vm';
 const require = createRequire(import.meta.url);
 const source = fs.readFileSync(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
 // Execute the actual startup path selection, stopping before Electron is started.
-const startup = source.slice(0, source.indexOf('function defaultVaultDirectory()'));
+const startup = source.slice(0, source.indexOf('function rendererIsLocal('));
 
-function fixture(t, { portable = true, explicit = false, denied = [], localVault = false } = {}) {
+function fixture(t, { portable = true, explicit = false, denied = [], localVault = false, isolatedProfile = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'pentamark-data-root-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const dirs = Object.fromEntries(['portable', 'userData', 'explicit', 'runtime'].map(name => [name, join(root, name)]));
+  const dirs = Object.fromEntries(['portable', 'userData', 'explicit', 'runtime', 'isolated', 'personalVault'].map(name => [name, join(root, name)]));
   for (const dir of Object.values(dirs)) fs.mkdirSync(dir);
   if (localVault) fs.mkdirSync(join(dirs.portable, 'vault'));
+  fs.writeFileSync(join(dirs.userData, 'pentamark.desktop.json'), JSON.stringify({vaultPath: dirs.personalVault}));
+  let profileDirectory = dirs.userData;
   const blocked = new Set(denied.map(name => dirs[name]));
   const env = {
     ...(portable ? { PORTABLE_EXECUTABLE_DIR: dirs.portable } : {}),
     ...(explicit ? { PENTAMARK_DATA_DIR: dirs.explicit } : {}),
+    ...(isolatedProfile ? { PENTAMARK_USER_DATA_DIR: dirs.isolated } : {}),
   };
   const module = { exports: {} };
-  runInNewContext(startup + '\nmodule.exports = { dataRoot };', {
+  runInNewContext(startup + '\nmodule.exports = { dataRoot, savedVaultDirectory };', {
     module, __dirname: dirs.runtime,
     process: { env, argv: [], pid: process.pid, execPath: join(dirs.runtime, 'PentaMark.exe') },
     require(name) {
-      if (name === 'electron') return { app: { getPath: () => dirs.userData } };
+      if (name === 'electron') return { app: { getPath: () => profileDirectory, setPath: (_name, value) => { profileDirectory = value; } } };
       if (name.startsWith('./')) return { invitationFromArgs: () => null };
       if (name === 'node:fs') return { ...fs, openSync(path, ...args) {
         if ([...blocked].some(dir => path.startsWith(dir + '\\') || path.startsWith(dir + '/'))) {
@@ -38,7 +41,7 @@ function fixture(t, { portable = true, explicit = false, denied = [], localVault
       return require(name);
     },
   });
-  return { ...dirs, dataRoot: module.exports.dataRoot };
+  return { ...dirs, dataRoot: module.exports.dataRoot, savedVaultDirectory: module.exports.savedVaultDirectory };
 }
 
 test('a portable executable in a protected folder starts using the user data directory', t => {
@@ -66,10 +69,26 @@ test('an existing portable vault is never silently replaced by a different vault
   const f = fixture(t, { denied: ['portable'], localVault: true });
   assert.throws(() => f.dataRoot(), /cofre|permiss/i);
   assert.ok(fs.existsSync(join(f.portable, 'vault')));
-  assert.deepEqual(fs.readdirSync(f.userData), []);
+  assert.deepEqual(fs.readdirSync(f.userData), ['pentamark.desktop.json']);
 });
 
 test('a nonportable app uses its user data directory', t => {
   const f = fixture(t, { portable: false });
   assert.equal(f.dataRoot(), f.userData);
+});
+
+test('an isolated profile cannot inherit the personal vault selection', t => {
+  const f = fixture(t, { portable: false, isolatedProfile: true });
+  assert.equal(f.dataRoot(), f.isolated);
+  assert.equal(f.savedVaultDirectory(), '');
+  assert.equal(JSON.parse(fs.readFileSync(join(f.userData, 'pentamark.desktop.json'), 'utf8')).vaultPath, f.personalVault);
+});
+
+test('normal launch preserves the existing profile and selected vault', t => {
+  const f = fixture(t, { portable: false });
+  assert.equal(f.savedVaultDirectory(), f.personalVault);
+});
+
+test('an unwritable requested profile fails rather than opening the personal profile', t => {
+  assert.throws(() => fixture(t, { isolatedProfile: true, denied: ['isolated'] }), /perfil|permiss/i);
 });
