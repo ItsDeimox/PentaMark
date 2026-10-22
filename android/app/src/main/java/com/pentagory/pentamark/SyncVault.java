@@ -75,8 +75,11 @@ public final class SyncVault implements AutoCloseable {
             }
             public void syncDirectory(File dir) throws IOException {
                 try {
-                    FileDescriptor fd = Os.open(dir.getAbsolutePath(), OsConstants.O_RDONLY | OsConstants.O_DIRECTORY, 0);
-                    try { Os.fsync(fd); } finally { Os.close(fd); }
+                    FileDescriptor fd = Os.open(dir.getAbsolutePath(), OsConstants.O_RDONLY | OsConstants.O_NOFOLLOW, 0);
+                    try {
+                        if(!OsConstants.S_ISDIR(Os.fstat(fd).st_mode))throw new IOException("unsafe-path");
+                        Os.fsync(fd);
+                    } finally { Os.close(fd); }
                 } catch (ErrnoException e) { throw new IOException("storage-unavailable", e); }
             }
             public boolean isLink(File file) throws IOException {

@@ -34,6 +34,13 @@ public class SyncDatabaseInstrumentedTest {
         assertEquals("2", vault.database.pragma("synchronous"));
         assertEquals("1", vault.database.pragma("foreign_keys"));
     }
+    @Test public void directorySyncChecksOpenedDescriptorType()throws Exception {
+        SyncFileJournal.DurableFiles fs=SyncVault.androidFiles();fs.syncDirectory(vault.files.working);
+        File ordinary=new File(vault.files.working,"ordinary");try(FileOutputStream out=new FileOutputStream(ordinary)){out.write(1);}
+        try{fs.syncDirectory(ordinary);fail("regular file accepted as directory");}catch(IOException expected){assertEquals("unsafe-path",expected.getMessage());}
+        File link=new File(vault.files.working,"link");android.system.Os.symlink(vault.files.objects.getAbsolutePath(),link.getAbsolutePath());
+        try{fs.syncDirectory(link);fail("directory symlink followed");}catch(IOException expected){}
+    }
     @Test public void immutablePreparationSurvivesReopenAndOldAckPreservesNewEdit() throws Exception {
         write("first");
         JSONObject op = vault.preparePending(100).getJSONObject(0);
