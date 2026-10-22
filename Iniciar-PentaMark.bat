@@ -12,6 +12,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
+node "local\runtime-version.mjs"
+if errorlevel 1 goto :erro
+
 if not exist "local-dist\index.html" (
   echo.
   echo  Preparando o PentaMark pela primeira vez...

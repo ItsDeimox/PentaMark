@@ -39,7 +39,7 @@ O Somente Leitura é a fonte visual do documento. O Live Preview usa os mesmos c
 
 ## Executar no Windows
 
-Requisitos: [Node.js](https://nodejs.org/) 20 ou superior.
+Requisitos do host standalone: [Node.js](https://nodejs.org/) 24.18.1 ou superior, com `node:sqlite`. O EXE já inclui seu próprio runtime.
 
 1. Clone ou baixe o projeto.
 2. Execute `Iniciar-PentaMark.bat`.

@@ -7,6 +7,8 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+node local/runtime-version.mjs
+
 if [ ! -f "local-dist/index.html" ]; then
   echo "Preparando o PentaMark pela primeira vez..."
   npm install
