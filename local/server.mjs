@@ -3,12 +3,14 @@ import { createReadStream } from "node:fs";
 import { access, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
-import { basename, dirname, extname, join, resolve, relative, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { handleMcpRequest } from "./mcp-bridge.mjs";
 import { createHostService } from "./sync/host-service.mjs";
 import { safeNativePath } from "./sync/paths.mjs";
+import { createSyncHandler } from "./sync/routes.mjs";
+import { installReplicaIpc } from "./sync/replica-ipc.mjs";
 
 const LOCAL_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(LOCAL_DIR, "..");
@@ -123,6 +125,36 @@ const noteLocks = new Map();
 const mcpActivity = new Map();
 let cleanupTimer = null;
 let hostService;
+let syncHandler;
+let replicaIpc;
+
+function currentMaxFileBytes() {
+  return Math.floor(Math.max(1, Number(config.maxUploadMB) || 2048) * 1024 * 1024);
+}
+
+function syncOperationUnlocked(req, operation, current) {
+  const clientId = clientIdFromRequest(req);
+  for (const version of [current, operation.after]) {
+    if (!version) continue;
+    const notePath = relative(NOTES_DIR, resolve(VAULT_DIR, version.path)).split(sep).join("/");
+    if (notePath === ".." || notePath.startsWith("../") || isAbsolute(notePath)) continue;
+    if (lockedByOther(notePath, clientId)) return false;
+    if (version.kind === "directory") {
+      if (notePath && folderLockedByOther(notePath, clientId)) return false;
+      if (!notePath && config.lockEditedNotes && currentLocks().some(lock => lock.clientId !== clientId)) return false;
+    }
+  }
+  return true;
+}
+
+function syncApplied(_req, _operation, result) {
+  const version = result.confirmed;
+  const notePath = relative(NOTES_DIR, resolve(VAULT_DIR, version.path)).split(sep).join("/");
+  if (version.kind === "note" && !version.deleted && notePath !== ".." && !notePath.startsWith("../") && !isAbsolute(notePath)) {
+    broadcast("note", { path: notePath, revision: version.blobHash.slice(0, 20), source: "sync" });
+  }
+  broadcast("notes", { reason: "sync", path: version.path });
+}
 
 function hostPath(fullPath) {
   return relative(VAULT_DIR, fullPath).split(sep).join("/");
@@ -791,6 +823,13 @@ async function serveFile(req, res, filePath, explicitType) {
 }
 
 async function handleApi(req, res, url) {
+  // Snapshot POST is read-only; the sync handler authorizes each mutation by
+  // semantic kind inside the host queue, after checking durable replay.
+  if (url.pathname.startsWith("/api/sync/")) {
+    if (!syncHandler) json(res, 503, { errorCode: "host-unavailable" });
+    else await syncHandler(req, res);
+    return true;
+  }
   const mutation = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method || "");
   const permission = requestPermission(req);
   if (mutation && url.pathname !== "/api/presence" && url.pathname !== "/api/config" && url.pathname !== "/api/permission" && permission === "viewer") {
@@ -1194,6 +1233,12 @@ async function handleApi(req, res, url) {
 
 export async function requestHandler(req, res) {
   try {
+    // Capability media must never fall through to public vault/static routing.
+    if (req.url?.startsWith("/__replica_media/")) {
+      if (!replicaIpc) { res.writeHead(503, { "Cache-Control": "no-store" }); res.end(); }
+      else await replicaIpc.handleMedia(req, res);
+      return;
+    }
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/mcp") {
       if (req.method === "GET") {
@@ -1276,14 +1321,29 @@ export async function initializeVaultHost() {
   config = await loadConfig();
   runtimePort = Number(config.port);
   hostService = await createHostService({ dataRoot: DATA_DIR, vaultRoot: VAULT_DIR,
-    getMaxFileBytes: () => Math.max(1, Number(config.maxUploadMB) || 2048) * 1024 * 1024 });
-  await ensureVault();
+    getMaxFileBytes: currentMaxFileBytes });
+  try {
+    await ensureVault();
+    const handler = await createSyncHandler({ host: hostService, maxFileBytes: currentMaxFileBytes,
+      permission: requestPermission, authorizeOperation: syncOperationUnlocked, onApplied: syncApplied });
+    if (process.env.PENTAMARK_DESKTOP === "1" && typeof process.send === "function" && process.env.PENTAMARK_USER_DATA_DIR) {
+      replicaIpc = installReplicaIpc({ channel: process, userData: resolve(process.env.PENTAMARK_USER_DATA_DIR) });
+    }
+    syncHandler = handler;
+  } catch (error) {
+    await closeVaultHost();
+    throw error;
+  }
   return hostService;
 }
 
 export async function closeVaultHost() {
   if (cleanupTimer) { clearTimeout(cleanupTimer); cleanupTimer = null; }
-  await hostService?.close();
+  syncHandler = undefined;
+  const closingReplica = replicaIpc;
+  replicaIpc = undefined;
+  try { await closingReplica?.close(); }
+  finally { await hostService?.close(); }
 }
 
 async function start() {

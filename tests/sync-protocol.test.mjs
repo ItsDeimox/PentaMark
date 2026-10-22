@@ -242,3 +242,18 @@ test('snapshot slots are reserved before awaiting the host and released on failu
   f.host.openSnapshot = original;
   assert.equal((await f.request('/snapshot', {})).status, 200);
 });
+
+test('post-commit notification observes durable state, does not repeat on replay, and cannot erase the ACK', async t => {
+  let f, observedRevision, notifications = 0;
+  f = await fixture(t, { onApplied: async (_req, op, result) => {
+    notifications++;
+    observedRevision = f.host.history(op.entryId).at(-1).revision;
+    throw new Error('notification-consumer-unavailable');
+  } });
+  const op = await operation(f);
+  const first = (await f.request('/apply', { operations: [op] })).data[0];
+  assert.equal(first.status, 'applied');
+  assert.equal(observedRevision, first.confirmed.revision);
+  assert.equal((await f.request('/apply', { operations: [op] })).data[0].status, 'already-applied');
+  assert.equal(notifications, 1);
+});

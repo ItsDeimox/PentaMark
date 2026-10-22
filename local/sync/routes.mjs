@@ -46,7 +46,7 @@ function limit(value) {
  * current) checks note/folder locks for both current.path and op.after.path.
  * Both callbacks are mandatory: omission must never silently enable writes.
  */
-export async function createSyncHandler({ host, maxFileBytes, permission, authorizeOperation,
+export async function createSyncHandler({ host, maxFileBytes, permission, authorizeOperation, onApplied,
   snapshotTtlMs = 15 * 60 * 1000, maxSnapshots = 32, maxConcurrentUploads = 4, now = Date.now }) {
   if (typeof permission !== 'function' || typeof authorizeOperation !== 'function') throw new Error('sync-authorization-required');
   const maximum = async () => {
@@ -113,7 +113,7 @@ export async function createSyncHandler({ host, maxFileBytes, permission, author
           const errorCode = validate(op, host);
           // Durable replay is resolved by the host BEFORE mutable policy checks.
           // The host supplies current state and invokes this inside its writer queue.
-          results.push(errorCode ? { opId: typeof op?.opId === 'string' ? op.opId : '', status: 'blocked', errorCode } : await host.apply(op, {
+          const result = errorCode ? { opId: typeof op?.opId === 'string' ? op.opId : '', status: 'blocked', errorCode } : await host.apply(op, {
             precondition: async ({ operation, current }) => {
               const currentRole = await permission(req);
               if (!['admin', 'editor'].includes(currentRole)
@@ -122,7 +122,12 @@ export async function createSyncHandler({ host, maxFileBytes, permission, author
               if (operation.after?.byteLength > await maximum()) return 'file-too-large';
               return true;
             },
-          }));
+          });
+          results.push(result);
+          if (result.status === 'applied' && onApplied) {
+            try { await onApplied(req, op, structuredClone(result)); }
+            catch { /* A failed refresh notification cannot revoke a durable ACK. */ }
+          }
         }
         json(res, 200, { results });
       } else if (route.startsWith('blobs/') && ['GET', 'PUT'].includes(req.method)) {
