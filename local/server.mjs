@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { handleMcpRequest } from "./mcp-bridge.mjs";
 import { createHostService } from "./sync/host-service.mjs";
-import { safeNativePath } from "./sync/paths.mjs";
+import { normalizePath, safeNativePath } from "./sync/paths.mjs";
 import { createSyncHandler } from "./sync/routes.mjs";
 import { installReplicaIpc } from "./sync/replica-ipc.mjs";
 
@@ -418,7 +418,8 @@ function releaseClientLocks(clientId) {
 }
 
 function lockFor(path) {
-  const clientId = noteLocks.get(path);
+  const key = normalizePath(path).pathKey;
+  const clientId = key && [...noteLocks].find(([notePath]) => normalizePath(notePath).pathKey === key)?.[1];
   if (!clientId) return null;
   return { clientId, name: sseClients.get(clientId)?.info.name || "Outro usuário" };
 }
@@ -431,8 +432,10 @@ function lockedByOther(path, clientId) {
 
 function folderLockedByOther(path, clientId) {
   if (!config.lockEditedNotes) return null;
+  const key = normalizePath(path).pathKey;
+  if (!key) return null;
   for (const [notePath, owner] of noteLocks) {
-    if (notePath.startsWith(`${path}/`) && owner !== clientId) return { clientId: owner, name: sseClients.get(owner)?.info.name || "Outro usuário" };
+    if (normalizePath(notePath).pathKey?.startsWith(`${key}/`) && owner !== clientId) return { clientId: owner, name: sseClients.get(owner)?.info.name || "Outro usuário" };
   }
   return null;
 }
@@ -1365,7 +1368,22 @@ async function start() {
   scanTimer.unref();
   server.requestTimeout = 0;
   server.headersTimeout = 60_000;
-  server.listen(runtimePort, String(config.bind), () => {
+  // A failed listen must reject start(), not merely set exitCode while the
+  // desktop IPC listener continues owning databases and keeping Node alive.
+  try {
+    await new Promise((resolveListening, rejectListening) => {
+      server.once("error", rejectListening);
+      server.listen(runtimePort, String(config.bind), () => {
+        server.off("error", rejectListening);
+        resolveListening();
+      });
+    });
+  } catch (error) {
+    clearInterval(scanTimer);
+    await new Promise(resolveClosed => server.close(() => resolveClosed()));
+    throw error;
+  }
+  {
     const urls = networkUrls();
     console.log("\n  PentaMark está online.\n");
     console.log(`  Este PC:  ${urls[0]}`);
@@ -1375,12 +1393,19 @@ async function start() {
     }
     console.log("\n  Feche esta janela ou pressione Ctrl+C para encerrar.\n");
     setTimeout(() => openBrowser(urls[0]), 350);
-  });
+  }
 
   server.on("error", (error) => {
     if (error.code === "EADDRINUSE") console.error(`\nA porta ${runtimePort} já está em uso. Talvez o PentaMark já esteja aberto.`);
     else console.error(error);
     process.exitCode = 1;
+    clearInterval(scanTimer);
+    server.closeAllConnections();
+    server.close(() => {
+      void closeVaultHost()
+        .catch(cleanupError => console.error(`[PentaMark] Cleanup: ${cleanupError.message}`))
+        .finally(() => { if (process.connected) process.disconnect(); });
+    });
   });
 
   const shutdown = () => {
@@ -1395,7 +1420,10 @@ async function start() {
   process.on("SIGTERM", shutdown);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) start().catch((error) => {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) start().catch(async (error) => {
   console.error(`\n[PentaMark] ${error.message}\n`);
   process.exitCode = 1;
+  try { await closeVaultHost(); }
+  catch (cleanupError) { console.error(`[PentaMark] Cleanup: ${cleanupError.message}`); }
+  finally { if (process.connected) process.disconnect(); }
 });

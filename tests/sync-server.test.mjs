@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, cp } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { createHostService } from '../local/sync/host-service.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -179,4 +182,62 @@ test('desktop server installs private IPC before ready and serves capability med
   assert.equal((await f.request('/api/sync/v1/snapshot', {})).data.entries.some(e => e.path.endsWith('private.md')), false);
   await f.closeHost();
   assert.equal((await fetch(f.base + media.value.url)).status, 503);
+});
+
+for (const custom of [false, true]) for (const directory of [false, true]) test(`case-folded ${directory ? 'descendant' : 'file'} lock blocks sync (${custom ? 'custom' : 'default'})`, async t => {
+  const f = await fixture(t, { custom });
+  let create = await put(f, f.path('a.md'));
+  if (directory) create = { ...create, kind: 'mkdir', after: { path: f.path('folder'), kind: 'directory', blobHash: null, byteLength: 0 } };
+  const first = await f.apply(create); assert.equal(first.status, 'applied');
+  const abort = new AbortController(); t.after(() => abort.abort());
+  await fetch(f.base + '/api/events?clientId=locker', { headers: remote('locker'), signal: abort.signal });
+  assert.equal((await f.request('/api/presence', { clientId: 'locker', path: directory ? 'FOLDER/Future.md' : 'A.md', editing: true }, remote('locker'))).status, 200);
+  const op = directory ? { ...create, opId: randomUUID(), kind: 'rmdir', baseRevision: first.confirmed.revision, after: null }
+    : await put(f, f.path('a.md'), 'replacement', first.confirmed);
+  const denied = await f.apply(op);
+  assert.equal(denied.status, 'blocked');
+  assert.equal(denied.errorCode, 'locked');
+  const snapshot = (await f.request('/api/sync/v1/snapshot', {})).data;
+  assert.equal(snapshot.entries.find(e => e.entryId === create.entryId).revision, first.confirmed.revision);
+  abort.abort();
+});
+
+for (const reason of ['missing-interface', 'occupied-port']) test(`actual desktop startup ${reason} closes IPC and exits unsuccessfully`, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'pm-startup-failure-'));
+  // Copy production modules into a disposable app layout; never rename/remove
+  // the workspace build or alter the user's existing data/profile.
+  await cp(fileURLToPath(new URL('../local/', import.meta.url)), join(root, 'local'), { recursive: true });
+  const data = join(root, 'data'); await mkdir(data);
+  let blocker;
+  let port = 0;
+  if (reason === 'occupied-port') {
+    await mkdir(join(root, 'local-dist'));
+    await writeFile(join(root, 'local-dist/index.html'), '<!doctype html>fixture');
+    blocker = createServer();
+    await new Promise(resolve => blocker.listen(0, '127.0.0.1', resolve));
+    port = blocker.address().port;
+  }
+  await writeFile(join(data, 'pentamark.config.json'), JSON.stringify({ port, bind: '127.0.0.1', openBrowser: false, cleanupUnusedAssets: false }));
+  const child = spawn(process.execPath, [join(root, 'local/server.mjs')], {
+    env: { ...process.env, PENTAMARK_DATA_DIR: data, PENTAMARK_VAULT_DIR: '', PENTAMARK_DESKTOP: '1',
+      PENTAMARK_USER_DATA_DIR: join(root, 'profile'), PENTAMARK_NO_BROWSER: '1' },
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true,
+  });
+  let output = '', disconnected = false, forced = false;
+  child.stdout.on('data', b => { output += b; }); child.stderr.on('data', b => { output += b; });
+  child.on('disconnect', () => { disconnected = true; });
+  const finished = new Promise(resolve => child.once('exit', code => resolve(code)));
+  const watchdog = setTimeout(() => { forced = true; child.kill(); }, 5000);
+  t.after(async () => {
+    clearTimeout(watchdog); if (child.exitCode === null && child.signalCode === null) child.kill(); await finished;
+    if (blocker) await new Promise(resolve => blocker.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  });
+  const code = await finished; clearTimeout(watchdog);
+  assert.match(output, reason === 'missing-interface' ? /Interface não encontrada/ : /EADDRINUSE|porta .*uso/);
+  assert.equal(forced, false, 'startup failure must not leave the IPC listener keeping the child alive');
+  assert.equal(code, 1);
+  assert.equal(disconnected, true);
+  const reopened = await createHostService({ dataRoot: data, vaultRoot: join(data, 'vault') });
+  await reopened.close();
 });
