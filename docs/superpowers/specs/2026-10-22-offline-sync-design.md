@@ -205,10 +205,12 @@ Uma alteração local precisa garantir, antes de mostrar “Salvo neste aparelho
 
 1. Conteúdo novo gravado em objeto temporário, sincronizado no disco e validado pelo hash.
 2. Intenção persistida com estado anterior e estado desejado.
-3. Arquivo de trabalho substituído atomicamente no mesmo volume.
+3. Publicação sem truncamento e sem substituir um destino inesperado, no mesmo volume. No host com escritores externos, conservar o arquivo anterior no journal antes de publicar o novo por uma operação que falha se o destino reaparecer. As leituras coordenadas do aplicativo aguardam a transação; uma ferramenta externa pode observar um breve intervalo sem o nome de trabalho. A intenção durável recupera esse intervalo antes de servir o cofre após reinício.
 4. Estado local e operação pendente confirmados no banco.
 
 Arquivos e SQLite não formam uma única transação: file_intents é obrigatório. Na inicialização, recuperar cada intenção antes de servir novas gravações. Falhas em qualquer fronteira devem resultar em uma versão íntegra recuperável, nunca em arquivo truncado ou fila esquecida.
+
+Refinamento durante implementação: a publicação conservadora acima substitui a exigência original de uma única troca atômica do pathname no host. A prioridade é não sobrescrever uma criação/edição externa que apareça entre a verificação e a publicação. Todo staging reutilizado precisa ter hash e comprimento verificados; mera existência não prova integridade. Sistemas de arquivos sem o mecanismo seguro exigido devem bloquear a operação com dados preservados, sem fallback destrutivo. A validação de encerramento de processo não equivale a uma certificação contra falha física de armazenamento.
 
 No host, a mesma regra inclui captura da versão anterior, comparação da revisão atual, aplicação em disco, registro em change_log e applied_ops. Serializar mutações por cofre e revalidar arquivos alterados fora do app.
 
