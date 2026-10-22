@@ -13,7 +13,16 @@ import java.util.concurrent.*;
 /** JSON-only metadata bridge; content streams through native files and ContentResolver. */
 @CapacitorPlugin(name = "SyncVault")
 public final class SyncVaultPlugin extends Plugin {
-    private final Object lock = new Object();
+    private static final Object lock = new Object();
+    private static final java.util.Set<SyncVaultPlugin> instances=java.util.Collections.newSetFromMap(new java.util.WeakHashMap<SyncVaultPlugin,Boolean>());
+    private static int activeTasks;
+    private static SyncVaultPlugin recoveryPlugin;
+    { synchronized(lock){instances.add(this);} }
+    private JSONObject failedSchemaProfile;
+    private PluginCall recoveryOwner;
+    private File recoveryRoot;
+    private JSONObject recoveryProfile;
+    private boolean recoveryWriting;
     private final ThreadPoolExecutor work = new ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(32));
     private SyncVault vault;
     private RemoteConnection remote;
@@ -32,11 +41,16 @@ public final class SyncVaultPlugin extends Plugin {
     private final ThreadLocal<Long> executingGeneration=new ThreadLocal<>();
     private static JSObject js(JSONObject object) throws Exception { return new JSObject(object.toString()); }
     interface Task { JSONObject run(SyncVault target) throws Exception; }
+    private void submit(Runnable task)throws IOException {
+        synchronized(lock){if(recoveryPlugin!=null)throw new IOException("replica-busy");activeTasks++;}
+        try{work.execute(() -> {try{task.run();}finally{synchronized(lock){activeTasks--;}}});}
+        catch(RuntimeException e){synchronized(lock){activeTasks--;}throw e;}
+    }
     private void run(PluginCall call, Task task) {
         try {
             final SyncVault target;final long generation;
             synchronized(lock) { target=vault; if(target==null || opening)throw new IOException("replica-not-open");generation=bindingGeneration; }
-            work.execute(() -> { try {
+            submit(() -> { try {
                 synchronized(lock){if(target!=vault || generation!=bindingGeneration || opening)throw new IOException("replica-changed");}
                 executingGeneration.set(generation);
                 call.resolve(js(task.run(target)));
@@ -46,14 +60,16 @@ public final class SyncVaultPlugin extends Plugin {
     @PluginMethod public void open(PluginCall call) {
         boolean claimed=false;long claim=-1;
         try {
-            final JSONObject profile = new JSONObject(call.getObject("profile").toString());
-            synchronized(lock) { if(opening || paused)throw new IOException("replica-busy"); opening=true; claimed=true;claim=++bindingGeneration;cancelProbes(); if(remote!=null)remote.close(); remote=null; }
+            final JSONObject profile = SyncRecoveryGuard.profile(new JSONObject(call.getObject("profile").toString()));
+            synchronized(lock) { if(opening || paused || recoveryPlugin!=null)throw new IOException("replica-busy"); failedSchemaProfile=null;opening=true; claimed=true;claim=++bindingGeneration;cancelProbes(); if(remote!=null)remote.close(); remote=null; }
             final long generation=claim;
-            work.execute(() -> {
+            submit(() -> {
                 try {
                     synchronized(lock) {
                         if(paused || generation!=bindingGeneration)throw new IOException("replica-changed");
                         if(vault!=null) { vault.close(); vault=null; }
+                        try{SyncRecoveryGuard.check(SyncRecoveryGuard.root(getContext(),profile));}
+                        catch(Exception e){if("unsupported-schema".equals(e.getMessage()))failedSchemaProfile=new JSONObject(profile.toString());throw e;}
                         SyncVault next=new SyncVault(getContext(),profile);
                         try {
                             if(discovery!=null && discovery.origin.equals(profile.getString("origin")))next.verifyAssociation(discovery);
@@ -86,8 +102,8 @@ public final class SyncVaultPlugin extends Plugin {
         RemoteConnection candidate=null;
         try {
             candidate=new RemoteConnection(c.getString("origin"));final RemoteConnection target=candidate;final long generation;
-            synchronized(lock){if(paused || opening)throw new IOException("replica-paused");generation=bindingGeneration;probes.add(target);}
-            work.execute(() -> {
+            synchronized(lock){if(paused || opening || recoveryPlugin!=null)throw new IOException("replica-paused");generation=bindingGeneration;probes.add(target);}
+            submit(() -> {
                 try {
                     RemoteConnection.VerifiedHello proof=target.discover();
                     synchronized(lock){if(paused || generation!=bindingGeneration)throw new IOException("replica-changed");discovery=proof;}
@@ -171,7 +187,7 @@ public final class SyncVaultPlugin extends Plugin {
         synchronized(lock){if(importOwner!=c){c.reject("replica-changed");return;}target=importing;path=importPath;releaseImport(c);}
         if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null || result.getData().getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
         Uri uri=result.getData().getData();
-        try {work.execute(() -> {
+        try {submit(() -> {
             try(InputStream in=getContext().getContentResolver().openInputStream(uri)) {
                 if(in==null || target==null)throw new IOException("document-unavailable");
                 c.resolve(js(target.importStream(path,in,SyncVault.MAX_SAFE)));
@@ -189,7 +205,7 @@ public final class SyncVaultPlugin extends Plugin {
         final SyncVault target;final JSONObject blob;synchronized(lock){target=exporting;blob=exportBlob;exporting=null;exportBlob=null;}
         if(c==null)return;if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
         Uri uri=result.getData().getData();
-        try{work.execute(() -> {
+        try{submit(() -> {
             try {
                 try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
                     if(out==null || target==null)throw new IOException("document-unavailable");target.exportBlob(blob,out);
@@ -211,7 +227,7 @@ public final class SyncVaultPlugin extends Plugin {
         if(c==null)return;
         if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null || result.getData().getData()==null){c.resolve(new JSObject().put("cancelled",true));return;}
         Uri uri=result.getData().getData();
-        try{work.execute(() -> {
+        try{submit(() -> {
             try {
                 if(target==null)throw new IOException("replica-changed");
                 try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
@@ -222,9 +238,58 @@ public final class SyncVaultPlugin extends Plugin {
             }catch(Exception e){c.reject(e.getMessage(),e);}
         });}catch(Exception e){c.reject(e.getMessage(),e);}
     }
+    @PluginMethod public void exportRecovery(PluginCall call) {
+        try {
+            synchronized(lock) {
+                JSONObject profile=SyncRecoveryGuard.profile(call.getObject("profile"));
+                if(failedSchemaProfile==null || !failedSchemaProfile.toString().equals(profile.toString()))throw new IOException("recovery-not-authorized");
+                if(recoveryPlugin!=null || activeTasks!=0)throw new IOException("replica-busy");
+                for(SyncVaultPlugin p:instances)if(p.vault!=null || p.opening || p.remote!=null || !p.probes.isEmpty()
+                    || p.importOwner!=null || p.importing!=null || p.exporting!=null || p.exportingReplica!=null)throw new IOException("replica-busy");
+                File root=SyncRecoveryGuard.root(getContext(),profile);
+                if(!root.isDirectory())throw new IOException("recovery-unavailable");
+                recoveryPlugin=this;recoveryOwner=call;recoveryRoot=root;recoveryProfile=profile;
+            }
+            Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip")
+                .putExtra(Intent.EXTRA_TITLE,"PentaMark-opaque-recovery-requires-compatible-app.zip");
+            getActivity().runOnUiThread(() -> {try{startActivityForResult(call,intent,"recoveryResult");}catch(Exception e){releaseRecovery(call);call.reject(e.getMessage(),e.getMessage(),e);}});
+        }catch(Exception e){releaseRecovery(call);call.reject(e.getMessage(),e.getMessage(),e);}
+    }
+    private void releaseRecovery(PluginCall owner) {
+        synchronized(lock){if(recoveryOwner==owner){recoveryOwner=null;recoveryRoot=null;recoveryProfile=null;recoveryWriting=false;if(recoveryPlugin==this)recoveryPlugin=null;}}
+    }
+    @ActivityCallback private void recoveryResult(PluginCall call,ActivityResult result) {
+        if(call==null)return;
+        final File root;final JSONObject profile;
+        synchronized(lock) {
+            if(recoveryOwner!=call || recoveryPlugin!=this || recoveryWriting){call.reject("replica-changed");return;}
+            if(result.getResultCode()!=Activity.RESULT_OK || result.getData()==null || result.getData().getData()==null) {
+                releaseRecovery(call);call.resolve(new JSObject().put("cancelled",true));return;
+            }
+            root=recoveryRoot;profile=recoveryProfile;recoveryWriting=true;
+        }
+        Uri uri=result.getData().getData();
+        try {work.execute(() -> {
+            try {
+                // Do not permit a test/provider file URI to overwrite source evidence.
+                if("file".equals(uri.getScheme())) {
+                    File destination=new File(uri.getPath()).getCanonicalFile(),source=root.getCanonicalFile();
+                    if(destination.equals(source)||destination.getPath().startsWith(source.getPath()+File.separator))throw new IOException("unsafe-destination");
+                }
+                try(OutputStream out=getContext().getContentResolver().openOutputStream(uri,"wt")) {
+                    if(out==null)throw new IOException("document-unavailable");
+                    SyncRecoveryArchive.write(root,profile,out,f -> SyncVault.androidFiles().isLink(f));
+                }
+                // ZIP and provider are both closed before either gate release or success.
+                releaseRecovery(call);
+                call.resolve(new JSObject().put("cancelled",false).put("exported",true).put("format","pentamark-opaque-recovery")
+                    .put("requiresCompatibleApp",true));
+            }catch(Exception e){releaseRecovery(call);call.reject(e.getMessage(),e.getMessage(),e);}
+        });}catch(Exception e){releaseRecovery(call);call.reject(e.getMessage(),e.getMessage(),e);}
+    }
     RemoteConnection.Media openMedia(String path,String range)throws Exception {SyncVault target;synchronized(lock){target=vault;}if(target==null)throw new IOException("replica-not-open");return target.openMedia(path,range);}
     private void cancelProbes(){for(RemoteConnection probe:probes)probe.close();probes.clear();}
     @Override protected void handleOnPause(){synchronized(lock){paused=true;bindingGeneration++;opening=false;cancelProbes();if(remote!=null)remote.close();remote=null;maximum=0;}super.handleOnPause();}
     @Override protected void handleOnResume(){synchronized(lock){paused=false;}super.handleOnResume();}
-    @Override protected void handleOnDestroy(){synchronized(lock){paused=true;bindingGeneration++;opening=false;cancelProbes();discovery=null;if(remote!=null)remote.close();remote=null;if(vault!=null)vault.close();vault=null;}work.shutdown();super.handleOnDestroy();}
+    @Override protected void handleOnDestroy(){synchronized(lock){paused=true;bindingGeneration++;opening=false;cancelProbes();discovery=null;if(remote!=null)remote.close();remote=null;if(vault!=null)vault.close();vault=null;if(recoveryOwner!=null&&!recoveryWriting)releaseRecovery(recoveryOwner);}work.shutdown();super.handleOnDestroy();}
 }
