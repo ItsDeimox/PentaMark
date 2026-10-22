@@ -9,6 +9,7 @@ cleanup() {
 trap cleanup EXIT
 timeout 90s adb install -r offline-android/app-debug.apk
 timeout 90s adb install -r offline-android/app-debug-androidTest.apk
+bash scripts/prepare-test-webview.sh
 # Disposable emulator only: block the app UID, preserving the older emulator's
 # ADB transport. A global OUTPUT block can sever the test-control connection.
 timeout 30s adb root

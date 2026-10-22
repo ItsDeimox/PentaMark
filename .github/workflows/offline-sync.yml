@@ -143,7 +143,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          arch: x86_64
+          arch: ${{ matrix.api == 24 && 'x86' || 'x86_64' }}
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
@@ -152,7 +152,9 @@ jobs:
         if: always()
         with:
           name: offline-sync-api-${{ matrix.api }}-evidence-${{ github.sha }}
-          path: device-evidence/
+          path: |
+            device-evidence/
+            !device-evidence/*.apk
   validated-pair:
     needs: [windows, android-build, android-device]
     runs-on: ubuntu-latest

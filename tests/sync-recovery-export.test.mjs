@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, readdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +12,9 @@ import { installReplicaIpc } from '../local/sync/replica-ipc.mjs';
 import { acquireWriter } from '../local/sync/database.mjs';
 const { createSyncBridge } = createRequire(import.meta.url)('../desktop/sync-ipc.cjs');
 async function fixture(t) {
-  const base = await mkdtemp(join(tmpdir(), 'pentamark-recovery-'));
+  // Windows runners expose TEMP through an 8.3 alias (RUNNER~1). The recovery
+  // contract intentionally requires canonical, non-aliased paths.
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'pentamark-recovery-')));
   const userData = join(base, 'private'), destination = join(base, 'exports');
   const profile = { vaultId: randomUUID(), serverId: randomUUID(), replicaId: randomUUID(), origin: 'http://host.test:3417', offlineEnabled: true, mode: 'manual' };
   const root = join(userData, 'sync', 'replicas', profile.vaultId, profile.replicaId);

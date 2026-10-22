@@ -2,6 +2,8 @@
 
 ## Ativar
 
+No Android, a interface requer Android System WebView/Chrome 119 ou superior. Um componente antigo deve ser atualizado pela loja do sistema, sem limpar os dados do PentaMark. Android 7 é validado com WebView 119, não com a WebView original de fábrica.
+
 1. Abra o PentaMark no host e conecte os aparelhos pela rede Tailscale já configurada.
 2. No aparelho que precisa trabalhar desconectado, abra **Configurações → Sincronização**.
 3. Marque **Manter cópia offline**, informe o endereço do host e escolha **Automática** ou **Manual**.
