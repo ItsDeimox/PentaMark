@@ -57,7 +57,7 @@ public class SyncProcessRestartTest {
         JSONObject futureProfile=SyncRecoveryInstrumentedTest.profile();File futureRoot=SyncRecoveryGuard.root(context,futureProfile);assertTrue(futureRoot.mkdirs());
         futureWalWriter=SQLiteDatabase.openOrCreateDatabase(new File(futureRoot,"replica.db"),null);
         assertTrue(futureWalWriter.enableWriteAheadLogging());
-        futureWalWriter.execSQL("PRAGMA wal_autocheckpoint=0");
+        try(Cursor autoCheckpoint=futureWalWriter.rawQuery("PRAGMA wal_autocheckpoint=0",null)){assertTrue(autoCheckpoint.moveToFirst());assertEquals(0,autoCheckpoint.getInt(0));}
         futureWalWriter.execSQL("CREATE TABLE future_payload(value TEXT)");futureWalWriter.execSQL("PRAGMA user_version=1");
         try(Cursor checkpoint=futureWalWriter.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)",null)){assertTrue(checkpoint.moveToFirst());assertEquals(0,checkpoint.getInt(0));}
         futureWalWriter.execSQL("PRAGMA user_version=99");futureWalWriter.execSQL("INSERT INTO future_payload VALUES ('future WAL bytes')");
