@@ -1,0 +1,12 @@
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=FULL;
+PRAGMA foreign_keys=ON;
+CREATE TABLE IF NOT EXISTS vaults (vault_id TEXT PRIMARY KEY, server_id TEXT NOT NULL, epoch TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS entries (entry_id TEXT PRIMARY KEY, path_key TEXT NOT NULL, version TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS versions (revision TEXT PRIMARY KEY, entry_id TEXT NOT NULL, version TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS applied_ops (replica_id TEXT NOT NULL, op_id TEXT NOT NULL, operation TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(replica_id,op_id));
+CREATE TABLE IF NOT EXISTS conflicts (conflict_id TEXT PRIMARY KEY, conflict TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS file_intents (intent_id TEXT PRIMARY KEY, intent TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pending_ops (op_id TEXT PRIMARY KEY, operation TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS transfer_progress (blob_hash TEXT PRIMARY KEY, verified_bytes TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS change_log (sequence INTEGER PRIMARY KEY AUTOINCREMENT, version TEXT NOT NULL);

@@ -1,14 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { access, copyFile, mkdir, readFile, readdir, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { access, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { handleMcpRequest } from "./mcp-bridge.mjs";
+import { createHostService } from "./sync/host-service.mjs";
 
 const LOCAL_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(LOCAL_DIR, "..");
@@ -18,8 +17,6 @@ const CUSTOM_VAULT_DIR = process.env.PENTAMARK_VAULT_DIR ? resolve(process.env.P
 const VAULT_DIR = CUSTOM_VAULT_DIR || join(DATA_DIR, "vault");
 const NOTES_DIR = CUSTOM_VAULT_DIR ? VAULT_DIR : join(VAULT_DIR, "notes");
 const ASSETS_DIR = join(VAULT_DIR, "assets");
-const HISTORY_DIR = join(VAULT_DIR, ".history");
-const TRASH_DIR = join(VAULT_DIR, ".trash");
 const CONFIG_PATH = join(DATA_DIR, "pentamark.config.json");
 
 const DEFAULT_CONFIG = {
@@ -124,6 +121,15 @@ const sseClients = new Map();
 const noteLocks = new Map();
 const mcpActivity = new Map();
 let cleanupTimer = null;
+let hostService;
+
+function hostPath(fullPath) {
+  return relative(VAULT_DIR, fullPath).split(sep).join("/");
+}
+
+async function mutateFile(kind, fullPath, options = {}) {
+  return hostService.mutate({ kind, path: hostPath(fullPath), ...options });
+}
 
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
 const AUDIO_EXTENSIONS = new Set([".flac", ".m4a", ".mp3", ".ogg", ".wav", ".3gp"]);
@@ -292,25 +298,9 @@ async function listAssets() {
     .sort((a, b) => a.path.localeCompare(b.path, "pt-BR"));
 }
 
-function timestampFolder() {
-  return new Date().toISOString().replaceAll(":", "-").replace("T", "_").replace("Z", "");
-}
-
-async function backupNote(fullPath, notePath) {
-  if (!await exists(fullPath)) return;
-  const destination = join(HISTORY_DIR, timestampFolder(), notePath);
-  await mkdir(dirname(destination), { recursive: true });
-  await copyFile(fullPath, destination);
-}
-
-async function writeNote(fullPath, notePath, content, makeBackup = true) {
-  await mkdir(dirname(fullPath), { recursive: true });
-  if (makeBackup) await backupNote(fullPath, notePath);
-  const temporary = `${fullPath}.pentamark-${process.pid}-${Date.now()}.tmp`;
-  await writeFile(temporary, content, "utf8");
-  if (await exists(fullPath)) await unlink(fullPath);
-  await rename(temporary, fullPath);
-  return revisionFor(content);
+async function writeNote(fullPath, notePath, content, makeBackup = true, expectedRevision) {
+  const result = await mutateFile("put", fullPath, { content, createOnly: !makeBackup, expectedRevision });
+  return result.revision;
 }
 
 function eventPayload(event, payload) {
@@ -475,12 +465,9 @@ async function loadConfig() {
 }
 
 async function ensureVault() {
-  await Promise.all([
-    mkdir(NOTES_DIR, { recursive: true }),
-    mkdir(ASSETS_DIR, { recursive: true }),
-    mkdir(HISTORY_DIR, { recursive: true }),
-    mkdir(TRASH_DIR, { recursive: true }),
-  ]);
+  for (const directory of [NOTES_DIR, ASSETS_DIR]) {
+    if (directory !== VAULT_DIR && !await exists(directory)) await mutateFile("mkdir", directory);
+  }
 
   const welcome = noteTarget("00 — Comece aqui.md");
   if (await exists(welcome.fullPath) && await readFile(welcome.fullPath, "utf8") === LEGACY_WELCOME) {
@@ -489,10 +476,10 @@ async function ensureVault() {
 
   const legacyDevlog = noteTarget("Pentagory/DEVLOG.md");
   if (await exists(legacyDevlog.fullPath) && await readFile(legacyDevlog.fullPath, "utf8") === LEGACY_DEVLOG) {
-    const migrated = join(TRASH_DIR, "migration-2.2", legacyDevlog.path);
-    await mkdir(dirname(migrated), { recursive: true });
-    await rename(legacyDevlog.fullPath, migrated);
-    await rmdir(dirname(legacyDevlog.fullPath)).catch(() => undefined);
+    await mutateFile("delete", legacyDevlog.fullPath);
+    // Only remove the now-empty legacy folder; never include other children.
+    if ((await readdir(dirname(legacyDevlog.fullPath))).length === 0)
+      await mutateFile("delete", dirname(legacyDevlog.fullPath));
   }
 
   const currentNotes = await listNotes();
@@ -605,7 +592,7 @@ async function referencedVaultFiles() {
   return references;
 }
 
-async function cleanupUnusedAssets() {
+export async function cleanupUnusedAssets() {
   if (!config.cleanupUnusedAssets) return [];
   const referenced = await referencedVaultFiles();
   const moved = [];
@@ -613,10 +600,8 @@ async function cleanupUnusedAssets() {
     if (!CLEANABLE_EXTENSIONS.has(extname(file.path).toLowerCase())) continue;
     const canonical = await realpath(file.fullPath).catch(() => file.fullPath);
     if (referenced.has(canonical)) continue;
-    const destination = join(TRASH_DIR, "unused-assets", timestampFolder(), file.path);
-    await mkdir(dirname(destination), { recursive: true });
-    await rename(file.fullPath, destination).catch(() => undefined);
-    if (await exists(destination)) moved.push(file.path);
+    await mutateFile("delete", file.fullPath);
+    moved.push(file.path);
   }
   if (moved.length) broadcast("notes", { reason: "unused-assets", moved });
   return moved;
@@ -646,7 +631,7 @@ function textMime(extension) {
   return TEXT_EXTENSIONS.has(extension);
 }
 
-function mcpBridge(req) {
+export function mcpBridge(req) {
   return {
     async listFiles(filter = "", limit = 1000) {
       markMcpActivity(req, "listando arquivos", String(filter || ""), false);
@@ -694,14 +679,8 @@ function mcpBridge(req) {
       markMcpActivity(req, "editando arquivo", path, true);
       const target = vaultTarget(path);
       if (!textMime(extname(target.path).toLowerCase())) throw new Error("A Ponte IA só grava arquivos textuais");
-      if (await exists(target.fullPath)) {
-        const current = await readFile(target.fullPath, "utf8");
-        const currentRevision = revisionFor(current);
-        if (expectedRevision && expectedRevision !== currentRevision) throw new Error(`Conflito: revisão atual ${currentRevision}`);
-      }
-      await mkdir(dirname(target.fullPath), { recursive: true });
       const notePath = target.path.startsWith("notes/") && !CUSTOM_VAULT_DIR ? target.path.slice(6) : CUSTOM_VAULT_DIR && target.path.toLowerCase().endsWith(".md") ? target.path : "";
-      const revision = notePath ? await writeNote(target.fullPath, notePath, String(content), true) : (await writeFile(target.fullPath, String(content), "utf8"), revisionFor(String(content)));
+      const { revision } = await mutateFile("put", target.fullPath, { content: String(content), expectedRevision });
       if (notePath) broadcast("note", { path: notePath, revision, source: "ai" });
       broadcast("notes", { reason: "ai-write", path: target.path });
       scheduleUnusedAssetCleanup();
@@ -713,8 +692,7 @@ function mcpBridge(req) {
       const destination = vaultTarget(newPath);
       if (!await exists(source.fullPath)) throw new Error("Arquivo não encontrado");
       if (await exists(destination.fullPath)) throw new Error("Já existe um arquivo no destino");
-      await mkdir(dirname(destination.fullPath), { recursive: true });
-      await rename(source.fullPath, destination.fullPath);
+      await mutateFile("move", source.fullPath, { newPath: hostPath(destination.fullPath) });
       broadcast("notes", { reason: "ai-move", path: source.path, newPath: destination.path });
       return { ok: true, path: destination.path };
     },
@@ -722,9 +700,7 @@ function mcpBridge(req) {
       markMcpActivity(req, "enviando à lixeira", path, true);
       const target = vaultTarget(path);
       if (!await exists(target.fullPath)) throw new Error("Arquivo não encontrado");
-      const destination = join(TRASH_DIR, "ai", timestampFolder(), target.path);
-      await mkdir(dirname(destination), { recursive: true });
-      await rename(target.fullPath, destination);
+      await mutateFile("delete", target.fullPath);
       broadcast("notes", { reason: "ai-delete", path: target.path });
       return { ok: true, moved_to_trash: target.path };
     },
@@ -736,19 +712,15 @@ async function handleUpload(req, res, url) {
   const asset = await uniqueAssetPath(requestedName);
   const maxBytes = Math.max(1, Number(config.maxUploadMB) || 2048) * 1024 * 1024;
   let received = 0;
-  const limiter = new Transform({
-    transform(chunk, _encoding, callback) {
+  async function* limitedUpload() {
+    for await (const chunk of req) {
       received += chunk.length;
-      if (received > maxBytes) callback(new Error("Arquivo grande demais"));
-      else callback(null, chunk);
-    },
-  });
-  try {
-    await pipeline(req, limiter, createWriteStream(asset.fullPath, { flags: "wx" }));
-  } catch (error) {
-    if (await exists(asset.fullPath)) await unlink(asset.fullPath);
-    throw error;
+      if (received > maxBytes) throw new Error("Arquivo grande demais");
+      yield chunk;
+    }
   }
+  const blob = await hostService.objects.put(limitedUpload());
+  await mutateFile("put", asset.fullPath, { blob, createOnly: true });
   const contentType = String(req.headers["content-type"] || MIME_TYPES[extname(asset.name).toLowerCase()] || "application/octet-stream");
   const assetUrl = `/uploads/${encodeURIComponent(asset.name)}`;
   broadcast("notes", { reason: "asset", name: asset.name });
@@ -1026,6 +998,8 @@ async function handleApi(req, res, url) {
     const body = await readJsonBody(req);
     const target = noteTarget(body.path);
     if (await exists(target.fullPath)) {
+      // Preserve the rejected incoming version through the coordinator too.
+      await writeNote(target.fullPath, target.path, typeof body.content === "string" ? body.content : "", false);
       errorJson(res, 409, "Essa nota já existe");
       return true;
     }
@@ -1047,19 +1021,19 @@ async function handleApi(req, res, url) {
       return true;
     }
     if (config.lockEditedNotes && clientId && !noteLocks.has(target.path)) noteLocks.set(target.path, clientId);
-    if (await exists(target.fullPath)) {
-      const current = await readFile(target.fullPath, "utf8");
-      const currentRevision = revisionFor(current);
-      if (body.baseRevision && body.baseRevision !== currentRevision) {
-        json(res, 409, { error: "A nota foi alterada em outro dispositivo", currentRevision });
-        return true;
-      }
-      if (current === body.content) {
-        json(res, 200, { path: target.path, revision: currentRevision, unchanged: true });
-        return true;
-      }
+    let result;
+    try {
+      result = await mutateFile("put", target.fullPath, { content: body.content, expectedRevision: body.baseRevision });
+    } catch (error) {
+      if (error.result?.status !== "conflict") throw error;
+      json(res, 409, { error: "A nota foi alterada em outro dispositivo", currentRevision: error.result.conflict.remote?.blobHash?.slice(0, 20) });
+      return true;
     }
-    const revision = await writeNote(target.fullPath, target.path, body.content, true);
+    const revision = result.revision;
+    if (result.unchanged) {
+      json(res, 200, { path: target.path, revision, unchanged: true });
+      return true;
+    }
     broadcast("note", { path: target.path, revision });
     scheduleUnusedAssetCleanup();
     json(res, 200, { path: target.path, revision });
@@ -1081,8 +1055,7 @@ async function handleApi(req, res, url) {
       errorJson(res, 409, "Já existe uma nota nesse caminho");
       return true;
     }
-    await mkdir(dirname(destination.fullPath), { recursive: true });
-    await rename(source.fullPath, destination.fullPath);
+    await mutateFile("move", source.fullPath, { newPath: hostPath(destination.fullPath) });
     if (noteLocks.get(source.path)) {
       const owner = noteLocks.get(source.path);
       noteLocks.delete(source.path);
@@ -1103,9 +1076,7 @@ async function handleApi(req, res, url) {
       return true;
     }
     if (!await exists(target.fullPath)) throw new Error("Nota não encontrada");
-    const trashPath = join(TRASH_DIR, timestampFolder(), target.path);
-    await mkdir(dirname(trashPath), { recursive: true });
-    await rename(target.fullPath, trashPath);
+    await mutateFile("delete", target.fullPath);
     noteLocks.delete(target.path);
     broadcast("notes", { reason: "deleted", path: target.path });
     broadcastPresence();
@@ -1120,7 +1091,7 @@ async function handleApi(req, res, url) {
       errorJson(res, 409, "Essa pasta já existe");
       return true;
     }
-    await mkdir(target.fullPath, { recursive: true });
+    await mutateFile("mkdir", target.fullPath);
     broadcast("notes", { reason: "folder-created", path: target.path });
     json(res, 201, { path: target.path });
     return true;
@@ -1141,8 +1112,7 @@ async function handleApi(req, res, url) {
       errorJson(res, 409, "Já existe uma pasta nesse caminho");
       return true;
     }
-    await mkdir(dirname(destination.fullPath), { recursive: true });
-    await rename(source.fullPath, destination.fullPath);
+    await mutateFile("move", source.fullPath, { newPath: hostPath(destination.fullPath) });
     for (const [path, owner] of [...noteLocks.entries()]) {
       if (path.startsWith(`${source.path}/`)) {
         noteLocks.delete(path);
@@ -1164,9 +1134,7 @@ async function handleApi(req, res, url) {
       return true;
     }
     if (!await exists(target.fullPath)) throw new Error("Pasta não encontrada");
-    const trashPath = join(TRASH_DIR, timestampFolder(), "folders", target.path);
-    await mkdir(dirname(trashPath), { recursive: true });
-    await rename(target.fullPath, trashPath);
+    await mutateFile("delete", target.fullPath);
     for (const path of [...noteLocks.keys()]) {
       if (path.startsWith(`${target.path}/`)) noteLocks.delete(path);
     }
@@ -1185,8 +1153,7 @@ async function handleApi(req, res, url) {
       errorJson(res, 409, "Já existe um arquivo nesse caminho");
       return true;
     }
-    await mkdir(dirname(destination.fullPath), { recursive: true });
-    await rename(source.fullPath, destination.fullPath);
+    await mutateFile("move", source.fullPath, { newPath: hostPath(destination.fullPath) });
     broadcast("notes", { reason: "asset-renamed", path: source.path, newPath: destination.path });
     json(res, 200, { path: destination.path });
     return true;
@@ -1195,9 +1162,7 @@ async function handleApi(req, res, url) {
   if (url.pathname === "/api/asset" && req.method === "DELETE") {
     const target = vaultTarget(url.searchParams.get("path"));
     if (!await exists(target.fullPath)) throw new Error("Asset não encontrado");
-    const trashPath = join(TRASH_DIR, timestampFolder(), "assets", target.path);
-    await mkdir(dirname(trashPath), { recursive: true });
-    await rename(target.fullPath, trashPath);
+    await mutateFile("delete", target.fullPath);
     broadcast("notes", { reason: "asset-deleted", path: target.path });
     json(res, 200, { deleted: target.path });
     return true;
@@ -1211,7 +1176,7 @@ async function handleApi(req, res, url) {
   return false;
 }
 
-async function requestHandler(req, res) {
+export async function requestHandler(req, res) {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/mcp") {
@@ -1268,7 +1233,7 @@ async function requestHandler(req, res) {
     await serveFile(req, res, filePath);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado";
-    const status = /não encontrad|ENOENT/i.test(message) ? 404 : /grande demais/i.test(message) ? 413 : 400;
+    const status = error.statusCode || (/não encontrad|ENOENT/i.test(message) ? 404 : /grande demais/i.test(message) ? 413 : 400);
     if (!res.headersSent) errorJson(res, status, message);
     else res.end();
   }
@@ -1290,16 +1255,38 @@ function openBrowser(url) {
   }
 }
 
-async function start() {
+export async function initializeVaultHost() {
   await mkdir(DATA_DIR, { recursive: true });
   config = await loadConfig();
   runtimePort = Number(config.port);
+  hostService = await createHostService({ dataRoot: DATA_DIR, vaultRoot: VAULT_DIR,
+    maxFileBytes: Math.max(1, Number(config.maxUploadMB) || 2048) * 1024 * 1024 });
   await ensureVault();
+  return hostService;
+}
+
+export async function closeVaultHost() {
+  if (cleanupTimer) { clearTimeout(cleanupTimer); cleanupTimer = null; }
+  await hostService?.close();
+}
+
+async function start() {
+  await initializeVaultHost();
   if (!await exists(join(DIST_DIR, "index.html"))) {
     throw new Error("Interface não encontrada. Rode npm run local:build antes de iniciar.");
   }
 
   const server = createServer(requestHandler);
+  // Active rescan is authoritative even when no filesystem watcher fires.
+  let scanning = false;
+  const scanTimer = setInterval(async () => {
+    if (scanning) return;
+    scanning = true;
+    try { await hostService.rescan(); }
+    catch (error) { console.warn(`[PentaMark] Sync scan: ${error.message}`); }
+    finally { scanning = false; }
+  }, 5000);
+  scanTimer.unref();
   server.requestTimeout = 0;
   server.headersTimeout = 60_000;
   server.listen(runtimePort, String(config.bind), () => {
@@ -1321,17 +1308,18 @@ async function start() {
   });
 
   const shutdown = () => {
+    clearInterval(scanTimer);
     for (const client of sseClients.values()) {
       for (const response of client.responses) response.end();
     }
-    server.close(() => process.exit(0));
+    server.close(() => { void closeVaultHost().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(0), 1500).unref();
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
 
-start().catch((error) => {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) start().catch((error) => {
   console.error(`\n[PentaMark] ${error.message}\n`);
   process.exitCode = 1;
 });
