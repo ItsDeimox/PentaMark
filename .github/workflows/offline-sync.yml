@@ -23,6 +23,12 @@ jobs:
       - run: npm run test:unit
       - name: Offline storage and protocol regressions
         run: node --test tests/sync-*.test.mjs
+      - name: Install test browser
+        run: npx playwright install chromium
+      - name: Offline editor and conflict UI regressions
+        run: npm run test:sync:ui
+        env:
+          PM_TEST_PORT: '34987'
       - run: npm run desktop:build -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -41,6 +47,11 @@ jobs:
             desktop-dist/source-commit.txt
             desktop-dist/windows-hashes.json
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-sync-ui-evidence-${{ github.sha }}
+          path: test-results/
   android-build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
